@@ -480,112 +480,68 @@ app.get("/api/lookup", async (req, res) => {
       return res.status(200).json(responsePayload);
     }
 
-    // For number lookup, query exploitsindia.site directly and parse the textual response
+    // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
-      const api_url = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const searchParams = new URLSearchParams();
+      searchParams.set("key", String(key)); 
+      searchParams.set("query", targetQuery);
+
+      const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?${searchParams.toString()}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       try {
-        const response = await fetch(api_url, {
-          headers: { "User-Agent": "Mozilla/5.0 TraceX-Web/1.0" },
+        const response = await fetch(target, {
+          headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
           signal: controller.signal
         });
         clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          throw new Error(`Downstream Provider returned HTTP status ${response.status}`);
-        }
-
-        const rawText = await response.text();
-        const cleanedText = rawText
-          .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-          .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
-          .trim();
-
-        const lowerText = cleanedText.toLowerCase();
-        if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !cleanedText || lowerText.includes("unknown")) {
-          await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
-          return res.status(404).json({ status: "error", message: `No records found for ${targetQuery}` });
-        }
-
-        // Helper to parse block text response
-        const parsedRecords: any[] = [];
-        const blocks = cleanedText.split(/────────────────────────|━━━━━━━━━━━━━━━━━━━━━━━━━━━/);
-
-        blocks.forEach(block => {
-          const trimmed = block.trim();
-          if (!trimmed) return;
-          if (!trimmed.includes("Name:") && !trimmed.includes("Mobile:")) return;
-
-          const nameMatch = trimmed.match(/👤\s*Name:\s*([^\n\r]+)/i) || trimmed.match(/Name:\s*([^\n\r]+)/i);
-          const fatherMatch = trimmed.match(/(?:👨👦|👨|👦)?\s*Father\s*Name:\s*([^\n\r]+)/i) || trimmed.match(/Father\s*Name:\s*([^\n\r]+)/i);
-          const mobileMatch = trimmed.match(/📱\s*Mobile:\s*([^\n\r]+)/i) || trimmed.match(/Mobile:\s*([^\n\r]+)/i);
-          const altMatch = trimmed.match(/📞\s*Alternate:\s*([^\n\r]+)/i) || trimmed.match(/Alternate:\s*([^\n\r]+)/i);
-          const addressMatch = trimmed.match(/🏠\s*Address:\s*([^\n\r]+)/i) || trimmed.match(/Address:\s*([^\n\r]+)/i);
-          const circleMatch = trimmed.match(/📡\s*Circle:\s*([^\n\r]+)/i) || trimmed.match(/Circle:\s*([^\n\r]+)/i);
-          const aadharMatch = trimmed.match(/🪪\s*Aadhaar:\s*([^\n\r]+)/i) || trimmed.match(/Aadhaar:\s*([^\n\r]+)/i);
-
-          if (nameMatch || mobileMatch) {
-            const name = nameMatch ? nameMatch[1].trim() : "N/A";
-            const father_name = fatherMatch ? fatherMatch[1].trim() : "N/A";
-            const mobile = mobileMatch ? mobileMatch[1].trim() : targetQuery;
-            const alt_mobile = altMatch ? altMatch[1].trim() : "N/A";
-            const address = addressMatch ? addressMatch[1].trim() : "N/A";
-            const circleText = circleMatch ? circleMatch[1].trim() : "N/A";
-            const aadhar_number = aadharMatch ? aadharMatch[1].trim() : "N/A";
-
-            let operator = "N/A";
-            let state_circle = "N/A";
-            if (circleText !== "N/A") {
-              const parts = circleText.split(/\s+/);
-              if (parts.length > 0) {
-                operator = parts[0];
-                state_circle = parts.slice(1).join(" ") || parts[0];
-              }
-            }
-
-            parsedRecords.push({
-              name,
-              father_name,
-              mobile,
-              alt_mobile,
-              address,
-              operator,
-              state_circle,
-              aadhar_number
-            });
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const rawData = await response.json();
+          const newCount = (keyRecord.requests_used || 0) + 1;
+          
+          if (!isMaster && keyRecord.id) {
+            await supabaseAdmin.from("api_keys").update({ 
+              requests_used: newCount,
+              last_used_at: new Date().toISOString()
+            }).eq("id", keyRecord.id);
           }
-        });
 
-        if (parsedRecords.length === 0) {
+          const recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
+          let parsedRecords: any[] = [];
+          if (Array.isArray(recordsRaw)) {
+            parsedRecords = recordsRaw;
+          } else if (recordsRaw && typeof recordsRaw === 'object') {
+            if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
+              parsedRecords = [recordsRaw];
+            } else {
+              parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
+            }
+          }
+
+          const filtered = formatUnifiedSaaSResponse({
+            type: 'phone',
+            query: targetQuery,
+            expiresAt: keyRecord.expires_at,
+            planName: keyRecord.plan_name,
+            requestsUsed: newCount,
+            records: parsedRecords
+          });
+          
+          await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
+          return res.status(response.status).json(filtered);
+        } else {
           await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
-          return res.status(404).json({ status: "error", message: `No valid records parsed for ${targetQuery}` });
+          return res.status(502).json({ 
+            status: "error", 
+            message: "Downstream Provider: Invalid JSON Response"
+          });
         }
-
-        const newCount = (keyRecord.requests_used || 0) + 1;
-        if (!isMaster && keyRecord.id) {
-          await supabaseAdmin.from("api_keys").update({ 
-            requests_used: newCount,
-            last_used_at: new Date().toISOString()
-          }).eq("id", keyRecord.id);
-        }
-
-        const filtered = formatUnifiedSaaSResponse({
-          type: 'phone',
-          query: targetQuery,
-          expiresAt: keyRecord.expires_at,
-          planName: keyRecord.plan_name,
-          requestsUsed: newCount,
-          records: parsedRecords
-        });
-
-        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
-        return res.status(200).json(filtered);
       } catch (fetchErr: any) {
         clearTimeout(timeoutId);
-        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
-        return res.status(502).json({ status: "error", message: `Connection Timeout or Downstream Error: ${fetchErr.message}` });
+        throw new Error(`Connection Timeout: Downstream provider failed to respond within 12s`);
       }
     } else if (lookupType === 'telegram') {
       const target_username = targetQuery.startsWith('@') ? targetQuery : `@${targetQuery}`;

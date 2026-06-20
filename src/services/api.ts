@@ -136,99 +136,21 @@ export const parseLookupResults = (data: any, number: string = ''): ApiResponse 
   };
 };
 
-const parseRawTextToLayout = (text: string, queryNum: string): any => {
-  const records: any[] = [];
-  const cleanedText = text
-    .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-    .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
-    .trim();
-
-  const blocks = cleanedText.split(/────────────────────────|━━━━━━━━━━━━━━━━━━━━━━━━━━━/);
-
-  blocks.forEach(block => {
-    const trimmed = block.trim();
-    if (!trimmed) return;
-    if (!trimmed.includes("Name:") && !trimmed.includes("Mobile:")) return;
-
-    const nameMatch = trimmed.match(/👤\s*Name:\s*([^\n\r]+)/i) || trimmed.match(/Name:\s*([^\n\r]+)/i);
-    const fatherMatch = trimmed.match(/(?:👨👦|👨|👦)?\s*Father\s*Name:\s*([^\n\r]+)/i) || trimmed.match(/Father\s*Name:\s*([^\n\r]+)/i);
-    const mobileMatch = trimmed.match(/📱\s*Mobile:\s*([^\n\r]+)/i) || trimmed.match(/Mobile:\s*([^\n\r]+)/i);
-    const altMatch = trimmed.match(/📞\s*Alternate:\s*([^\n\r]+)/i) || trimmed.match(/Alternate:\s*([^\n\r]+)/i);
-    const addressMatch = trimmed.match(/🏠\s*Address:\s*([^\n\r]+)/i) || trimmed.match(/Address:\s*([^\n\r]+)/i);
-    const circleMatch = trimmed.match(/📡\s*Circle:\s*([^\n\r]+)/i) || trimmed.match(/Circle:\s*([^\n\r]+)/i);
-    const aadharMatch = trimmed.match(/🪪\s*Aadhaar:\s*([^\n\r]+)/i) || trimmed.match(/Aadhaar:\s*([^\n\r]+)/i);
-
-    if (nameMatch || mobileMatch) {
-      const name = nameMatch ? nameMatch[1].trim() : "N/A";
-      const father_name = fatherMatch ? fatherMatch[1].trim() : "N/A";
-      const mobile = mobileMatch ? mobileMatch[1].trim() : queryNum;
-      const alt_mobile = altMatch ? altMatch[1].trim() : "N/A";
-      const address = addressMatch ? addressMatch[1].trim() : "N/A";
-      const circleText = circleMatch ? circleMatch[1].trim() : "N/A";
-      const aadhar_number = aadharMatch ? aadharMatch[1].trim() : "N/A";
-
-      let operator = "N/A";
-      let state_circle = "N/A";
-      if (circleText !== "N/A") {
-        const parts = circleText.split(/\s+/);
-        if (parts.length > 0) {
-          operator = parts[0];
-          state_circle = parts.slice(1).join(" ") || parts[0];
-        }
-      }
-
-      records.push({
-        name,
-        father_name,
-        mobile,
-        alt_mobile,
-        address,
-        operator,
-        circle: state_circle,
-        state_circle,
-        aadhar_number
-      });
-    }
-  });
-
-  const resultsObj: Record<string, any> = {};
-  records.forEach((rec, idx) => {
-    resultsObj[`Result ${idx + 1}`] = rec;
-  });
-
-  return {
-    status: records.length > 0 ? "success" : "not_found",
-    powered_by: "TraceXData Intelligence",
-    owner: "@gaurav_beniwal_0001",
-    buy_api: "https://tracexdata-api.onrender.com/buy-api",
-    query: queryNum,
-    api_status: {
-      plan: "Internal Direct Proxy",
-      expires_at: new Date(Date.now() + 365*24*3600000).toISOString(),
-      time_left: "Active",
-      requests_used: 1
-    },
-    results_found: records.length,
-    results: resultsObj,
-    data: records
-  };
-};
-
 export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const maxAttempts = 5;
   const delays = [1000, 2000, 3000, 4000, 5000];
   
-  const renderBackendUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tracexdata-api.onrender.com';
+  const renderBackendUrl = 'https://tracexdata-api.onrender.com';
   const backendEndpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/lookup?key=TX-SYSTEM-INTERNAL-ADMIN&query=${number}`;
   
-  const targetUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${number}`;
+  const targetUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const useDirectFallback = attempt > 2;
+      const useDirectFallback = attempt > 2 || !renderBackendUrl;
       const url = useDirectFallback ? proxyUrl : backendEndpoint;
       
       const response = await fetch(url, {
@@ -250,42 +172,22 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       console.log("API RAW PREVIEW", rawText.slice(0, 300));
 
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.toLowerCase().includes('text/html') && !useDirectFallback) {
+      if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE html>') || rawText.trim().startsWith('<html')) {
         throw new Error('Received HTML page instead of JSON');
-      }
-
-      // If it's a direct fallback text, parse it directly
-      if (rawText.includes("NUMBER LOOKUP") || rawText.includes("Name:")) {
-        const parsedLayout = parseRawTextToLayout(rawText, number);
-        return parsedLayout;
       }
 
       let parsed: any;
       try {
         parsed = JSON.parse(rawText);
       } catch (parseErr) {
-        // If parsing fails but rawText has exploits indicators, parse it
-        if (rawText.includes("NUMBER LOOKUP") || rawText.includes("Name:")) {
-          const parsedLayout = parseRawTextToLayout(rawText, number);
-          return parsedLayout;
-        }
         throw new Error(`Failed to parse response JSON: ${parseErr}`);
       }
 
       let data = parsed;
       if (parsed && 'contents' in parsed) {
-        const contentStr = String(parsed.contents || "").trim();
-        if (contentStr.includes("NUMBER LOOKUP") || contentStr.includes("Name:")) {
-          const parsedLayout = parseRawTextToLayout(contentStr, number);
-          return parsedLayout;
-        }
         try {
-          data = typeof parsed.contents === 'string' ? JSON.parse(contentStr) : parsed.contents;
+          data = typeof parsed.contents === 'string' ? JSON.parse(parsed.contents.trim()) : parsed.contents;
         } catch (e) {
-          // Fallback parsing of contents text directly if JSON.parse fails
-          if (contentStr.includes("NUMBER LOOKUP") || contentStr.includes("Name:")) {
-            return parseRawTextToLayout(contentStr, number);
-          }
           throw new Error('Failed to parse wrapped AllOrigins payload');
         }
       }

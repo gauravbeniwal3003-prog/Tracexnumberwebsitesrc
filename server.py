@@ -1009,8 +1009,31 @@ async def saas_lookup(
             except Exception as e_tg:
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
-        # For number lookup, query exploitsindia.site directly and parse the textual response
-        final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
+        # Hardcoded primary engine source as requested to avoid environment variable dependency
+        target_template = "https://techvishalboss.com/api/v1/lookup.php"
+        
+        try:
+            settings_query = db.table("api_settings").select("real_api_url").limit(1).execute()
+            if settings_query.data and len(settings_query.data) > 0:
+                if settings_query.data[0].get('real_api_url'):
+                    target_template = settings_query.data[0]['real_api_url']
+        except Exception as e:
+            print(f"[SETTINGS_ERR] {e}")
+            pass
+        
+        if not target_template:
+            target_template = "https://techvishalboss.com/api/v1/lookup.php"
+
+        # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
+        target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
+
+        # Execution
+        if "ENTER_TARGET_HERE" not in target_template:
+            key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
+            service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
+            final_url = f"{target_template.rstrip('/')}?key={key_param}&service={service_param}&number={num}"
+        else:
+            final_url = target_template.replace("ENTER_TARGET_HERE", num)
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
@@ -1019,7 +1042,7 @@ async def saas_lookup(
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
-            "Accept": "text/plain,text/html,application/json,*/*"
+            "Accept": "application/json,text/plain,*/*"
         }
         
         for attempt in range(1, max_attempts + 1):
@@ -1029,76 +1052,15 @@ async def saas_lookup(
                 print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Status Code: {resp.status_code}")
                 
                 if resp.status_code != 200:
+                    print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Bad status content: {resp.text[:400]}")
                     raise Exception(f"HTTP code {resp.status_code}")
                 
-                raw_text = resp.text or ""
-                cleaned_text = raw_text.replace("💳 BUY API : @Cyb3rS0ldier", "").replace("🆘 SUPPORT : @Cyb3rS0ldier", "").replace("💳 BUY API : Cyb3rS0ldier", "").replace("🆘 SUPPORT : Cyb3rS0ldier", "").strip()
-                lower_text = cleaned_text.lower()
+                body_text = resp.text.strip()
+                if "html" in resp.headers.get("content-type", "").lower() or body_text.startswith("<!DOCTYPE") or body_text.startswith("<html"):
+                    print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Received HTML instead of JSON")
+                    raise Exception("HTML page blocked / Cloudflare gate challenge")
                 
-                if "no result" in lower_text or "no records found" in lower_text or "error" in lower_text or not cleaned_text:
-                    return make_api_response({"status": "error", "message": f"No records found for {num}"})
-                
-                # Parse block text response
-                parsed_records = []
-                # Split using common separator lines
-                import re
-                blocks = re.split(r"────────────────────────|━━━━━━━━━━━━━━━━━━━━━━━━━━━", cleaned_text)
-                
-                for block in blocks:
-                    trimmed = block.strip()
-                    if not trimmed:
-                        continue
-                    if "Name:" not in trimmed and "Mobile:" not in trimmed:
-                        continue
-                    
-                    name_match = re.search(r"(?:👤\s*)?Name:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    father_match = re.search(r"(?:👨👦|👨|👦)?\s*Father\s*Name:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    mobile_match = re.search(r"(?:📱\s*)?Mobile:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    alt_match = re.search(r"(?:📞\s*)?Alternate:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    address_match = re.search(r"(?:🏠\s*)?Address:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    circle_match = re.search(r"(?:📡\s*)?Circle:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    aadhar_match = re.search(r"(?:🪪\s*)?Aadhaar:\s*([^\n\r]+)", trimmed, re.IGNORECASE)
-                    
-                    if name_match or mobile_match:
-                        name = name_match.group(1).strip() if name_match else "N/A"
-                        father_name = father_match.group(1).strip() if father_match else "N/A"
-                        mobile = mobile_match.group(1).strip() if mobile_match else num
-                        alt_mobile = alt_match.group(1).strip() if alt_match else "N/A"
-                        address = address_match.group(1).strip() if address_match else "N/A"
-                        circle_text = circle_match.group(1).strip() if circle_match else "N/A"
-                        aadhar_number = aadhar_match.group(1).strip() if aadhar_match else "N/A"
-                        
-                        operator = "N/A"
-                        state_circle = "N/A"
-                        if circle_text != "N/A":
-                            parts = circle_text.split()
-                            if len(parts) > 0:
-                                operator = parts[0]
-                                state_circle = " ".join(parts[1:]) if len(parts) > 1 else parts[0]
-                        
-                        parsed_records.append({
-                            "name": name,
-                            "father_name": father_name,
-                            "mobile": mobile,
-                            "alt_mobile": alt_mobile,
-                            "address": address,
-                            "operator": operator,
-                            "state_circle": state_circle,
-                            "aadhar_number": aadhar_number
-                        })
-                
-                if not parsed_records:
-                    return make_api_response({"status": "error", "message": f"No valid records parsed for {num}"})
-                
-                # Format to expected JSON results structure
-                results_dict = {}
-                for idx, rec in enumerate(parsed_records, 1):
-                    results_dict[f"Result {idx}"] = rec
-                
-                payload = {
-                    "status": "success",
-                    "results": results_dict
-                }
+                payload = resp.json()
                 break
             except Exception as lookup_err:
                 print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} failed: {lookup_err}")
