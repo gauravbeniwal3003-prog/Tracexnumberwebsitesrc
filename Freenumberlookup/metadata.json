@@ -1,0 +1,6 @@
+{
+  "name": "Free Mobile Number Lookup",
+  "description": "Free and fast 10-digit mobile number lookup tool with accurate carrier, location, and registration details.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
