@@ -25,6 +25,7 @@ import Terms from './pages/Terms.tsx';
 import Contact from './pages/Contact.tsx';
 import Refund from './pages/Refund.tsx';
 import SEOPage from './pages/SEO.tsx';
+import AboutGaurav from './pages/AboutGaurav.tsx';
 import BuyApi from './pages/BuyApi.tsx';
 import BuyCredits from './pages/BuyCredits.tsx';
 import ApiDashboard from './pages/ApiDashboard.tsx';
@@ -85,6 +86,8 @@ export default function App() {
         <Route path="/contactus" element={<Contact />} />
         <Route path="/refund" element={<Refund />} />
         <Route path="/trends" element={<SEOPage />} />
+        <Route path="/about-gaurav-beniwal" element={<AboutGaurav />} />
+        <Route path="/about" element={<AboutGaurav />} />
         <Route path="/buy-api" element={<BuyApi />} />
         <Route path="/buy-api/:planId" element={<BuyApi />} />
         <Route path="/pricing" element={<BuyCredits />} />
@@ -863,6 +866,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         </motion.div>
         
         <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 px-4 text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-6">
+          <Link to="/about-gaurav-beniwal" className="hover:text-cyan-400 transition-colors text-cyan-400">About Gaurav Beniwal</Link>
           <Link to="/contactus" className="hover:text-cyan-400 transition-colors">Contact Us</Link>
           <Link to="/refund" className="hover:text-cyan-400 transition-colors">Refund Policy</Link>
           <Link to="/terms" className="hover:text-cyan-400 transition-colors">Terms & Conditions</Link>

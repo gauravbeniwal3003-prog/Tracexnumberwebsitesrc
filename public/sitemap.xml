@@ -43,8 +43,16 @@
   <!-- SEO & Trends Portal -->
   <url>
     <loc>https://tracexnumber.web.app/trends</loc>
-    <lastmod>2026-06-19</lastmod>
+    <lastmod>2026-06-28</lastmod>
     <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <!-- About Senior Developer & Cyber Expert Gaurav Beniwal -->
+  <url>
+    <loc>https://tracexnumber.web.app/about-gaurav-beniwal</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   
