@@ -181,10 +181,10 @@ function formatUnifiedSaaSResponse({
       // Dynamic mapping for Aadhar, Bank (IFSC), and Ration Card lookups
       Object.entries(item).forEach(([key, val]) => {
         if (key === 'result_no') return;
-        const normalizedKey = key.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
+        const normalizedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
         let cleanedVal = val;
         if (typeof val === 'string') {
-          cleanedVal = val.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim().toUpperCase();
+          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim().toUpperCase();
         }
         filteredItem[normalizedKey] = cleanedVal;
       });
@@ -232,7 +232,7 @@ function formatUnifiedSaaSResponse({
 function cleanBrandingObject(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    return obj.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
   }
   if (Array.isArray(obj)) {
     return obj.map(item => cleanBrandingObject(item));
@@ -240,7 +240,7 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
-      const cleanedKey = key.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
+      const cleanedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
       cleaned[cleanedKey] = cleanBrandingObject(obj[key]);
     }
     return cleaned;
@@ -552,7 +552,7 @@ app.get("/api/lookup", async (req, res) => {
       }
 
       const text = await response.text();
-      const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
       const lowerText = cleanedText.toLowerCase();
 
       if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1083,7 +1083,7 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1230,7 +1230,7 @@ app.get("/api/identity", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1354,7 +1354,7 @@ app.get("/api/bank", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1478,7 +1478,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1616,7 +1616,7 @@ app.get("/api/vehicle", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//osint-api/vehicle.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
@@ -1624,7 +1624,7 @@ app.get("/api/vehicle", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1635,6 +1635,9 @@ app.get("/api/vehicle", async (req, res) => {
     let parsedData: any;
     try {
       parsedData = JSON.parse(cleanedText);
+      if (parsedData && parsedData.api_creator) {
+        delete parsedData.api_creator;
+      }
     } catch (e) {
       parsedData = { raw_data: cleanedText };
     }
@@ -1748,7 +1751,7 @@ app.get("/api/pancard", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {

@@ -386,7 +386,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         if any(fw in line_lower for fw in forbidden_keywords):
             continue
         # Strip some inline patterns
-        line = re.sub(r'(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)', '', line, flags=re.IGNORECASE)
+        line = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)', '', line, flags=re.IGNORECASE)
         # Strip code tag elements
         line = re.sub(r'<\/?code>', '', line)
         cleaned_lines.append(line)
@@ -1790,7 +1790,7 @@ async def vehicle_lookup(
                 return make_api_response({"status": "error", "message": "api error"})
                 
         # Proxy fetch
-        api_url = f"https://exploitsindia.site//osint-api/vehicle.php?exploits={target_query}"
+        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -1832,6 +1832,8 @@ async def vehicle_lookup(
             import json
             try:
                 parsed_data = json.loads(cleaned_body)
+                if parsed_data and "api_creator" in parsed_data:
+                    del parsed_data["api_creator"]
             except:
                 parsed_data = {"raw_data": cleaned_body}
                 

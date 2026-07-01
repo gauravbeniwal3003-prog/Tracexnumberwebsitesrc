@@ -454,7 +454,7 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
-      .replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss)/gi, "")
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss)/gi, "")
       .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
       .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
       .replace(/Powered_by/gi, "")

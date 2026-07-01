@@ -914,7 +914,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                     </div>
                     {(() => {
                       const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
-                        .replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
+                        .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
                         .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
                         .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
                       return scrubbed;
@@ -944,7 +944,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                   </div>
                   {(() => {
                     const scrubbed = JSON.stringify(result.results, null, 2)
-                      .replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
+                      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
                       .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
                       .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
                     return scrubbed;
