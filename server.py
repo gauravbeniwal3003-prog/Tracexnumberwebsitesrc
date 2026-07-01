@@ -206,11 +206,14 @@ async def fulfill_order(order_id: str, user_id: str):
         # Use more flexible ID checking with dynamic numeric credits support
         credits_to_add = 0
         if plan_id in ['c10', 'credit_10']: credits_to_add = 10
+        elif plan_id in ['c20', 'credit_20']: credits_to_add = 20
         elif plan_id in ['c40', 'credit_40']: credits_to_add = 40
         elif plan_id in ['c50', 'credit_50']: credits_to_add = 50
         elif plan_id in ['c100', 'credit_100']: credits_to_add = 100
         elif plan_id in ['c150', 'credit_150']: credits_to_add = 150
-        elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1000
+        elif plan_id in ['c250', 'credit_250']: credits_to_add = 275
+        elif plan_id in ['c500', 'credit_500']: credits_to_add = 600
+        elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1300
         else:
             # Dynamic fallback: if plan_id is of form cXX or credit_XX
             import re
@@ -2106,6 +2109,108 @@ async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query
     except Exception as e:
         print(f"PAN Find lookup error: {e}")
         return JSONResponse(status_code=500, content={"error": "Internal server error during processing lookup"})
+
+
+# Aadhaar to PAN secure credits lookup
+@app.post("/api/aadhaar-to-pan")
+async def aadhaar_to_pan_endpoint(request: Request):
+    from fastapi.responses import JSONResponse
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    aadhaar_number = body.get("aadhaar_number")
+    if not aadhaar_number:
+        return JSONResponse(status_code=400, content={"error": "Aadhaar number is required"})
+
+    target_aadhaar = str(aadhaar_number).strip()
+    if len(target_aadhaar) != 12 or not target_aadhaar.isdigit():
+        return JSONResponse(status_code=400, content={"error": "Aadhaar number must be exactly 12 digits"})
+
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        return JSONResponse(status_code=401, content={"error": "Authentication is required"})
+
+    token = auth_header.replace("Bearer ", "")
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Authentication token is empty"})
+
+    try:
+        db = get_supabase()
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Engine Offline: Database connection failure"})
+
+        # Authenticate user using supabase auth token
+        user_resp = db.auth.get_user(token)
+        if not user_resp or not user_resp.user:
+            return JSONResponse(status_code=401, content={"error": "Access Denied: Invalid or expired user session"})
+
+        user = user_resp.user
+
+        # Fetch profile
+        profile_query = db.table("profiles").select("*").eq("id", user.id).execute()
+        if not profile_query.data:
+            return JSONResponse(status_code=404, content={"error": "Profile record not found"})
+
+        profile = profile_query.data[0]
+        current_credits = int(profile.get("credits") or 0)
+        cost = 150
+
+        if current_credits < cost:
+            return JSONResponse(status_code=403, content={"error": "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans."})
+
+        # Deduct credits
+        db.table("profiles").update({"credits": max(0, current_credits - cost)}).eq("id", user.id).execute()
+
+        # Query External PAN Find API
+        api_key = "c8117598aafa71238a4bf8377087b0ff"
+        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
+        }
+        resp = requests.get(api_url, timeout=15, headers=headers)
+        
+        api_data = None
+        pan_found = False
+        retrieved_pan = ""
+
+        if resp.status_code == 200:
+            try:
+                api_data = resp.json()
+                if isinstance(api_data, dict):
+                    api_data.pop("developer", None)
+                    retrieved_pan = str(api_data.get("full_pan_number") or api_data.get("pan_number") or api_data.get("pan") or "").strip()
+                    if retrieved_pan and len(retrieved_pan) >= 5 and "not found" not in retrieved_pan.lower():
+                        pan_found = True
+            except Exception:
+                pass
+
+        # Refund 100 credits if PAN number was not found
+        if not pan_found:
+            refund_credits = max(0, current_credits - 50)
+            db.table("profiles").update({"credits": refund_credits}).eq("id", user.id).execute()
+            
+            return JSONResponse(status_code=200, content={
+                "status": "failed",
+                "pan_found": False,
+                "message": "No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)",
+                "credits_deducted": 50,
+                "results": api_data
+            })
+
+        return JSONResponse(status_code=200, content={
+            "status": "success",
+            "pan_found": True,
+            "pan": retrieved_pan,
+            "credits_deducted": 150,
+            "results": api_data
+        })
+
+    except Exception as err:
+        print(f"Aadhaar to PAN python error: {err}")
+        return JSONResponse(status_code=500, content={"error": "Internal server error during processing Aadhaar to PAN lookup"})
 
 
 if __name__ == "__main__":

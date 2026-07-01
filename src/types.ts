@@ -28,9 +28,12 @@ export const PROTECTION_PRICES = {
 };
 
 export const CREDIT_PLANS: PricingPlan[] = [
-  { id: 'c40', name: '40 Lookups', price: 20, type: 'credits', value: 40 },
-  { id: 'c150', name: '150 Lookups', price: 50, type: 'credits', value: 150 },
-  { id: 'c1000', name: '1000 Lookups', price: 250, type: 'credits', value: 1000 },
+  { id: 'c20', name: '20 Lookups', price: 20, type: 'credits', value: 20 },
+  { id: 'c50', name: '50 Lookups', price: 50, type: 'credits', value: 50 },
+  { id: 'c100', name: '100 Lookups', price: 100, type: 'credits', value: 100 },
+  { id: 'c250', name: '275 Lookups', price: 250, type: 'credits', value: 275 },
+  { id: 'c500', name: '600 Lookups', price: 500, type: 'credits', value: 600 },
+  { id: 'c1000', name: '1300 Lookups', price: 1000, type: 'credits', value: 1300 },
 ];
 
 export const UNLIMITED_PLANS: PricingPlan[] = [

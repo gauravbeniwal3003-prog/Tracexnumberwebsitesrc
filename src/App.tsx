@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2 } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
@@ -96,7 +96,7 @@ export default function App() {
         <Route path="/account/api" element={<ApiDashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/api-docs" element={<ApiDocs />} />
-        <Route path="/panfind" element={<PanFind />} />
+        <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
         {/* Separate Secure Payment Receiving Pages */}
         <Route path="/pgpay" element={<PgPaymentPage />} />
@@ -152,13 +152,20 @@ function LoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' }) {
+function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' }) {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Initializing Engine...');
   const [result, setResult] = useState<ApiResponse | null>(null);
+  const [aadhaarPanResult, setAadhaarPanResult] = useState<{
+    pan: string;
+    aadhaar_response: any;
+    pancard_loading: boolean;
+    pancard_result: any;
+    pancard_error: string | null;
+  } | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
   // Cooldown timer
@@ -173,6 +180,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   useEffect(() => {
     setPhoneNumber('');
     setResult(null);
+    setAadhaarPanResult(null);
     setError(null);
   }, [service]);
 
@@ -228,6 +236,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         'Verifying Permanent Account Holder...',
         'Correlating Status & Category Indexes...',
         'Structuring Financial Intel Logs...'
+      ];
+    } else if (service === 'aadhaar_to_pan') {
+      messages = [
+        'Syncing with Income Tax Department & UIDAI...',
+        'Initializing Secure Bypasses...',
+        'Verifying Aadhaar Number Integrity...',
+        'Extracting Target PAN Association...',
+        'Retrieving Linked Account Details...',
+        'Formatting Identity & PAN Intelligence...'
       ];
     }
 
@@ -296,6 +313,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setError('Please enter a valid 12-digit Identity/Aadhaar number.');
         return;
       }
+    } else if (service === 'aadhaar_to_pan') {
+      if (targetVal.length < 12) {
+        setError('Please enter a valid 12-digit Aadhaar number.');
+        return;
+      }
     } else if (service === 'bnk') {
       if (targetVal.length < 11) {
         setError('Please enter a valid 11-digit IFSC code (e.g., ABCD0001325).');
@@ -324,13 +346,23 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       creditCost = 10;
     } else if (service === 'pancard') {
       creditCost = 20;
+    } else if (service === 'aadhaar_to_pan') {
+      creditCost = 150;
     }
 
     // Check credits/subscription
-    if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
-      setError(`Insufficient credits. You need at least ${creditCost} credits to perform this lookup.`);
-      handleOpenPricing();
-      return;
+    if (service === 'aadhaar_to_pan') {
+      if ((profile?.credits || 0) < creditCost) {
+        setError(`Insufficient credits. You need at least ${creditCost} credits to perform Aadhaar to PAN lookup. (Note: Aadhaar to PAN is not included in any unlimited plans).`);
+        handleOpenPricing();
+        return;
+      }
+    } else {
+      if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
+        setError(`Insufficient credits. You need at least ${creditCost} credits to perform this lookup.`);
+        handleOpenPricing();
+        return;
+      }
     }
 
     setError(null);
@@ -370,7 +402,68 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       // Import corresponding lookups
-      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupPancard } = await import('./services/api.ts');
+      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupPancard, lookupAadhaarToPan } = await import('./services/api.ts');
+
+      if (service === 'aadhaar_to_pan') {
+        setAadhaarPanResult(null);
+        setResult(null);
+        setError(null);
+        setIsLoading(true);
+        setLoadingMessage('Bypassing Rate Limits...');
+
+        try {
+          const resStep1 = await lookupAadhaarToPan(targetVal);
+
+          await refreshProfile(); // update user credits instantly
+
+          if (resStep1.status === 'success' && resStep1.pan_found) {
+            const pan = resStep1.pan;
+            setAadhaarPanResult({
+              pan: pan,
+              aadhaar_response: resStep1.results,
+              pancard_loading: true,
+              pancard_result: null,
+              pancard_error: null
+            });
+            setIsLoading(false);
+
+            // Automatically proceed to Step 2
+            try {
+              const panDetails = await lookupPancard(pan);
+              if (panDetails.status && (panDetails.results || panDetails.raw_results)) {
+                setAadhaarPanResult(prev => prev ? {
+                  ...prev,
+                  pancard_loading: false,
+                  pancard_result: panDetails,
+                  pancard_error: null
+                } : null);
+              } else {
+                setAadhaarPanResult(prev => prev ? {
+                  ...prev,
+                  pancard_loading: false,
+                  pancard_result: null,
+                  pancard_error: panDetails.error || 'Failed to retrieve PAN Card details.'
+                } : null);
+              }
+            } catch (panErr: any) {
+              setAadhaarPanResult(prev => prev ? {
+                ...prev,
+                pancard_loading: false,
+                pancard_result: null,
+                pancard_error: panErr.message || 'Error occurred while fetching PAN details.'
+              } : null);
+            }
+          } else {
+            setIsLoading(false);
+            setError(resStep1.message || 'No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)');
+          }
+        } catch (err: any) {
+          setIsLoading(false);
+          setError(err.message || 'The Aadhaar to PAN gateway encountered an error.');
+        }
+        setCooldown(5);
+        return;
+      }
 
       let data: any;
       if (service === 'phone') {
@@ -439,6 +532,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'bnk') return 'VIP BA&NK Lookup';
     if (service === 'vehicle') return 'VIP Vehicle Lookup';
     if (service === 'pancard') return 'VIP PN/PAN Card Lookup';
+    if (service === 'aadhaar_to_pan') return 'VIP Aadhaar to PAN Lookup';
     return 'VIP Number Details Lookup';
   };
 
@@ -448,6 +542,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'bnk') return 'Enter Bank query or IFSC code (e.g. HDFC0001325)...';
     if (service === 'vehicle') return 'Enter Vehicle Number (e.g. BR07PB6268)...';
     if (service === 'pancard') return 'Enter PN/PAN Card Number (e.g. NTEPK1628C)...';
+    if (service === 'aadhaar_to_pan') return 'Enter 12-digit Aadhaar Number...';
     return 'Search number...';
   };
 
@@ -627,6 +722,16 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           >
             💳 PN CARD (20 CTR)
           </Link>
+          <Link
+            to="/panfind"
+            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+              service === 'aadhaar_to_pan'
+                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
+                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            💳 Aadhaar to PAN (150 CTR)*
+          </Link>
         </div>
 
         <motion.div
@@ -649,7 +754,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9_@]/g, '').slice(0, 40));
                   } else if (service === 'bnk') {
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
-                  } else if (service === 'adhr') {
+                  } else if (service === 'adhr' || service === 'aadhaar_to_pan') {
                     setPhoneNumber(val.replace(/[^0-9]/g, '').slice(0, 12));
                   } else if (service === 'vehicle') {
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
@@ -664,7 +769,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             </div>
             <button
               type="submit"
-              disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : service === 'adhr' ? 12 : service === 'pancard' ? 5 : 3)}
+              disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : (service === 'adhr' || service === 'aadhaar_to_pan') ? 12 : service === 'pancard' ? 5 : 3)}
               className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-cyan-500 text-zinc-950 font-bold transition-all flex items-center justify-center gap-2 liquid-shadow"
             >
               {isLoading ? (
@@ -726,6 +831,98 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         <div className="min-h-[100px]">
           {isLoading ? (
             <Skeleton message={loadingMessage} />
+          ) : aadhaarPanResult ? (
+            <div className="space-y-6">
+              {/* Step 1: Aadhaar to PAN Result */}
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-6 border-cyan-500/30 bg-cyan-500/5"
+              >
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500" />
+                
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                      <ShieldCheck size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white uppercase tracking-wide text-xs md:text-sm">
+                        Step 1: Aadhaar to PAN Decrypted
+                      </h3>
+                      <p className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">
+                        STATUS: SUCCESSFUL DECRYPTION
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500 bg-white/5 px-2 py-1 rounded-md">
+                    -150 CTR
+                  </span>
+                </div>
+
+                <div className="space-y-3 font-mono">
+                  <div className="p-4 rounded-xl bg-cyan-500/5 border border-cyan-500/10 flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] text-cyan-400 font-bold uppercase tracking-wider">Allocated PAN Number</span>
+                      <span className="text-sm md:text-lg font-extrabold text-white tracking-widest">{aadhaarPanResult.pan}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(aadhaarPanResult.pan)}
+                      className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center justify-center group"
+                      title="Copy PAN"
+                    >
+                      <Clipboard size={14} className="group-hover:scale-110 transition-transform" />
+                    </button>
+                  </div>
+
+                  {aadhaarPanResult.aadhaar_response && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
+                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Linking Status</span>
+                        <span className="text-xs text-zinc-200 capitalize">{aadhaarPanResult.aadhaar_response.aadhaar_status || "Linked"}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
+                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Target Aadhaar</span>
+                        <span className="text-xs text-zinc-200">{phoneNumber}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              {/* Step 2: PAN Card Details */}
+              <div className="relative">
+                {aadhaarPanResult.pancard_loading ? (
+                  <div className="glass-card p-8 flex flex-col items-center justify-center gap-3 border-purple-500/20 bg-purple-500/5">
+                    <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
+                    <span className="text-xs font-mono text-purple-300 animate-pulse">Getting PAN details...</span>
+                  </div>
+                ) : aadhaarPanResult.pancard_error ? (
+                  <div className="glass-card p-6 border-red-500/20 bg-red-500/5 text-center text-red-400 text-xs font-mono">
+                    {aadhaarPanResult.pancard_error}
+                  </div>
+                ) : aadhaarPanResult.pancard_result ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto"
+                  >
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2 flex justify-between items-center">
+                      <span>Step 2: Official Registry Raw Record Feed</span>
+                      <span className="text-emerald-400 font-bold">SUCCESS</span>
+                    </div>
+                    {(() => {
+                      const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
+                        .replace(/(tech[\s\-_]*vishal|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
+                        .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
+                        .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
+                      return scrubbed;
+                    })()}
+                  </motion.div>
+                ) : null}
+              </div>
+            </div>
           ) : result ? (
             <div className="space-y-6">
               {result.raw_results ? (

@@ -726,4 +726,37 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
   };
 };
 
+export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
+  try {
+    const sessionRes = await supabase.auth.getSession();
+    const token = sessionRes.data.session?.access_token;
+    
+    const renderBackendUrl = 'https://tracexdata-api.onrender.com';
+    const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/aadhaar-to-pan`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body: JSON.stringify({ aadhaar_number: aadhaarNo })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server returned status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    console.error('Aadhaar to PAN lookup error:', error);
+    return {
+      status: 'failed',
+      pan_found: false,
+      message: error.message || 'Verification failed. Please try again.'
+    };
+  }
+};
+
 

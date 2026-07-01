@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare, CreditCard, CheckCircle2, Loader2, X, ShieldCheck } from 'lucide-react';
+import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare, CreditCard, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
@@ -298,12 +298,19 @@ export default function BuyCredits() {
           
           {/* Section 1: Unlimited search plans */}
           <section>
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-4 mb-4">
               <div className="flex items-center gap-2 text-purple-400 font-bold uppercase tracking-[0.25em] text-[10px]">
                 <Zap size={14} />
                 Elite Subscriptions (Bypass limits)
               </div>
               <div className="h-px flex-1 bg-white/5" />
+            </div>
+            
+            <div className="p-4 mb-8 rounded-2xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-xs font-mono flex items-center gap-3">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>
+                <strong>CRITICAL NOTICE:</strong> Aadhaar to PAN lookup is <strong>strictly excluded</strong> from all Unlimited Plans due to third-party server costs. Aadhaar to PAN searches require credit balances (150 Credits per lookup).
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -338,10 +345,11 @@ export default function BuyCredits() {
                           'Totally unlimited lookups & queries',
                           'Zero wait-time background lookup queues',
                           'Full visibility of hidden metadata records',
-                          'No per-query charge, 24/7 priority routing'
+                          'No per-query charge, 24/7 priority routing',
+                          'Excludes Aadhaar to PAN (Requires Credits)'
                         ].map((feat, fIdx) => (
-                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-zinc-400">
-                            <CheckCircle2 size={14} className="text-purple-400 shrink-0" />
+                          <li key={fIdx} className={`flex items-center gap-2.5 text-xs ${feat.includes('Excludes') ? 'text-amber-400 font-semibold' : 'text-zinc-400'}`}>
+                            <CheckCircle2 size={14} className={`${feat.includes('Excludes') ? 'text-amber-500' : 'text-purple-400'} shrink-0`} />
                             <span>{feat}</span>
                           </li>
                         ))}

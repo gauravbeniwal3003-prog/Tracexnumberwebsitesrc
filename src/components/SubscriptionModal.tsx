@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CreditCard, Zap, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
+import { X, CreditCard, Zap, CheckCircle2, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { CREDIT_PLANS, UNLIMITED_PLANS, API_PLANS, PricingPlan } from '../types.ts';
 import { useAuth } from '../services/AuthContext.tsx';
 import { supabase } from '../services/supabase.ts';
@@ -406,12 +406,19 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
 
           {/* Unlimited Plans */}
           <section>
-            <div className="flex items-center justify-between mb-4 md:mb-6">
+            <div className="flex items-center justify-between mb-2 md:mb-4">
               <div className="flex items-center gap-2 text-purple-400 font-bold uppercase tracking-[0.2em] text-[10px]">
                 <Zap size={12} className="md:w-3.5 md:h-3.5" />
                 Elite Subscriptions
               </div>
               <div className="h-px flex-1 bg-white/5 ml-4" />
+            </div>
+
+            <div className="p-3 mb-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-[10px] md:text-xs font-mono flex items-center gap-2.5">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>
+                <strong>CRITICAL NOTICE:</strong> Aadhaar to PAN lookup is <strong>strictly excluded</strong> from all Unlimited Plans. Aadhaar to PAN lookup costs 150 Credits per query.
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
@@ -459,6 +466,12 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             <CheckCircle2 size={10} className="md:w-3 text-purple-400" />
                           </div>
                           <span className="truncate">Full Record Visibility</span>
+                        </div>
+                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-amber-400 font-medium">
+                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-amber-500/20 flex items-center justify-center border border-amber-500/20 shrink-0">
+                            <AlertCircle size={10} className="md:w-3 text-amber-400" />
+                          </div>
+                          <span className="truncate">Excludes Aadhaar to PAN</span>
                         </div>
                       </div>
 

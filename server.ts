@@ -766,11 +766,14 @@ async function fulfillOrder(orderId: string, userId: string) {
     let creditsToAdd = 0;
     
     if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 10;
+    else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 20;
     else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 40;
     else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 50;
     else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 100;
     else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 150;
-    else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1000;
+    else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 275;
+    else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 600;
+    else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1300;
     else {
       // Dynamic fallback extraction
       const match = strPlanId().match(/^(?:c|credit_?)(\d+)$/i);
@@ -1845,6 +1848,134 @@ app.get("/api/panfind", async (req, res) => {
   } catch (error: any) {
     console.error("PAN Find error:", error);
     return res.status(500).json({ error: "Internal server error during processing lookup" });
+  }
+});
+
+// Secure credits-based Aadhaar-to-PAN lookup
+app.post("/api/aadhaar-to-pan", async (req, res) => {
+  const { aadhaar_number } = req.body;
+  const authHeader = req.headers.authorization;
+
+  if (!aadhaar_number) {
+    return res.status(400).json({ error: "Aadhaar number is required" });
+  }
+
+  const targetAadhaar = String(aadhaar_number).trim();
+  if (!/^\d{12}$/.test(targetAadhaar)) {
+    return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
+  }
+
+  if (!authHeader) {
+    return res.status(401).json({ error: "Authentication is required" });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  if (!token) {
+    return res.status(401).json({ error: "Authentication token is empty" });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Engine Offline: Database connection failure" });
+    }
+
+    // 1. Authenticate user session
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Access Denied: Invalid or expired user session" });
+    }
+
+    // 2. Fetch user profile to verify credits
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr || !profile) {
+      return res.status(404).json({ error: "Profile record not found" });
+    }
+
+    const currentCredits = Number(profile.credits || 0);
+    const cost = 150;
+
+    if (currentCredits < cost) {
+      return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
+    }
+
+    // 3. Deduct 150 credits
+    const { error: deductError } = await supabaseAdmin
+      .from("profiles")
+      .update({ credits: Math.max(0, currentCredits - cost) })
+      .eq("id", user.id);
+
+    if (deductError) {
+      return res.status(500).json({ error: "Failed to deduct lookup credits. Please try again." });
+    }
+
+    // 4. Query External PAN Find API
+    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    
+    let apiData: any = null;
+    let panFound = false;
+    let retrievedPan = "";
+
+    try {
+      const apiResponse = await fetch(api_url);
+      if (apiResponse.ok) {
+        const rawText = await apiResponse.text();
+        try {
+          apiData = JSON.parse(rawText);
+          if (apiData && typeof apiData === "object") {
+            delete apiData.developer;
+            // Determine if PAN is found
+            retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
+            if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
+              panFound = true;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to parse external API response:", rawText);
+        }
+      }
+    } catch (apiErr) {
+      console.error("External PAN Find request failed:", apiErr);
+    }
+
+    // 5. Refund 100 credits if PAN number was not found (meaning net 50 credits deducted)
+    if (!panFound) {
+      const refundTargetCredits = Math.max(0, currentCredits - 50);
+      const { error: refundError } = await supabaseAdmin
+        .from("profiles")
+        .update({ credits: refundTargetCredits })
+        .eq("id", user.id);
+
+      if (refundError) {
+        console.error("Failed to process credit refund for user:", user.id, refundError);
+      }
+
+      return res.json({
+        status: "failed",
+        pan_found: false,
+        message: "No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)",
+        credits_deducted: 50,
+        results: apiData
+      });
+    }
+
+    // 6. Return successful search payload
+    return res.json({
+      status: "success",
+      pan_found: true,
+      pan: retrievedPan,
+      credits_deducted: 150,
+      results: apiData
+    });
+
+  } catch (err: any) {
+    console.error("Aadhaar to PAN API general error:", err);
+    return res.status(500).json({ error: "Internal server error during processing Aadhaar to PAN lookup" });
   }
 });
 
