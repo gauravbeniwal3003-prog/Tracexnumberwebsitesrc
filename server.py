@@ -659,9 +659,25 @@ async def saas_lookup(
                 key=key, 
                 query=query or number or numquery
             )
+        elif service_lower in ["vehicle", "rc", "vahan"]:
+            rc_arg = request.query_params.get("rc") or query or number or numquery
+            return await vehicle_lookup(
+                request=request,
+                key=key,
+                rc=rc_arg
+            )
 
 
     num = (number or query or numquery or "").strip()
+
+    import re
+    if not service and num:
+        if re.match(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', num):
+            return await bank_lookup(request=request, key=key, query=num)
+        elif re.match(r'^[A-Za-z0-9]{4,11}$', num) and any(c.isalpha() for c in num) and any(c.isdigit() for c in num) and "_" not in num and not num.startswith("@"):
+            return await vehicle_lookup(request=request, key=key, rc=num)
+        elif num.isdigit() and len(num) == 12:
+            return await identity_lookup(request=request, key=key, query=num)
 
     try:
         # 1. Rate Limiting Check
@@ -847,7 +863,7 @@ async def saas_lookup(
             if not num.isdigit() or len(num) != 10:
                 return make_api_response({
                     "status": "error",
-                    "message": f"Invalid Format: '{num}' is not a valid 10-digit mobile number! To do a Mobile Number lookup, please provide an exact 10-digit numeric number. If you wanted to run a Telegram username lookup, please provide a username containing letters, or starting with @ (e.g., '@gaurav_beniwal_0001')."
+                    "message": f"Invalid Query: '{num}' is not a 10-digit mobile number"
                 })
 
         # 6. Log search queries
@@ -1790,7 +1806,7 @@ async def vehicle_lookup(
                 return make_api_response({"status": "error", "message": "api error"})
                 
         # Proxy fetch
-        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
+        api_url = f"https://exploitsindia.site//osint-api/vehicle.php?exploits={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"

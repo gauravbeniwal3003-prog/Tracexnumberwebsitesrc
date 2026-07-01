@@ -151,7 +151,7 @@ function formatUnifiedSaaSResponse({
   requestsUsed,
   records
 }: {
-  type: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion';
+  type: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle';
   query: string;
   expiresAt: string;
   planName: string;
@@ -279,7 +279,7 @@ app.get("/api/lookup", async (req, res) => {
 
   let keyRecord: any = null;
   let targetQuery = "";
-  let lookupType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' = 'phone';
+  let lookupType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' = 'phone';
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
@@ -343,6 +343,9 @@ app.get("/api/lookup", async (req, res) => {
     } else if (req.query.rasionquery !== undefined) {
       lookupType = 'rasion';
       targetQuery = String(req.query.rasionquery).trim();
+    } else if (req.query.vehiclequery !== undefined) {
+      lookupType = 'vehicle';
+      targetQuery = String(req.query.vehiclequery).trim();
     }
     // Priority 2: Legacy or explicit service select
     else if (telegram || tg || service === 'telegram') {
@@ -357,6 +360,9 @@ app.get("/api/lookup", async (req, res) => {
     } else if (service === 'rasion' || service === 'ration') {
       lookupType = 'rasion';
       targetQuery = String(query || req.query.family || req.query.rasion || "").trim();
+    } else if (service === 'vehicle' || service === 'rc' || req.query.rc !== undefined || req.query.vehicle !== undefined) {
+      lookupType = 'vehicle';
+      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
     } else if (number || phone || service === 'phone' || service === 'number') {
       lookupType = 'phone';
       targetQuery = String(number || phone || query || "").trim();
@@ -372,8 +378,15 @@ app.get("/api/lookup", async (req, res) => {
         lookupType = 'bnk';
       } else if (planUpper.includes("RASION") || planUpper.includes("RATION")) {
         lookupType = 'rasion';
+      } else if (planUpper.includes("VEHICLE")) {
+        lookupType = 'vehicle';
       } else {
-        lookupType = 'phone';
+        const q = String(query).trim();
+        if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/.test(q)) lookupType = 'bnk';
+        else if (/^[A-Za-z0-9]{4,11}$/.test(q) && /[A-Za-z]/.test(q) && /[0-9]/.test(q)) lookupType = 'vehicle';
+        else if (q.startsWith('@') || (/[a-zA-Z_]/.test(q) && !/^\d+$/.test(q))) lookupType = 'telegram';
+        else if (/^\d{12}$/.test(q)) lookupType = 'adhr';
+        else lookupType = 'phone';
       }
       targetQuery = String(query).trim();
     }
@@ -408,6 +421,8 @@ app.get("/api/lookup", async (req, res) => {
         isAuthorized = planUpper.includes("BNK") || planUpper.includes("BANK");
       } else if (lookupType === 'rasion') {
         isAuthorized = planUpper.includes("RASION") || planUpper.includes("RATION");
+      } else if (lookupType === 'vehicle') {
+        isAuthorized = planUpper.includes("VEHICLE");
       }
 
       if (!isAuthorized) {
@@ -421,6 +436,12 @@ app.get("/api/lookup", async (req, res) => {
     // 4. Schema checks
     if (lookupType === 'phone' && !/^\d{10}$/.test(targetQuery)) {
       return res.status(400).json({ status: "error", message: `Invalid Query: '${targetQuery}' is not a 10-digit mobile number` });
+    }
+    if (lookupType === 'vehicle') {
+      targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (targetQuery.length < 3) {
+        return res.status(400).json({ status: "error", message: `Invalid Query: '${targetQuery}' is not a valid vehicle number` });
+      }
     }
 
     // Safety and Privacy Shield Protection check (for mobile and telegram)
@@ -600,7 +621,7 @@ app.get("/api/lookup", async (req, res) => {
       });
 
       return res.json(filtered);
-    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion') {
+    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle') {
       let api_url = "";
       let logPrefix = "";
       
@@ -613,6 +634,9 @@ app.get("/api/lookup", async (req, res) => {
       } else if (lookupType === 'rasion') {
         api_url = `https://exploitsindia.site//hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "RASION";
+      } else if (lookupType === 'vehicle') {
+        api_url = `https://exploitsindia.site//osint-api/vehicle.php?exploits=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "VEHICLE";
       }
 
       const response = await fetch(api_url);
@@ -621,7 +645,7 @@ app.get("/api/lookup", async (req, res) => {
       }
 
       const text = await response.text();
-      const cleanedText = text.replace(/(tech\s*vishal|anish\s*exploits|@?cyb3rs0ldier)/gi, "");
+      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
       const lowerText = cleanedText.toLowerCase();
 
       if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -632,6 +656,9 @@ app.get("/api/lookup", async (req, res) => {
       let parsedData: any;
       try {
         parsedData = JSON.parse(cleanedText);
+        if (lookupType === 'vehicle' && parsedData && parsedData.api_creator) {
+          delete parsedData.api_creator;
+        }
       } catch (e) {
         parsedData = { raw_data: cleanedText };
       }
@@ -1616,7 +1643,7 @@ app.get("/api/vehicle", async (req, res) => {
       }
     }
 
-    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://exploitsindia.site//osint-api/vehicle.php?exploits=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
