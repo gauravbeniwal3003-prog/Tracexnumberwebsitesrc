@@ -104,9 +104,8 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
 
   return {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    powered_by: "TraceXData Intelligence",
-    owner: "@gaurav_beniwal_0001",
-    buy_api: "https://tracexdata-api.onrender.com/buy-api",
+    buy_api: "https://tracexnumber.web.app/buy-api",
+    website: "https://tracexnumber.web.app",
     query: query,
     api_status: {
       plan: planName,
@@ -212,9 +211,8 @@ function formatUnifiedSaaSResponse({
 
   return {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    powered_by: "TraceXData Intelligence",
-    owner: "@gaurav_beniwal_0001",
-    buy_api: "https://tracexdata-api.onrender.com/buy-api",
+    buy_api: "https://tracexnumber.web.app/buy-api",
+    website: "https://tracexnumber.web.app",
     query: query,
     api_status: {
       plan: planName,
@@ -405,6 +403,13 @@ app.get("/api/lookup", async (req, res) => {
       });
     }
 
+    if (lookupType === 'telegram') {
+      return res.status(200).json({
+        status: "error",
+        message: "Telegram lookup is currently under maintenance. Please try again later."
+      });
+    }
+
     // 3. Strict Permission Enforcement: Block Cross-Service usage
     const planUpper = String(keyRecord.plan_name || "").toUpperCase();
     const isMasterOrInternal = isMaster || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("COMBO");
@@ -413,7 +418,7 @@ app.get("/api/lookup", async (req, res) => {
       let isAuthorized = false;
       if (lookupType === 'phone') {
         isAuthorized = planUpper.includes("NUMBER");
-      } else if (lookupType === 'telegram') {
+      } else if ((lookupType as string) === 'telegram') {
         isAuthorized = planUpper.includes("TELEGRAM");
       } else if (lookupType === 'adhr') {
         isAuthorized = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH");
@@ -453,7 +458,7 @@ app.get("/api/lookup", async (req, res) => {
         .eq('phone_number', targetQuery)
         .maybeSingle();
       if (protectedData) isProtected = true;
-    } else if (lookupType === 'telegram') {
+    } else if ((lookupType as string) === 'telegram') {
       const { data: protectedData } = await supabaseAdmin
         .from('protected_telegrams')
         .select('telegram_id')
@@ -485,12 +490,12 @@ app.get("/api/lookup", async (req, res) => {
         address: "PROTECTED @ TRACEX SHIELD"
       };
 
-      if (lookupType === 'telegram') {
+      if ((lookupType as string) === 'telegram') {
         mockRecord.telegram_id = targetQuery;
       }
 
       const responsePayload = formatUnifiedSaaSResponse({
-        type: lookupType === 'phone' ? 'phone' : 'telegram',
+        type: (lookupType as string) === 'phone' ? 'phone' : 'telegram',
         query: targetQuery,
         expiresAt: keyRecord.expires_at,
         planName: keyRecord.plan_name,
@@ -564,7 +569,7 @@ app.get("/api/lookup", async (req, res) => {
         clearTimeout(timeoutId);
         throw new Error(`Connection Timeout: Downstream provider failed to respond within 12s`);
       }
-    } else if (lookupType === 'telegram') {
+    } else if ((lookupType as string) === 'telegram') {
       const target_username = targetQuery.startsWith('@') ? targetQuery : `@${targetQuery}`;
       const api_url = `https://exploitsindia.site//osint-api/telegram.php?exploits=${encodeURIComponent(target_username)}`;
       const response = await fetch(api_url);
@@ -635,7 +640,7 @@ app.get("/api/lookup", async (req, res) => {
         api_url = `https://exploitsindia.site//hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "RASION";
       } else if (lookupType === 'vehicle') {
-        api_url = `https://exploitsindia.site//osint-api/vehicle.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
         logPrefix = "VEHICLE";
       }
 
@@ -988,6 +993,11 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
 
 // Telegram Lookup API Middleware Proxy
 app.get("/api/telegram", async (req, res) => {
+  return res.status(200).json({
+    status: "error",
+    message: "Telegram lookup is currently under maintenance. Please try again later."
+  });
+
   const { query, telegram, api } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   const targetTelegramId = String(query || telegram || api || "").trim();
@@ -1643,7 +1653,7 @@ app.get("/api/vehicle", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//osint-api/vehicle.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
@@ -2056,16 +2066,46 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    const { data: profileData, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("*")
       .order("email", { ascending: true });
     
-    if (error) {
-      console.error("[GET_ADMIN_PROFILES_ERR]", error);
-      return res.status(500).json({ error: error.message });
+    if (profileError) {
+      console.error("[GET_ADMIN_PROFILES_ERR]", profileError);
+      return res.status(500).json({ error: profileError.message });
     }
-    return res.json({ status: "success", data });
+
+    const mergedProfiles = [];
+    const profileMap = new Map((profileData || []).map(p => [p.id, p]));
+
+    if (authData && authData.users) {
+      for (const authUser of authData.users) {
+        if (profileMap.has(authUser.id)) {
+          mergedProfiles.push(profileMap.get(authUser.id));
+          profileMap.delete(authUser.id);
+        } else {
+          mergedProfiles.push({
+            id: authUser.id,
+            email: authUser.email || "",
+            full_name: authUser.user_metadata?.full_name || "",
+            credits: 0,
+            unlimited_expiry: null,
+            created_at: authUser.created_at
+          });
+        }
+      }
+    }
+
+    for (const p of Array.from(profileMap.values())) {
+      mergedProfiles.push(p);
+    }
+
+    mergedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+
+    return res.json({ status: "success", data: mergedProfiles });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -2106,19 +2146,20 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
 app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
-  const { full_name, credits, unlimited_expiry } = req.body;
+  const { email, full_name, credits, unlimited_expiry } = req.body;
 
   try {
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
 
     const { data, error } = await supabaseAdmin
       .from("profiles")
-      .update({
+      .upsert({
+        id: id,
+        email: email,
         full_name: full_name || "",
         credits: Number(credits || 0),
         unlimited_expiry: expiry
-      })
-      .eq("id", id)
+      }, { onConflict: 'id' })
       .select();
 
     if (error) {
@@ -2135,6 +2176,8 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
 
   try {
+    await supabaseAdmin.auth.admin.deleteUser(id);
+    
     const { error } = await supabaseAdmin
       .from("profiles")
       .delete()

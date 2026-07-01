@@ -528,17 +528,8 @@ def clean_branding_recursive(obj):
     return obj
 
 def make_api_response(data: dict) -> dict:
-    branding = {
-        "provider": "TRACEXDATA",
-        "developer": "@gaurav_beniwal_0001",
-        "api_buy_link": "https://tracexdata-api.onrender.com/buy-api",
-        "website_link": "https://tracexdata-api.onrender.com"
-    }
-    # Place directly at the root level of the response dictionary for highest visibility
-    data["developer"] = "@gaurav_beniwal_0001"
-    data["api_buy_link"] = "https://tracexdata-api.onrender.com/buy-api"
-    data["website_link"] = "https://tracexdata-api.onrender.com"
-    data["branding"] = branding
+    data["api_buy_link"] = "https://tracexnumber.web.app/buy-api"
+    data["website_link"] = "https://tracexnumber.web.app"
     return data
 
 def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
@@ -885,6 +876,7 @@ async def saas_lookup(
 
         # 8. Intelligence Source Dispatch
         if is_telegram_query:
+            return make_api_response({"status": "error", "message": "Telegram lookup is currently under maintenance. Please try again later."})
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num if num.startswith('@') else f"@{num}"
             api_url = f"https://exploitsindia.site//osint-api/telegram.php?exploits={requests.utils.quote(target_username)}"
@@ -1139,6 +1131,7 @@ async def telegram_lookup(
     query: Optional[str] = Query(None),
     api: Optional[str] = Query(None)
 ):
+    return make_api_response({"status": "error", "message": "Telegram lookup is currently under maintenance. Please try again later."})
     targetTelegramId = (query or telegram or api or "").strip()
     if not targetTelegramId:
         return make_api_response({"status": "error", "message": "Telegram query parameter is required"})
@@ -1806,7 +1799,7 @@ async def vehicle_lookup(
                 return make_api_response({"status": "error", "message": "api error"})
                 
         # Proxy fetch
-        api_url = f"https://exploitsindia.site//osint-api/vehicle.php?exploits={target_query}"
+        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"

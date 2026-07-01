@@ -360,6 +360,7 @@ export default function AdminDashboard() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
+          email: selectedUser.email,
           full_name: selectedUser.full_name || '',
           credits: Number(selectedUser.credits || 0),
           unlimited_expiry: expiry
