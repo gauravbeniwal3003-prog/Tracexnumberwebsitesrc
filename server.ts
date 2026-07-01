@@ -813,7 +813,7 @@ async function fulfillOrder(orderId: string, userId: string) {
 
 // Cashfree Routes
 app.post("/api/cashfree/create-order", async (req, res) => {
-  const isPgPay = req.body?.plan_id === "pgpay_manual";
+  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
   if (!supabaseAdmin && !isPgPay) {
     return res.status(500).json({ error: "Backend not configured (Supabase Admin missing)" });
   }
@@ -1777,6 +1777,74 @@ app.get("/api/pancard", async (req, res) => {
     console.error("PAN/PN Card Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
     return res.status(500).json({ status: "error", message: "api error" });
+  }
+});
+
+// PAN Find secure payment lookup endpoint
+app.get("/api/panfind", async (req, res) => {
+  const { order_id, aadhaar_number } = req.query;
+
+  if (!order_id || !aadhaar_number) {
+    return res.status(400).json({ error: "Missing required query parameters: order_id and aadhaar_number" });
+  }
+
+  const targetAadhaar = String(aadhaar_number).trim();
+  if (!/^\d{12}$/.test(targetAadhaar)) {
+    return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
+  }
+
+  try {
+    let order_status = "";
+    
+    // 1. Verify payment status with Cashfree
+    if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+      console.log("[PANFIND] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
+      const renderBackendUrl = "https://tracexdata-api.onrender.com";
+      const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
+      const data: any = await response.json();
+      order_status = data.order_status;
+    } else {
+      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${order_id}`, {
+        headers: {
+          'x-client-id': CASHFREE_APP_ID,
+          'x-client-secret': CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01'
+        }
+      });
+      const data: any = await response.json();
+      order_status = data.order_status;
+    }
+
+    if (order_status !== "PAID") {
+      return res.status(402).json({ error: "Payment verification failed. Please complete the Rs. 150 payment." });
+    }
+
+    // 2. Execute target API lookup
+    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    
+    const apiResponse = await fetch(api_url);
+    if (!apiResponse.ok) {
+      return res.status(502).json({ error: "External verification gateway offline. Please contact support." });
+    }
+
+    const rawText = await apiResponse.text();
+    let apiData: any;
+    try {
+      apiData = JSON.parse(rawText);
+    } catch (e) {
+      apiData = { error: "Failed to parse search output", raw: rawText };
+    }
+
+    // 3. Remove "developer": "@techvishalboss" from the response object
+    if (apiData && typeof apiData === "object") {
+      delete apiData.developer;
+    }
+
+    return res.json(apiData);
+  } catch (error: any) {
+    console.error("PAN Find error:", error);
+    return res.status(500).json({ error: "Internal server error during processing lookup" });
   }
 });
 

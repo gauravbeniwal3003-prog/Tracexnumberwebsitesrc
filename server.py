@@ -262,12 +262,14 @@ async def fulfill_order(order_id: str, user_id: str):
 
 @app.post("/api/cashfree/create-order")
 async def create_order(payload: dict = Body(...), request: Request = None):
+    plan_id = payload.get("plan_id")
+    is_pg_pay = plan_id in ["pgpay_manual", "panfind"]
+    
     db = get_supabase()
-    if not db:
+    if not db and not is_pg_pay:
         return {"error": "Server connection failure"}
 
     user_id = payload.get("user_id")
-    plan_id = payload.get("plan_id")
     amount = payload.get("amount")
     user_email = payload.get("user_email", "customer@example.com")
     customer_phone = payload.get("customer_phone", "9999999999")
@@ -315,14 +317,20 @@ async def create_order(payload: dict = Body(...), request: Request = None):
             return {"error": data.get("message", "Cashfree error")}
 
         # Log pending claim
-        db_user_id = user_id if is_valid_uuid(user_id) else None
-        db.table("payment_claims").insert({
-            "payment_id": order_id,
-            "user_id": db_user_id,
-            "plan_id": plan_id,
-            "amount": float(amount),
-            "status": "pending"
-        }).execute()
+        if db:
+            db_user_id = user_id if is_valid_uuid(user_id) else None
+            try:
+                db.table("payment_claims").insert({
+                    "payment_id": order_id,
+                    "user_id": db_user_id,
+                    "plan_id": plan_id,
+                    "amount": float(amount),
+                    "status": "pending"
+                }).execute()
+            except Exception as dberr:
+                print(f"[DB_CLAIM_ERR] {dberr}")
+        else:
+            print("[TRACEXDATA] Supabase database offline. Proceeding without payment claim logging.")
 
         return data
     except Exception as e:
@@ -2040,6 +2048,64 @@ async def pancard_lookup(
     except Exception as general_err:
         print(f"[PANCARD_ERR] {general_err}")
         return make_api_response({"status": "error", "message": "api error"})
+
+
+# PAN Find secure paid lookup endpoint
+@app.get("/api/panfind")
+async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query(...)):
+    from fastapi.responses import JSONResponse
+    target_aadhaar = str(aadhaar_number).strip()
+    if not target_aadhaar or len(target_aadhaar) != 12 or not target_aadhaar.isdigit():
+        return JSONResponse(status_code=400, content={"error": "Aadhaar number must be exactly 12 digits"})
+
+    try:
+        order_status = ""
+        # 1. Verify with Cashfree
+        if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
+            print("[PANFIND] Local Cashfree credentials missing. Proxying status verification request...")
+            render_backend_url = "https://tracexdata-api.onrender.com"
+            resp = requests.get(f"{render_backend_url}/api/cashfree/status/{order_id}")
+            if resp.status_code == 200:
+                data = resp.json()
+                order_status = data.get("order_status", "")
+        else:
+            headers = {
+                "x-client-id": CASHFREE_APP_ID,
+                "x-client-secret": CASHFREE_SECRET_KEY,
+                "x-api-version": "2023-08-01"
+            }
+            resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{order_id}", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                order_status = data.get("order_status", "")
+
+        if order_status != "PAID":
+            return JSONResponse(status_code=402, content={"error": "Payment verification failed. Please complete the Rs. 150 payment."})
+
+        # 2. Execute external API
+        api_key = "c8117598aafa71238a4bf8377087b0ff"
+        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
+        }
+        resp = requests.get(api_url, timeout=15, headers=headers)
+        if resp.status_code != 200:
+            return JSONResponse(status_code=502, content={"error": "External verification gateway offline. Please contact support."})
+
+        try:
+            api_data = resp.json()
+        except:
+            api_data = {"error": "Failed to parse search output", "raw": resp.text}
+
+        # 3. Remove "developer": "@techvishalboss" from response
+        if isinstance(api_data, dict):
+            api_data.pop("developer", None)
+
+        return api_data
+    except Exception as e:
+        print(f"PAN Find lookup error: {e}")
+        return JSONResponse(status_code=500, content={"error": "Internal server error during processing lookup"})
 
 
 if __name__ == "__main__":

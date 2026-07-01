@@ -32,6 +32,7 @@ import ApiDashboard from './pages/ApiDashboard.tsx';
 import AdminDashboard from './pages/AdminDashboard.tsx';
 import ApiDocs from './pages/ApiDocs.tsx';
 import PgPaymentPage from './pages/PgPaymentPage.tsx';
+import PanFind from './pages/PanFind.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -95,6 +96,7 @@ export default function App() {
         <Route path="/account/api" element={<ApiDashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/api-docs" element={<ApiDocs />} />
+        <Route path="/panfind" element={<PanFind />} />
         
         {/* Separate Secure Payment Receiving Pages */}
         <Route path="/pgpay" element={<PgPaymentPage />} />
