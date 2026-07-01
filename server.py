@@ -76,7 +76,7 @@ async def fulfill_order(order_id: str, user_id: str):
         user_email = claim.get('user_email', 'N/A')
 
         # Handle manual pgpay guest payments
-        if plan_id == "pgpay_manual":
+        if plan_id in ["pgpay_manual", "panfind"]:
             db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
             print(f"[SaaS] Manual Guest Payment fulfilled successfully for {order_id}")
             return

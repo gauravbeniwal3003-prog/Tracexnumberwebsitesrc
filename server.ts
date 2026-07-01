@@ -687,7 +687,7 @@ async function fulfillOrder(orderId: string, userId: string) {
     const { plan_id, user_email } = claim;
 
     // Handle manual pgpay guest payments
-    if (plan_id === "pgpay_manual") {
+    if (plan_id === "pgpay_manual" || plan_id === "panfind") {
       await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
       console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
       return;

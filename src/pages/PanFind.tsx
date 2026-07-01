@@ -8,6 +8,7 @@ export default function PanFind() {
   const [searchParams, setSearchParams] = useSearchParams();
   const orderId = searchParams.get('order_id');
   const queryAadhaar = searchParams.get('aadhaar_number');
+  const renderBackendUrl = "https://tracexdata-api.onrender.com";
 
   // Input States
   const [aadhaarNumber, setAadhaarNumber] = useState(queryAadhaar || '');
@@ -35,7 +36,7 @@ export default function PanFind() {
     setErrorMsg(null);
     try {
       // Fetch status & results in a single secure server-side call
-      const response = await fetch(`/api/panfind?order_id=${encodeURIComponent(oid)}&aadhaar_number=${encodeURIComponent(aadhaar)}`);
+      const response = await fetch(`${renderBackendUrl}/api/panfind?order_id=${encodeURIComponent(oid)}&aadhaar_number=${encodeURIComponent(aadhaar)}`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -77,7 +78,7 @@ export default function PanFind() {
         return_url: `${window.location.origin}/panfind?order_id={order_id}&aadhaar_number=${cleanAadhaar}`
       };
 
-      const response = await fetch(`/api/cashfree/create-order`, {
+      const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
