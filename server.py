@@ -2122,6 +2122,34 @@ async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query
         return JSONResponse(status_code=500, content={"error": "Internal server error during processing lookup"})
 
 
+def scrub_all_branding(obj):
+    if not obj:
+        return obj
+    if isinstance(obj, str):
+        import re
+        # Case-insensitive removal of any provider/developer related brand words
+        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support)', '', obj, flags=re.IGNORECASE)
+        res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier', '', res, flags=re.IGNORECASE)
+        res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier', '', res, flags=re.IGNORECASE)
+        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
+        return res.strip()
+    if isinstance(obj, list):
+        return [scrub_all_branding(item) for item in obj]
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            lower_k = k.lower()
+            if lower_k in [
+                "branding", "success", "status", "found", "message", "api_info", "powered_by", 
+                "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
+                "provider", "api_buy_link", "website_link", "buy"
+            ]:
+                continue
+            cleaned[k] = scrub_all_branding(v)
+        return cleaned
+    return obj
+
+
 # Aadhaar to PAN secure credits lookup
 @app.post("/api/aadhaar-to-pan")
 async def aadhaar_to_pan_endpoint(request: Request):
@@ -2159,7 +2187,37 @@ async def aadhaar_to_pan_endpoint(request: Request):
 
         user = user_resp.user
 
-        # Fetch profile
+        # 1. First, check if result is already cached in database (Bypass charging user completely)
+        cached_query = None
+        try:
+            cached_query = db.table("aadhaar_pan_results").select("*").eq("aadhaar_number", target_aadhaar).execute()
+        except Exception as cache_err:
+            print(f"Python Aadhaar to PAN db cache check error: {cache_err}")
+
+        if cached_query and cached_query.data:
+            cached = cached_query.data[0]
+            # Log search to history
+            try:
+                db.table("search_history").insert({
+                    "user_id": user.id,
+                    "user_email": user.email or "Guest User",
+                    "search_type": "aadhaar_to_pan",
+                    "query": target_aadhaar,
+                    "status": "success"
+                }).execute()
+            except Exception as e:
+                print(f"Failed to log cached search history: {e}")
+
+            return JSONResponse(status_code=200, content={
+                "status": "success",
+                "pan_found": True,
+                "pan": cached.get("pan_number"),
+                "credits_deducted": 0,
+                "results": scrub_all_branding(cached.get("raw_data")),
+                "cached": True
+            })
+
+        # 2. Fetch profile (only if not cached)
         profile_query = db.table("profiles").select("*").eq("id", user.id).execute()
         if not profile_query.data:
             return JSONResponse(status_code=404, content={"error": "Profile record not found"})
@@ -2171,10 +2229,10 @@ async def aadhaar_to_pan_endpoint(request: Request):
         if current_credits < cost:
             return JSONResponse(status_code=403, content={"error": "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans."})
 
-        # Deduct credits
+        # 3. Deduct credits
         db.table("profiles").update({"credits": max(0, current_credits - cost)}).eq("id", user.id).execute()
 
-        # Query External PAN Find API
+        # 4. Query External PAN Find API
         api_key = "c8117598aafa71238a4bf8377087b0ff"
         api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
         
@@ -2191,32 +2249,53 @@ async def aadhaar_to_pan_endpoint(request: Request):
             try:
                 api_data = resp.json()
                 if isinstance(api_data, dict):
-                    api_data.pop("developer", None)
+                    # Scrub branding
+                    api_data = scrub_all_branding(api_data)
                     retrieved_pan = str(api_data.get("full_pan_number") or api_data.get("pan_number") or api_data.get("pan") or "").strip()
                     if retrieved_pan and len(retrieved_pan) >= 5 and "not found" not in retrieved_pan.lower():
                         pan_found = True
             except Exception:
                 pass
 
-        # Refund 100 credits if PAN number was not found
+        # 5. Log search to history
+        search_status = "success" if pan_found else "not_found"
+        try:
+            db.table("search_history").insert({
+                "user_id": user.id,
+                "user_email": user.email or "Guest User",
+                "search_type": "aadhaar_to_pan",
+                "query": target_aadhaar,
+                "status": search_status
+            }).execute()
+        except Exception as e:
+            print(f"Failed to log search history: {e}")
+
         if not pan_found:
-            refund_credits = max(0, current_credits - 50)
-            db.table("profiles").update({"credits": refund_credits}).eq("id", user.id).execute()
-            
             return JSONResponse(status_code=200, content={
                 "status": "failed",
                 "pan_found": False,
-                "message": "No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)",
-                "credits_deducted": 50,
-                "results": api_data
+                "message": "No PAN number found for this Aadhaar number. 150 credits deducted.",
+                "credits_deducted": 150,
+                "results": scrub_all_branding(api_data) if api_data else None
             })
+
+        # 6. Store successful result in database
+        scrubbed_api_data = scrub_all_branding(api_data or {})
+        try:
+            db.table("aadhaar_pan_results").insert({
+                "aadhaar_number": target_aadhaar,
+                "pan_number": retrieved_pan,
+                "raw_data": scrubbed_api_data
+            }).execute()
+        except Exception as db_err:
+            print(f"Failed to insert Aadhaar to PAN success cache: {db_err}")
 
         return JSONResponse(status_code=200, content={
             "status": "success",
             "pan_found": True,
             "pan": retrieved_pan,
             "credits_deducted": 150,
-            "results": api_data
+            "results": scrubbed_api_data
         })
 
     except Exception as err:

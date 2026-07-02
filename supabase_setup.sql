@@ -339,3 +339,24 @@ BEGIN
     END IF;
 END
 $$;
+
+-- ==========================================
+-- 10. AADHAAR TO PAN RESULT CACHING
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public.aadhaar_pan_results (
+    aadhaar_number TEXT PRIMARY KEY,
+    pan_number TEXT NOT NULL,
+    raw_data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE public.aadhaar_pan_results ENABLE ROW LEVEL SECURITY;
+
+-- Select/Insert policies
+DROP POLICY IF EXISTS "Anyone can read cached aadhaar_pan_results" ON public.aadhaar_pan_results;
+CREATE POLICY "Anyone can read cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR SELECT USING (TRUE);
+
+DROP POLICY IF EXISTS "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_pan_results;
+CREATE POLICY "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR INSERT WITH CHECK (TRUE);
+

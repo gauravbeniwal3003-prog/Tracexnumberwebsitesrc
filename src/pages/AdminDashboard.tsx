@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 import { AnimatePresence } from 'motion/react';
 
@@ -23,7 +23,11 @@ const ADMIN_EMAILS = [
 export default function AdminDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'stats' | 'keys' | 'settings' | 'logs' | 'users'>('stats');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') || 'stats') as 'stats' | 'keys' | 'settings' | 'logs' | 'users' | 'transactions' | 'history';
+  const setActiveTab = (tab: string) => {
+    setSearchParams({ tab });
+  };
   const [isAdmin, setIsAdmin] = useState(false);
   const [stats, setStats] = useState<any>({});
   const [loading, setLoading] = useState(true);
@@ -48,6 +52,7 @@ export default function AdminDashboard() {
     total: 0
   });
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   
   const [newUserProfileData, setNewUserProfileData] = useState({
     email: '',
@@ -206,6 +211,23 @@ export default function AdminDashboard() {
           }
         } catch (earningsErr) {
           console.error("Error fetching admin earnings:", earningsErr);
+        }
+
+        // Fetch Search History Logs
+        try {
+          const historyResponse = await fetch('/api/admin/history', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const historyJson = await historyResponse.json();
+          if (historyResponse.ok && historyJson.status === 'success') {
+            setHistoryLogs(historyJson.data || []);
+          } else {
+            console.error("Failed to load search history logs:", historyJson.error);
+          }
+        } catch (historyErr) {
+          console.error("Error fetching admin search history:", historyErr);
         }
 
       } else {
@@ -442,6 +464,8 @@ export default function AdminDashboard() {
             { id: 'stats', label: 'Dashboard', icon: TrendingUp },
             { id: 'users', label: 'User Manager', icon: Users },
             { id: 'keys', label: 'Key Manager', icon: Key },
+            { id: 'transactions', label: 'Transactions', icon: CreditCard },
+            { id: 'history', label: 'Search History', icon: Clock },
             { id: 'settings', label: 'Engine Settings', icon: Settings },
             { id: 'logs', label: 'Trace Logs', icon: Activity }
           ].map(tab => (
@@ -480,6 +504,8 @@ export default function AdminDashboard() {
             { id: 'stats', label: 'Stats', icon: TrendingUp },
             { id: 'users', label: 'Users', icon: Users },
             { id: 'keys', label: 'Keys', icon: Key },
+            { id: 'transactions', label: 'Txns', icon: CreditCard },
+            { id: 'history', label: 'History', icon: Clock },
             { id: 'settings', label: 'Gateway', icon: Settings },
             { id: 'logs', label: 'Traces', icon: Activity }
           ].map(tab => (
@@ -856,6 +882,269 @@ export default function AdminDashboard() {
                 </>
               );
             })()}
+          </div>
+        )}
+
+        {/* --- TRANSACTIONS VIEW --- */}
+        {activeTab === 'transactions' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-2">
+                <CreditCard size={14} />
+                Payment Gateway Transactions
+              </h3>
+              <button 
+                onClick={fetchData} 
+                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 transition-all flex items-center gap-2"
+              >
+                <RefreshCcw size={14} />
+                Refresh Logs
+              </button>
+            </div>
+
+            {/* MOBILE INTERFACE (Optimized for Mobile/Touch) */}
+            <div className="block md:hidden space-y-4">
+              {transactions.length === 0 ? (
+                <div className="glass-card p-12 text-center">
+                  <CreditCard size={32} className="text-zinc-600 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">No transactions logged</p>
+                </div>
+              ) : (
+                transactions.map(tx => {
+                  const statusColors: Record<string, string> = {
+                    'success': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                    'pending': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                    'failed': 'bg-red-500/10 text-red-400 border-red-500/20'
+                  };
+                  const statusColor = statusColors[tx.status?.toLowerCase()] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20';
+
+                  return (
+                    <div key={tx.id} className="p-5 rounded-[24px] bg-white/2 border border-white/5 space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-xs font-bold text-white truncate max-w-[180px]">
+                            {tx.user_email || 'Guest User'}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                            Order ID: {tx.payment_id}
+                          </div>
+                        </div>
+                        <span className={`text-[9px] border px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${statusColor}`}>
+                          {tx.status || 'PENDING'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 py-2.5 border-t border-b border-white/5 text-[11px]">
+                        <div>
+                          <span className="text-zinc-600 block uppercase font-bold text-[8px] tracking-wider">Amount Paid</span>
+                          <span className="text-emerald-400 font-mono font-bold block mt-0.5">
+                            ₹{tx.amount}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-600 block uppercase font-bold text-[8px] tracking-wider">Plan Assigned</span>
+                          <span className="text-zinc-300 font-mono text-[10px] font-bold block mt-0.5 truncate max-w-[100px]" title={tx.plan_id}>
+                            {tx.plan_id}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[9px] font-mono text-zinc-500">
+                        <span>{new Date(tx.created_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* DESKTOP INTERFACE (Wide screen layout) */}
+            <div className="hidden md:block glass-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-white/2 border-b border-white/5">
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">User Email</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Order & Payment ID</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Plan Code</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Amount</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Gateway Status</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-zinc-500 text-xs uppercase font-bold tracking-widest">
+                          No transaction records found
+                        </td>
+                      </tr>
+                    ) : (
+                      transactions.map(tx => {
+                        const statusColors: Record<string, string> = {
+                          'success': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                          'pending': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                          'failed': 'bg-red-500/10 text-red-400 border-red-500/20'
+                        };
+                        const statusColor = statusColors[tx.status?.toLowerCase()] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20';
+
+                        return (
+                          <tr key={tx.id} className="hover:bg-white/2 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="text-xs font-bold text-white">{tx.user_email || 'Guest User'}</div>
+                              {tx.user_name && <div className="text-[10px] text-zinc-500 mt-0.5">{tx.user_name}</div>}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-[10px] text-zinc-400">
+                              {tx.payment_id}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-[10px] text-zinc-300">
+                              {tx.plan_id}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs font-bold text-emerald-400">
+                              ₹{tx.amount}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`text-[9px] border px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${statusColor}`}>
+                                {tx.status || 'PENDING'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-mono text-zinc-500">
+                              {new Date(tx.created_at).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- SEARCH HISTORY VIEW --- */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-2">
+                <Clock size={14} />
+                Global Search Query Logs
+              </h3>
+              <button 
+                onClick={fetchData} 
+                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 transition-all flex items-center gap-2"
+              >
+                <RefreshCcw size={14} />
+                Refresh Traces
+              </button>
+            </div>
+
+            {/* MOBILE INTERFACE (Optimized for Mobile/Touch) */}
+            <div className="block md:hidden space-y-4">
+              {historyLogs.length === 0 ? (
+                <div className="glass-card p-12 text-center">
+                  <Clock size={32} className="text-zinc-600 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">No search history logs found</p>
+                </div>
+              ) : (
+                historyLogs.map((log, index) => {
+                  const searchStatusColors: Record<string, string> = {
+                    'success': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                    'not_found': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                    'failed': 'bg-red-500/10 text-red-400 border-red-500/20'
+                  };
+                  const statusColor = searchStatusColors[log.status?.toLowerCase()] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20';
+
+                  return (
+                    <div key={log.id || index} className="p-5 rounded-[24px] bg-white/2 border border-white/5 space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-xs font-bold text-white truncate max-w-[180px]">
+                            {log.user_email || 'Guest User'}
+                          </div>
+                          <span className="text-[10px] text-cyan-400 font-mono mt-0.5 bg-cyan-500/5 border border-cyan-500/10 px-2 py-0.5 rounded uppercase tracking-wider inline-block">
+                            {log.search_type}
+                          </span>
+                        </div>
+                        <span className={`text-[9px] border px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${statusColor}`}>
+                          {log.status === 'success' ? 'SUCCESS' : log.status === 'not_found' ? 'NOT FOUND' : 'FAILED'}
+                        </span>
+                      </div>
+
+                      <div className="py-2.5 border-t border-b border-white/5 text-[11px] space-y-1">
+                        <span className="text-zinc-600 block uppercase font-bold text-[8px] tracking-wider">Searched Query</span>
+                        <span className="text-zinc-300 font-mono font-bold block bg-white/5 px-2 py-1 rounded select-all break-all">
+                          {log.query}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[9px] font-mono text-zinc-500">
+                        <span>{new Date(log.created_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* DESKTOP INTERFACE (Wide screen layout) */}
+            <div className="hidden md:block glass-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-white/2 border-b border-white/5">
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Who (User)</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Search Type</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Searched Query</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Result Status</th>
+                      <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {historyLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 text-xs uppercase font-bold tracking-widest">
+                          No search logs found
+                        </td>
+                      </tr>
+                    ) : (
+                      historyLogs.map((log, index) => {
+                        const searchStatusColors: Record<string, string> = {
+                          'success': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                          'not_found': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                          'failed': 'bg-red-500/10 text-red-400 border-red-500/20'
+                        };
+                        const statusColor = searchStatusColors[log.status?.toLowerCase()] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20';
+
+                        return (
+                          <tr key={log.id || index} className="hover:bg-white/2 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="text-xs font-bold text-white">{log.user_email || 'Guest User'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-[10px] text-cyan-400 font-mono bg-cyan-500/5 border border-cyan-500/10 px-2 py-0.5 rounded uppercase tracking-wider">
+                                {log.search_type}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs text-white select-all break-all max-w-[250px]">
+                              {log.query}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`text-[9px] border px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${statusColor}`}>
+                                {log.status === 'success' ? 'SUCCESS' : log.status === 'not_found' ? 'NOT FOUND' : 'FAILED'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-mono text-zinc-500">
+                              {new Date(log.created_at).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 

@@ -141,6 +141,58 @@ async function logApiRequest(apiKeyId: string | null, maskedNumber: string, stat
   }
 }
 
+async function logSearchHistory(req: express.Request, searchType: string, query: string, status: string) {
+  if (!supabaseAdmin) return;
+  try {
+    let userId: string | null = null;
+    let userEmail: string | null = null;
+
+    // 1. Try to get user from Authorization token
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "");
+      if (token) {
+        try {
+          const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+          if (user) {
+            userId = user.id;
+            userEmail = user.email || null;
+          }
+        } catch (authErr) {
+          console.warn("Auth token resolve error in logSearchHistory:", authErr);
+        }
+      }
+    }
+
+    // 2. If no user from token, check if there's an api key
+    if (!userId) {
+      const key = String(req.query.key || req.body.key || "").trim();
+      if (key && key !== "TX-SYSTEM-INTERNAL-ADMIN") {
+        const { data: keyRecords } = await supabaseAdmin
+          .from("api_keys")
+          .select("user_id, user_email")
+          .eq("api_key", key)
+          .limit(1);
+        if (keyRecords && keyRecords[0]) {
+          userId = keyRecords[0].user_id || null;
+          userEmail = keyRecords[0].user_email || null;
+        }
+      }
+    }
+
+    // Insert into search_history
+    await supabaseAdmin.from("search_history").insert({
+      user_id: userId,
+      user_email: userEmail || "Guest User",
+      search_type: searchType,
+      query: query,
+      status: status
+    });
+  } catch (err) {
+    console.error("Failed to write search_history:", err);
+  }
+}
+
 // Unified response Formatter to keep premium branding consistent across all query types
 function formatUnifiedSaaSResponse({
   type,
@@ -1891,6 +1943,40 @@ app.get("/api/panfind", async (req, res) => {
   }
 });
 
+// Deep Case-Insensitive Branding and Provider Info Scrubber
+function scrubAllBranding(obj: any): any {
+  if (!obj) return obj;
+  if (typeof obj === "string") {
+    return obj
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support)/gi, "")
+      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/Powered_by/gi, "")
+      .replace(/Contact/gi, "")
+      .replace(/Buy_API/gi, "")
+      .trim();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => scrubAllBranding(item));
+  }
+  if (typeof obj === "object") {
+    const cleaned: any = {};
+    for (const [key, val] of Object.entries(obj)) {
+      const lowerKey = key.toLowerCase();
+      if ([
+        "branding", "success", "status", "found", "message", "api_info", "powered_by", 
+        "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
+        "provider", "api_buy_link", "website_link", "buy"
+      ].includes(lowerKey)) {
+        continue;
+      }
+      cleaned[key] = scrubAllBranding(val);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 // Secure credits-based Aadhaar-to-PAN lookup
 app.post("/api/aadhaar-to-pan", async (req, res) => {
   const { aadhaar_number } = req.body;
@@ -1925,7 +2011,36 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       return res.status(401).json({ error: "Access Denied: Invalid or expired user session" });
     }
 
-    // 2. Fetch user profile to verify credits
+    // 2. First, check if result is already cached in the database (Bypass charging user completely)
+    let cachedRecord: any = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("aadhaar_pan_results")
+        .select("*")
+        .eq("aadhaar_number", targetAadhaar)
+        .maybeSingle();
+
+      if (!error && data) {
+        cachedRecord = data;
+      }
+    } catch (cacheErr) {
+      console.warn("Aadhaar to PAN database cache check failed:", cacheErr);
+    }
+
+    if (cachedRecord && cachedRecord.pan_number && cachedRecord.raw_data) {
+      // Return cached result immediately (charges 0 credits!)
+      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "success");
+      return res.json({
+        status: "success",
+        pan_found: true,
+        pan: cachedRecord.pan_number,
+        credits_deducted: 0,
+        results: scrubAllBranding(cachedRecord.raw_data),
+        cached: true
+      });
+    }
+
+    // 3. Fetch user profile to verify credits (only if not cached)
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("*")
@@ -1943,7 +2058,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
     }
 
-    // 3. Deduct 150 credits
+    // 4. Deduct 150 credits
     const { error: deductError } = await supabaseAdmin
       .from("profiles")
       .update({ credits: Math.max(0, currentCredits - cost) })
@@ -1953,7 +2068,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       return res.status(500).json({ error: "Failed to deduct lookup credits. Please try again." });
     }
 
-    // 4. Query External PAN Find API
+    // 5. Query External PAN Find API
     const apiKey = "c8117598aafa71238a4bf8377087b0ff";
     const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
     
@@ -1968,8 +2083,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         try {
           apiData = JSON.parse(rawText);
           if (apiData && typeof apiData === "object") {
-            delete apiData.developer;
-            // Determine if PAN is found
+            // Scrub branding keys
+            apiData = scrubAllBranding(apiData);
             retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
             if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
               panFound = true;
@@ -1983,34 +2098,39 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       console.error("External PAN Find request failed:", apiErr);
     }
 
-    // 5. Refund 100 credits if PAN number was not found (meaning net 50 credits deducted)
+    // 6. Log search to persistent history
+    const searchStatus = panFound ? "success" : "not_found";
+    await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, searchStatus);
+
     if (!panFound) {
-      const refundTargetCredits = Math.max(0, currentCredits - 50);
-      const { error: refundError } = await supabaseAdmin
-        .from("profiles")
-        .update({ credits: refundTargetCredits })
-        .eq("id", user.id);
-
-      if (refundError) {
-        console.error("Failed to process credit refund for user:", user.id, refundError);
-      }
-
       return res.json({
         status: "failed",
         pan_found: false,
-        message: "No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)",
-        credits_deducted: 50,
-        results: apiData
+        message: "No PAN number found for this Aadhaar number. 150 credits deducted.",
+        credits_deducted: 150,
+        results: apiData ? scrubAllBranding(apiData) : null
       });
     }
 
-    // 6. Return successful search payload
+    // 7. Store successful result in database public.aadhaar_pan_results
+    const scrubbedApiData = scrubAllBranding(apiData || {});
+    try {
+      await supabaseAdmin.from("aadhaar_pan_results").insert({
+        aadhaar_number: targetAadhaar,
+        pan_number: retrievedPan,
+        raw_data: scrubbedApiData
+      });
+    } catch (dbInsertErr) {
+      console.error("Failed to insert successful Aadhaar to PAN result into DB cache:", dbInsertErr);
+    }
+
+    // 8. Return successful search payload
     return res.json({
       status: "success",
       pan_found: true,
       pan: retrievedPan,
       credits_deducted: 150,
-      results: apiData
+      results: scrubbedApiData
     });
 
   } catch (err: any) {
@@ -2066,7 +2186,16 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+    let authData: any = null;
+    try {
+      const response = await supabaseAdmin.auth.admin.listUsers();
+      authData = response.data;
+      if (response.error) {
+        console.warn("Supabase listUsers error:", response.error);
+      }
+    } catch (authErr: any) {
+      console.warn("Failed to list users from auth admin API:", authErr.message);
+    }
     
     const { data: profileData, error: profileError } = await supabaseAdmin
       .from("profiles")
@@ -2200,7 +2329,6 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     const { data: claims, error: claimsErr } = await supabaseAdmin
       .from("payment_claims")
       .select("*")
-      .eq("status", "success")
       .order("created_at", { ascending: false });
 
     if (claimsErr) {
@@ -2229,26 +2357,28 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     let weekEarning = 0;
     let totalEarning = 0;
 
-    const successfulTransactions: any[] = [];
+    const allTransactions: any[] = [];
 
     for (const claim of (claims || [])) {
       const claimAmount = Number(claim.amount || 0);
       const claimDate = new Date(claim.created_at);
       const claimDateStr = getISTDateString(claimDate);
 
-      totalEarning += claimAmount;
+      if (claim.status === "success") {
+        totalEarning += claimAmount;
 
-      if (claimDateStr === todayStr) {
-        todayEarning += claimAmount;
-      } else if (claimDateStr === yesterdayStr) {
-        yesterdayEarning += claimAmount;
+        if (claimDateStr === todayStr) {
+          todayEarning += claimAmount;
+        } else if (claimDateStr === yesterdayStr) {
+          yesterdayEarning += claimAmount;
+        }
+
+        if (claimDate >= sevenDaysAgo) {
+          weekEarning += claimAmount;
+        }
       }
 
-      if (claimDate >= sevenDaysAgo) {
-        weekEarning += claimAmount;
-      }
-
-      successfulTransactions.push({
+      allTransactions.push({
         id: claim.id,
         payment_id: claim.payment_id,
         user_id: claim.user_id,
@@ -2260,7 +2390,7 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     }
 
     // Enrich transactions with user email for easy trace display in admin portal
-    const userIds = Array.from(new Set(successfulTransactions.map(t => t.user_id).filter(id => !!id)));
+    const userIds = Array.from(new Set(allTransactions.map(t => t.user_id).filter(id => !!id)));
     let profilesByUserId: Record<string, any> = {};
     
     if (userIds.length > 0) {
@@ -2277,7 +2407,7 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
       }
     }
 
-    const enrichedTransactions = successfulTransactions.map(t => ({
+    const enrichedTransactions = allTransactions.map(t => ({
       ...t,
       user_email: t.user_id ? (profilesByUserId[t.user_id]?.email || "N/A") : "Guest User",
       user_name: t.user_id ? (profilesByUserId[t.user_id]?.full_name || "") : ""
@@ -2295,6 +2425,28 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     console.error("[ADMIN_EARNINGS_FAIL]", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Supabase connection offline" });
+    }
+    const { data, error } = await supabaseAdmin
+      .from("search_history")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(150);
+
+    if (error) {
+      console.error("[GET_ADMIN_HISTORY_ERR]", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.json({ status: "success", data });
+  } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
 });

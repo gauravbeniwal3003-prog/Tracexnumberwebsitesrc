@@ -455,7 +455,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             }
           } else {
             setIsLoading(false);
-            setError(resStep1.message || 'No PAN number found for this Aadhaar number. 100 credits refunded. (50 credits deducted for server cost)');
+            setError(resStep1.message || 'No PAN number found for this Aadhaar number. 150 credits deducted.');
           }
         } catch (err: any) {
           setIsLoading(false);
@@ -488,6 +488,23 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         saveToHistory(targetVal, data);
         setSearchHistory(getHistory());
 
+        // Insert into search_history
+        if (user?.id) {
+          (async () => {
+            try {
+              await supabase.from('search_history').insert({
+                user_id: user.id,
+                user_email: user.email || 'Guest User',
+                search_type: service,
+                query: targetVal,
+                status: 'success'
+              });
+            } catch (e) {
+              console.error('Failed to log search history:', e);
+            }
+          })();
+        }
+
         // Background credit deduction
         if (!hasUnlimitedAction() && profile?.id) {
           (async () => {
@@ -504,10 +521,44 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setCooldown(5);
       } else {
         setError(data.error || 'No records found or service temporarily unavailable.');
+        
+        // Insert into search_history (failed/not_found)
+        if (user?.id) {
+          (async () => {
+            try {
+              await supabase.from('search_history').insert({
+                user_id: user.id,
+                user_email: user.email || 'Guest User',
+                search_type: service,
+                query: targetVal,
+                status: 'not_found'
+              });
+            } catch (e) {
+              console.error('Failed to log search history:', e);
+            }
+          })();
+        }
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
       setError(err.message || 'The TRACEXDATA engine encountered a connection fault. Please retry.');
+      
+      // Insert into search_history (failed)
+      if (user?.id) {
+        (async () => {
+          try {
+            await supabase.from('search_history').insert({
+              user_id: user.id,
+              user_email: user.email || 'Guest User',
+              search_type: service,
+              query: targetVal,
+              status: 'failed'
+            });
+          } catch (e) {
+            console.error('Failed to log search history:', e);
+          }
+        })();
+      }
     } finally {
       setIsLoading(false);
     }
