@@ -874,7 +874,11 @@ app.get("/api/lookup", async (req, res) => {
             .eq("vehicle_number", targetQuery)
             .maybeSingle();
 
-          if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+          const isCacheValid = cachedRow && cachedRow.raw_data && 
+                               Object.keys(cachedRow.raw_data).length > 0 &&
+                               !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
+
+          if (isCacheValid) {
             console.log(`[CACHE HIT] Serving Vehicle lookup ${targetQuery} via /api/lookup from DB Cache`);
             const newCount = (keyRecord.requests_used || 0) + 1;
             if (!isMaster && keyRecord?.id) {
@@ -2005,7 +2009,11 @@ app.get("/api/vehicle", async (req, res) => {
       .eq("vehicle_number", targetQuery)
       .maybeSingle();
 
-    if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+    const isCacheValid = cachedRow && cachedRow.raw_data && 
+                         Object.keys(cachedRow.raw_data).length > 0 &&
+                         !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
+
+    if (isCacheValid) {
       console.log(`[CACHE HIT] Serving Vehicle lookup for ${targetQuery} from database cache.`);
       
       // Record telemetry for successful search

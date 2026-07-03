@@ -389,9 +389,9 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
     cleaned_lines = []
     # Broad patterns for any kind of branding or unwanted spam lines
     forbidden_keywords = [
-        "cyb3r", "s0ldier", "anish", "exploits", "support", "buy api", "buy_api", 
-        "retailer", "seller", "owner", "admin", "owner:", "cyb3rs0ldier", "cyb3r_s0ldier",
-        "buy", "support:", "c143", "cyber", "soldier"
+        "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
+        "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
+        "support:", "c143", "cyber", "soldier"
     ]
     for line in lines:
         line_lower = line.lower().strip()
@@ -1812,6 +1812,42 @@ async def vehicle_lookup(
                 print(f"[DB_ERR] {db_err}")
                 return make_api_response({"status": "error", "message": "api error"})
                 
+        # 1. Check database cache first for speed of response
+        try:
+            cache_query = db.table("vehicle_search_results").select("raw_data").eq("vehicle_number", target_query).execute()
+            if cache_query.data and len(cache_query.data) > 0:
+                cached_row = cache_query.data[0]
+                cached_raw_data = cached_row.get("raw_data")
+                if cached_raw_data and isinstance(cached_raw_data, dict):
+                    # Check if it's a dummy N/A error record
+                    is_cache_invalid = cached_raw_data.get("raw_data") and (cached_raw_data.get("raw_data") == "N/A" or not str(cached_raw_data.get("raw_data")).strip())
+                    if not is_cache_invalid:
+                        print(f"[CACHE HIT] Serving Vehicle lookup for {target_query} from database cache in Python.")
+                        
+                        # Telemetry update
+                        if not is_master and key_record and key_record.get('id'):
+                            try:
+                                db.table("api_keys").update({
+                                    "requests_used": int(key_record.get('requests_used') or 0) + 1,
+                                    "last_used_at": datetime.utcnow().isoformat()
+                                }).eq("id", key_record.get('id')).execute()
+                            except: pass
+                            
+                        try:
+                            masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                            db.table("api_logs").insert({
+                                "api_key_id": key_record.get('id') if not is_master else None,
+                                "masked_number": f"VEHICLE: {masked_q}",
+                                "status": "success",
+                                "response_time_ms": int((time.time() - start_time) * 1000),
+                                "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                            }).execute()
+                        except: pass
+                        
+                        return make_api_response({"status": "success", "results": cached_raw_data})
+        except Exception as cache_err:
+            print(f"[CACHE_ERR] Vehicle cache check error in Python: {cache_err}")
+
         # Proxy fetch
         api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
         headers = {
@@ -1836,10 +1872,35 @@ async def vehicle_lookup(
                 return make_api_response({"status": "error", "message": "api error"})
                 
             text = resp.text or ""
-            cleaned_body = clean_branding_text_line_by_line(text)
-            lower_text = cleaned_body.lower()
             
-            if "no result" in lower_text or "no records found" in lower_text or "error" in lower_text or not text.strip() or "unknown" in lower_text:
+            # Smart JSON parsing first to preserve structural keys like "owner"
+            is_json = False
+            parsed_data = None
+            try:
+                parsed_data = json.loads(text)
+                is_json = True
+            except Exception:
+                # Fallback: clean branding and try parsing again
+                cleaned_body = clean_branding_text_line_by_line(text)
+                try:
+                    parsed_data = json.loads(cleaned_body)
+                    is_json = True
+                except Exception:
+                    parsed_data = {"raw_data": cleaned_body}
+
+            # Smart error detection
+            is_error = False
+            if is_json and parsed_data:
+                status_str = str(parsed_data.get("status") or parsed_data.get("success") or "").lower()
+                message_str = str(parsed_data.get("message") or parsed_data.get("error") or "").lower()
+                if status_str in ["error", "fail", "failed", "false"] or "no result" in message_str or "no records found" in message_str or "not found" in message_str:
+                    is_error = True
+            else:
+                lower_text = text.lower()
+                if "no result" in lower_text or "no records found" in lower_text or "error" in lower_text or not text.strip() or "unknown" in lower_text:
+                    is_error = True
+
+            if is_error:
                 try:
                     masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
                     db.table("api_logs").insert({
@@ -1851,17 +1912,27 @@ async def vehicle_lookup(
                     }).execute()
                 except: pass
                 return make_api_response({"status": "error", "message": "api error"})
-                
-            import json
-            try:
-                parsed_data = json.loads(cleaned_body)
-                if parsed_data and "api_creator" in parsed_data:
+
+            # Remove creator credits safely from dictionary
+            if isinstance(parsed_data, dict):
+                if "api_creator" in parsed_data:
                     del parsed_data["api_creator"]
-            except:
-                parsed_data = {"raw_data": cleaned_body}
-                
+                if "api_creator" in parsed_data.get("data", {}):
+                    del parsed_data["data"]["api_creator"]
+
             cleaned_data = clean_branding_recursive(parsed_data)
             
+            # Save successful search result in the database cache for extremely fast subsequent lookups
+            if cleaned_data and isinstance(cleaned_data, dict) and len(cleaned_data) > 0:
+                try:
+                    db.table("vehicle_search_results").upsert({
+                        "vehicle_number": target_query,
+                        "raw_data": cleaned_data
+                    }, on_conflict="vehicle_number").execute()
+                    print(f"[CACHE SAVE] Saved Vehicle lookup for {target_query} to database cache.")
+                except Exception as cache_save_err:
+                    print(f"Failed to save Vehicle result to database cache: {cache_save_err}")
+
             # Telemetry update
             if not is_master and key_record and key_record.get('id'):
                 try:
