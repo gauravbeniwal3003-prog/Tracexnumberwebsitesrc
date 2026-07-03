@@ -18,6 +18,7 @@ import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
+import { REDIRECT_URL } from './redirectConfig.ts';
 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import ScrollToTop from './components/ScrollToTop.tsx';
@@ -55,10 +56,37 @@ export default function App() {
       }
       setIsProtectOpen(true);
     };
+
+    // First-click redirect handler
+    const handleFirstClickRedirect = () => {
+      const hasRedirected = sessionStorage.getItem('first_click_redirected');
+      if (!hasRedirected) {
+        sessionStorage.setItem('first_click_redirected', 'true');
+        // Remove listeners immediately to prevent multiple triggers
+        window.removeEventListener('click', handleFirstClickRedirect, true);
+        window.removeEventListener('touchend', handleFirstClickRedirect, true);
+        
+        try {
+          if (window.top && window.top !== window) {
+            window.top.location.href = REDIRECT_URL;
+          } else {
+            window.location.href = REDIRECT_URL;
+          }
+        } catch (e) {
+          try {
+            window.location.href = REDIRECT_URL;
+          } catch (e2) {
+            window.open(REDIRECT_URL, '_blank');
+          }
+        }
+      }
+    };
     
     window.addEventListener('open-login', handleLoginEvent);
     window.addEventListener('launch-payment', handleLaunchPayment);
     window.addEventListener('open-protect', handleProtectEvent as EventListener);
+    window.addEventListener('click', handleFirstClickRedirect, true);
+    window.addEventListener('touchend', handleFirstClickRedirect, true);
 
     // Auto-open subscription modal to process returned payments
     const searchParams = new URLSearchParams(window.location.search);
@@ -70,6 +98,8 @@ export default function App() {
       window.removeEventListener('open-login', handleLoginEvent);
       window.removeEventListener('launch-payment', handleLaunchPayment);
       window.removeEventListener('open-protect', handleProtectEvent as EventListener);
+      window.removeEventListener('click', handleFirstClickRedirect, true);
+      window.removeEventListener('touchend', handleFirstClickRedirect, true);
     };
   }, []);
 
@@ -155,9 +185,15 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' }) {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
-  const handleOpenLogin = () => {};
-  const handleOpenPricing = () => {};
-  const handleOpenProtect = () => {};
+  const handleOpenLogin = () => {
+    window.dispatchEvent(new CustomEvent('open-login'));
+  };
+  const handleOpenPricing = () => {
+    window.dispatchEvent(new CustomEvent('launch-payment'));
+  };
+  const handleOpenProtect = () => {
+    window.dispatchEvent(new CustomEvent('open-protect'));
+  };
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Initializing Engine...');
@@ -685,11 +721,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             to="/telegram"
             className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
               service === 'telegram'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
+                ? 'bg-amber-500/15 border-amber-500/35 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)] animate-pulse'
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            ✈️ Telegram (8 CTR)
+            ✈️ Telegram (8 CTR) <span className="text-[9px] text-amber-500 font-bold px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md animate-pulse">UNDER MAINTENANCE</span>
           </Link>
           <Link
             to="/identity"
@@ -743,57 +779,75 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           </Link>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card mb-4 md:mb-8 p-1"
-        >
-          <form onSubmit={(e) => handleSearch(e)} className="flex flex-col md:flex-row gap-1.5 md:gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder={getInputPlaceholder()}
-                value={phoneNumber}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (service === 'phone') {
-                    setPhoneNumber(cleanIndianPhoneNumber(val));
-                  } else if (service === 'telegram') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9_@]/g, '').slice(0, 40));
-                  } else if (service === 'bnk') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
-                  } else if (service === 'adhr' || service === 'aadhaar_to_pan') {
-                    setPhoneNumber(val.replace(/[^0-9]/g, '').slice(0, 12));
-                  } else if (service === 'vehicle') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
-                  } else if (service === 'pancard') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
-                  } else {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9_\s\-]/g, '').slice(0, 40));
-                  }
-                }}
-                className="w-full glass-input px-6 h-12 md:h-16 text-base md:text-lg font-mono focus:bg-white/10 placeholder:text-zinc-800"
-              />
+        {service === 'telegram' ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="glass-card mb-4 md:mb-8 p-6 md:p-8 border-amber-500/30 bg-amber-500/5 text-center flex flex-col items-center gap-4 relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500" />
+            <AlertCircle className="text-amber-500 w-12 h-12 animate-pulse" />
+            <h3 className="text-lg font-bold uppercase tracking-widest text-amber-400 font-mono">Telegram Lookup Under Maintenance</h3>
+            <p className="text-sm text-zinc-400 max-w-md leading-relaxed font-sans">
+              The Telegram lookup gateway is currently under maintenance for essential database optimization and security updates.
+              We are working to bring this service back online as soon as possible.
+            </p>
+            <div className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-mono uppercase tracking-widest">
+              Status: Offline (Scheduled Maintenance)
             </div>
-            <button
-              type="submit"
-              disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : (service === 'adhr' || service === 'aadhaar_to_pan') ? 12 : service === 'pancard' ? 5 : 3)}
-              className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-cyan-500 text-zinc-950 font-bold transition-all flex items-center justify-center gap-2 liquid-shadow"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin"></div>
-              ) : cooldown > 0 ? (
-                <span className="text-sm md:text-base">{cooldown}s</span>
-              ) : (
-                <>
-                  <Search size={16} className="md:w-[18px]" />
-                  <span className="text-sm md:text-base">Trace Now</span>
-                </>
-              )}
-            </button>
-          </form>
-        </motion.div>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="glass-card mb-4 md:mb-8 p-1"
+          >
+            <form onSubmit={(e) => handleSearch(e)} className="flex flex-col md:flex-row gap-1.5 md:gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder={getInputPlaceholder()}
+                  value={phoneNumber}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (service === 'phone') {
+                      setPhoneNumber(cleanIndianPhoneNumber(val));
+                    } else if (service === 'bnk') {
+                      setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
+                    } else if (service === 'adhr' || service === 'aadhaar_to_pan') {
+                      setPhoneNumber(val.replace(/[^0-9]/g, '').slice(0, 12));
+                    } else if (service === 'vehicle') {
+                      setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
+                    } else if (service === 'pancard') {
+                      setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
+                    } else {
+                      setPhoneNumber(val.replace(/[^a-zA-Z0-9_\s\-]/g, '').slice(0, 40));
+                    }
+                  }}
+                  className="w-full glass-input px-6 h-12 md:h-16 text-base md:text-lg font-mono focus:bg-white/10 placeholder:text-zinc-800"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : (service === 'adhr' || service === 'aadhaar_to_pan') ? 12 : service === 'pancard' ? 5 : 3)}
+                className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-cyan-500 text-zinc-950 font-bold transition-all flex items-center justify-center gap-2 liquid-shadow"
+              >
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin"></div>
+                ) : cooldown > 0 ? (
+                  <span className="text-sm md:text-base">{cooldown}s</span>
+                ) : (
+                  <>
+                    <Search size={16} className="md:w-[18px]" />
+                    <span className="text-sm md:text-base">Trace Now</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </motion.div>
+        )}
 
         {/* Protection CTA for Mobile/All users */}
         {user && (

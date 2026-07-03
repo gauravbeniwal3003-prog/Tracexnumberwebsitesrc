@@ -376,78 +376,11 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
 };
 
 export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> => {
-  // 1. Check Cache first
-  try {
-    const { data: cachedData, error: cacheError } = await supabase
-      .from('telegram_search_results')
-      .select('raw_data')
-      .eq('telegram_id', telegramId)
-      .maybeSingle();
-
-    if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
-      console.log('Serving Telegram from TRACEXDATA Cache...');
-      return {
-        status: true,
-        results: cachedData.raw_data
-      };
-    }
-  } catch (e) {
-    console.error('Telegram cache read failure:', e);
-  }
-
-  // 2. Query SaaS proxy
-  console.log('Searching TRACEXDATA Telegram Intelligence...');
-  try {
-    
-    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=telegram&query=${telegramId}`;
-
-    
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try { errorData = JSON.parse(errorText); } catch (e) { errorData = { error: errorText }; }
-      throw new Error(errorData.error || errorData.message || `Engine returned status ${response.status}`);
-    }
-
-    const apiData = await response.json();
-    
-    if (apiData.status === 'success' && apiData.results && Object.keys(apiData.results).length > 0) {
-      // Save cache in background
-      (async () => {
-        try {
-          console.log('Skipping insecure client-side cache');
-        } catch (e) {
-          console.error('Failed to cache Telegram result:', e);
-        }
-      })();
-
-      return { status: true, results: apiData.results };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData.message || apiData.error || 'No records found for this Telegram ID.'
-      };
-    }
-  } catch (error) {
-    console.error('Telegram lookup error:', error);
-    return {
-      status: false,
-      results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
-    };
-  }
+  return {
+    status: false,
+    results: {},
+    error: "Telegram lookup is currently under maintenance. Please try again later."
+  };
 };
 
 // Deep recursive branding and promotional info scrubber

@@ -5,6 +5,7 @@ import cors from "cors";
 
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
 
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
@@ -13,6 +14,7 @@ import crypto from "crypto";
 dotenv.config();
 
 
+const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
@@ -67,10 +69,17 @@ app.use(helmet({
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173").split(",");
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (
+      !origin || 
+      allowedOrigins.includes(origin) || 
+      origin.endsWith(".run.app") || 
+      origin.endsWith(".web.app") || 
+      origin.includes("localhost") || 
+      origin.includes("127.0.0.1")
+    ) {
       callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      callback(new Error(`Not allowed by CORS: ${origin}`));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -380,6 +389,13 @@ app.get("/api/user-lookup", async (req, res) => {
   const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan'];
   if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
     return res.status(400).json({ error: "Missing service or query" });
+  }
+
+  if (service === 'telegram') {
+    return res.status(200).json({
+      status: "error",
+      message: "Telegram lookup is currently under maintenance. Please try again later."
+    });
   }
 
   if (!supabaseAdmin) return res.status(500).json({ error: "Database offline" });
