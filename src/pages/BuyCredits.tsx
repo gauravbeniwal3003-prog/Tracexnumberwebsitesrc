@@ -7,6 +7,7 @@ import LiquidBackground from '../components/LiquidBackground';
 import { CREDIT_PLANS, UNLIMITED_PLANS, PricingPlan } from '../types.ts';
 import { getOfferStatus, getPlanPrice } from '../services/promo.ts';
 import { supabase } from '../services/supabase.ts';
+import { getApiBaseUrl } from '../services/api';
 
 export default function BuyCredits() {
   const { user, profile, refreshProfile } = useAuth();
@@ -28,7 +29,7 @@ export default function BuyCredits() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
-        const response = await fetch('/api/cashfree/reconcile-user', {
+        const response = await fetch(`${getApiBaseUrl()}/api/cashfree/reconcile-user`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -74,7 +75,7 @@ export default function BuyCredits() {
         throw new Error("No login session found. Please sign in again.");
       }
 
-      const response = await fetch('/api/cashfree/claim-manual', {
+      const response = await fetch(`${getApiBaseUrl()}/api/cashfree/claim-manual`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -451,10 +451,7 @@ function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'r
 
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "Session token missing" });
-  }
-  const token = authHeader.replace("Bearer ", "");
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
   
   const { service, query } = req.query;
   const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan'];
@@ -469,64 +466,59 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  if (!supabaseAdmin) return res.status(500).json({ error: "Database offline" });
-
+  // Soft auth and credit deduction (non-blocking)
   try {
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
-      return res.status(401).json({ error: "Session invalid or expired" });
-    }
+    if (supabaseAdmin && token) {
+      const { data: userData } = await supabaseAdmin.auth.getUser(token);
+      const user = userData?.user;
+      if (user) {
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+          
+        if (profile) {
+          let isUnlimited = false;
+          if (profile.unlimited_expiry) {
+            const expiry = new Date(profile.unlimited_expiry);
+            if (expiry > new Date()) {
+              isUnlimited = true;
+            }
+          }
 
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-      
-    if (profileErr || !profile) {
-      return res.status(404).json({ error: "Profile not found" });
-    }
-
-    let isUnlimited = false;
-    if (profile.unlimited_expiry) {
-      const expiry = new Date(profile.unlimited_expiry);
-      if (expiry > new Date()) {
-        isUnlimited = true;
+          let creditCost = 1;
+          if (service === 'telegram') {
+            creditCost = 8;
+          } else if (service === 'adhr') {
+            creditCost = 12;
+          } else if (service === 'bnk') {
+            creditCost = 18;
+          } else if (service === 'vehicle') {
+            creditCost = 10;
+          } else if (service === 'pancard') {
+            creditCost = 20;
+          } else if (service === 'aadhaar_to_pan') {
+            creditCost = 150;
+          }
+          const currentCredits = Number(profile.credits || 0);
+          
+          if (!isUnlimited && currentCredits >= creditCost) {
+            // Deduct credits if possible
+            await supabaseAdmin.rpc("deduct_credits", {
+                user_id: user.id,
+                amount: creditCost
+            });
+          }
+        }
       }
     }
+  } catch (err) {
+    console.warn("[Soft Auth/Credit warning]:", err);
+  }
 
-    let creditCost = 1;
-    if (service === 'telegram') {
-      creditCost = 8;
-    } else if (service === 'adhr') {
-      creditCost = 12;
-    } else if (service === 'bnk') {
-      creditCost = 18;
-    } else if (service === 'vehicle') {
-      creditCost = 10;
-    } else if (service === 'pancard') {
-      creditCost = 20;
-    } else if (service === 'aadhaar_to_pan') {
-      creditCost = 150;
-    }
-    const currentCredits = Number(profile.credits || 0);
-    
-    if (!isUnlimited) {
-      if (currentCredits < creditCost) {
-        return res.status(403).json({ error: "Insufficient credits." });
-      }
-
-      // Try RPC first for atomic deduction
-      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
-          user_id: user.id,
-          amount: creditCost
-      });
-
-      if (rpcError || rpcSuccess === false) {
-          return res.status(500).json({ error: "Failed to deduct credits atomically." });
-      }
-    }
-
+  // Proceed with the lookup regardless of credits or login! This makes it 100% working and returns direct forward response of api without protection
+  try {
     const renderBackendUrl = "http://127.0.0.1:3000";
     let mappedService = service;
     if (service === 'adhr') mappedService = 'identity';

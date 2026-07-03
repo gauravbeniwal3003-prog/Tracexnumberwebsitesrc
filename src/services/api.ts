@@ -5,6 +5,20 @@
 
 import { supabase } from './supabase.ts';
 
+export const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.endsWith('.run.app')
+    ) {
+      return '';
+    }
+  }
+  return 'https://tracexdata-api.onrender.com';
+};
+
 export const safeFetchJson = async (response: Response): Promise<any> => {
   const contentType = response.headers.get('content-type') || '';
   const rawText = await response.text();
@@ -161,7 +175,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const maxAttempts = 5;
   const delays = [1000, 2000, 3000, 4000, 5000];
   
-  const backendEndpoint = `/api/user-lookup?service=phone&query=${number}`;
+  const backendEndpoint = `${getApiBaseUrl()}/api/user-lookup?service=phone&query=${number}`;
   const targetUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
@@ -453,7 +467,7 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA Identity Card Intelligence...');
   try {
     
-    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
 
     
     const session = await supabase.auth.getSession();
@@ -499,7 +513,7 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA BA&NK Intelligence...');
   try {
     
-    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
 
     
     const session = await supabase.auth.getSession();
@@ -572,7 +586,7 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
     try {
       console.log(`Vehicle RC lookup attempt ${attempt} of ${maxTries}...`);
       
-      const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
+      const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
 
       
     const session = await supabase.auth.getSession();
@@ -655,7 +669,7 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
     try {
       console.log(`PN Card lookup attempt ${attempt} of ${maxTries}...`);
       
-      const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
+      const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
 
       
     const session = await supabase.auth.getSession();
@@ -718,7 +732,7 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     const token = sessionRes.data.session?.access_token;
     
     
-    const endpoint = `${''.replace(/\/$/, '')}/api/aadhaar-to-pan`;
+    const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
 
     const response = await fetch(endpoint, {
       method: 'POST',

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
+import { getApiBaseUrl } from '../services/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 import { AnimatePresence } from 'motion/react';
@@ -183,7 +184,7 @@ export default function AdminDashboard() {
       const token = session?.access_token;
       
       if (token) {
-        const response = await fetch('/api/admin/profiles', {
+        const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -197,7 +198,7 @@ export default function AdminDashboard() {
 
         // Fetch earnings data
         try {
-          const earningsResponse = await fetch('/api/admin/earnings', {
+          const earningsResponse = await fetch(`${getApiBaseUrl()}/api/admin/earnings`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -215,7 +216,7 @@ export default function AdminDashboard() {
 
         // Fetch Search History Logs
         try {
-          const historyResponse = await fetch('/api/admin/history', {
+          const historyResponse = await fetch(`${getApiBaseUrl()}/api/admin/history`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -250,7 +251,7 @@ export default function AdminDashboard() {
       const token = session?.access_token;
       let error = null;
       if (token) {
-        const res = await fetch('/api/admin/api-keys', {
+        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ user_email: newKeyData.user_email, plan_name: newKeyData.plan_name, days })
@@ -300,7 +301,7 @@ export default function AdminDashboard() {
       const token = session?.access_token;
       let error = null;
       if (token) {
-        const res = await fetch(`/api/admin/api-keys/${id}`, {
+        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -342,7 +343,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      const response = await fetch('/api/admin/profiles', {
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -389,7 +390,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/profiles/${selectedUser.id}`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${selectedUser.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -428,7 +429,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/profiles/${id}`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
