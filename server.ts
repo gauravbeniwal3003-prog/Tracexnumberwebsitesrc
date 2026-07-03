@@ -376,6 +376,91 @@ function cleanBrandingObject(obj: any): any {
   return obj;
 }
 
+// Helper to parse unstructured plain text responses into structured JSON
+function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any {
+  const result: any = {};
+  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+
+  if (type === 'aadhar') {
+    const aadhaarMatch = cleanText.match(/(?:Aadhaar|Aadhar):\s*([0-9Xx\s\-]+)/i);
+    const nameMatch = cleanText.match(/Name:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+    const fatherMatch = cleanText.match(/Father Name:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+    const mobileMatch = cleanText.match(/Mobile:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+    const addressMatch = cleanText.match(/Address:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+    const circleMatch = cleanText.match(/Circle:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+
+    if (nameMatch) result.name = nameMatch[1].trim();
+    if (fatherMatch) result.father_name = fatherMatch[1].trim();
+    if (mobileMatch) result.mobile = mobileMatch[1].trim();
+    if (addressMatch) result.address = addressMatch[1].trim();
+    if (circleMatch) {
+      result.state_circle = circleMatch[1].trim();
+      result.operator = circleMatch[1].trim();
+    }
+    if (aadhaarMatch) result.aadhar_number = aadhaarMatch[1].trim();
+  } else if (type === 'pan') {
+    const panNoMatch = cleanText.match(/PAN Number\s*:\s*([^\r\n]+)/i);
+    const statusMatch = cleanText.match(/PAN Status\s*:\s*([^\r\n]+)/i);
+    const nameMatch = cleanText.match(/Full Name\s*:\s*([^\r\n]+)/i);
+    const genderMatch = cleanText.match(/Gender\s*:\s*([^\r\n]+)/i);
+    const dobMatch = cleanText.match(/Date of Birth\s*:\s*([^\r\n]+)/i);
+    const linkedMatch = cleanText.match(/Aadhaar Linked\s*:\s*([^\r\n]+)/i);
+    const aadharMatch = cleanText.match(/Aadhaar Number\s*:\s*([^\r\n]+)/i);
+
+    if (nameMatch) result.name = nameMatch[1].trim();
+    if (panNoMatch) result.pan_number = panNoMatch[1].trim();
+    if (statusMatch) result.pan_status = statusMatch[1].trim();
+    if (genderMatch) result.gender = genderMatch[1].trim();
+    if (dobMatch) result.date_of_birth = dobMatch[1].trim();
+    if (linkedMatch) result.aadhaar_linked = linkedMatch[1].trim();
+    if (aadharMatch) result.aadhar_number = aadharMatch[1].trim();
+  } else if (type === 'bank') {
+    const bankNameMatch = cleanText.match(/Bank Name:\s*([^\r\n]+)/i);
+    const bankCodeMatch = cleanText.match(/Bank Code:\s*([^\r\n]+)/i);
+    const branchMatch = cleanText.match(/Branch:\s*([^\r\n]+)/i);
+    const addressMatch = cleanText.match(/Address:\s*([^\r\n]+)/i);
+    const cityMatch = cleanText.match(/City:\s*([^\r\n]+)/i);
+    const centreMatch = cleanText.match(/Centre:\s*([^\r\n]+)/i);
+    const districtMatch = cleanText.match(/District:\s*([^\r\n]+)/i);
+    const stateMatch = cleanText.match(/State:\s*([^\r\n]+)/i);
+    const pinMatch = cleanText.match(/PIN Code:\s*([^\r\n]+)/i);
+    const micrMatch = cleanText.match(/MICR Code:\s*([^\r\n]+)/i);
+    const contactMatch = cleanText.match(/Contact:\s*([^\r\n]+)/i);
+    const neftMatch = cleanText.match(/NEFT:\s*([^\r\n]+)/i);
+    const rtgsMatch = cleanText.match(/RTGS:\s*([^\r\n]+)/i);
+    const impsMatch = cleanText.match(/IMPS:\s*([^\r\n]+)/i);
+    const upiMatch = cleanText.match(/UPI:\s*([^\r\n]+)/i);
+
+    if (bankNameMatch) result.bank_name = bankNameMatch[1].trim();
+    if (bankCodeMatch) result.bank_code = bankCodeMatch[1].trim();
+    if (branchMatch) result.branch = branchMatch[1].trim();
+    if (addressMatch) result.address = addressMatch[1].trim();
+    if (cityMatch) result.city = cityMatch[1].trim();
+    if (centreMatch) result.centre = centreMatch[1].trim();
+    if (districtMatch) result.district = districtMatch[1].trim();
+    if (stateMatch) result.state = stateMatch[1].trim();
+    if (pinMatch) result.pin_code = pinMatch[1].trim();
+    if (micrMatch) result.micr_code = micrMatch[1].trim();
+    if (contactMatch) result.contact = contactMatch[1].trim();
+    if (neftMatch) result.neft = neftMatch[1].trim();
+    if (rtgsMatch) result.rtgs = rtgsMatch[1].trim();
+    if (impsMatch) result.imps = impsMatch[1].trim();
+    if (upiMatch) result.upi = upiMatch[1].trim();
+  } else if (type === 'rasion') {
+    const nameMatch = cleanText.match(/Name:\s*([^\r\n]+)/i);
+    const familyMatch = cleanText.match(/(?:Family|Rasion|Ration):\s*([^\r\n]+)/i);
+    if (nameMatch) result.name = nameMatch[1].trim();
+    if (familyMatch) result.family_id = familyMatch[1].trim();
+  }
+
+  const parsedKeys = Object.keys(result);
+  if (parsedKeys.length > 0) {
+    result.raw_data = cleanText;
+    return result;
+  }
+  return { raw_data: cleanText };
+}
+
 // Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
 
 app.get("/api/user-lookup", async (req, res) => {
@@ -456,15 +541,15 @@ app.get("/api/user-lookup", async (req, res) => {
       }
     }
 
-    const renderBackendUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
+    const renderBackendUrl = "http://127.0.0.1:3000";
     let mappedService = service;
     if (service === 'adhr') mappedService = 'identity';
     else if (service === 'bnk') mappedService = 'bank';
     else if (service === 'phone') mappedService = 'lookup';
 
-    let endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/${mappedService}?key=${INTERNAL_MASTER_KEY}&query=${encodeURIComponent(query)}`;
+    let endpoint = `${renderBackendUrl}/api/${mappedService}?key=${INTERNAL_MASTER_KEY}&query=${encodeURIComponent(query)}`;
     if (service === 'phone') {
-        endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/lookup?key=${INTERNAL_MASTER_KEY}&numquery=${encodeURIComponent(query)}`;
+        endpoint = `${renderBackendUrl}/api/lookup?key=${INTERNAL_MASTER_KEY}&numquery=${encodeURIComponent(query)}`;
     }
     
     const response = await fetch(endpoint, {
@@ -871,13 +956,13 @@ app.get("/api/lookup", async (req, res) => {
       let logPrefix = "";
       
       if (lookupType === 'adhr') {
-        api_url = `https://exploitsindia.site//osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "ADHR";
       } else if (lookupType === 'bnk') {
-        api_url = `https://exploitsindia.site//osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "BNK";
       } else if (lookupType === 'rasion') {
-        api_url = `https://exploitsindia.site//hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "RASION";
       } else if (lookupType === 'vehicle') {
         logPrefix = "VEHICLE";
@@ -922,7 +1007,13 @@ app.get("/api/lookup", async (req, res) => {
         api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
       }
 
-      const response = await fetch(api_url);
+      const response = await fetch(api_url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      });
       if (!response.ok) {
         throw new Error(`OSINT Provider Offline: ${lookupType.toUpperCase()} status ${response.status}`);
       }
@@ -940,7 +1031,15 @@ app.get("/api/lookup", async (req, res) => {
           parsedData = JSON.parse(cleanedText);
           isJson = true;
         } catch (err) {
-          parsedData = { raw_data: cleanedText };
+          if (lookupType === 'adhr') {
+            parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
+          } else if (lookupType === 'bnk') {
+            parsedData = parsePlainTextLookup(cleanedText, 'bank');
+          } else if (lookupType === 'rasion') {
+            parsedData = parsePlainTextLookup(cleanedText, 'rasion');
+          } else {
+            parsedData = { raw_data: cleanedText };
+          }
         }
       }
 
@@ -1477,8 +1576,14 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     const target_username = targetTelegramId.startsWith('@') ? targetTelegramId : `@${targetTelegramId}`;
-    const api_url = `https://exploitsindia.site//osint-api/telegram.php?exploits=${encodeURIComponent(target_username)}`;
-    const response = await fetch(api_url);
+    const api_url = `https://exploitsindia.site/osint-api/telegram.php?exploits=${encodeURIComponent(target_username)}`;
+    const response = await fetch(api_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
        return res.status(502).json({ status: "error", message: "api error" });
@@ -1624,8 +1729,14 @@ app.get("/api/identity", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
-    const response = await fetch(api_url);
+    const api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const response = await fetch(api_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
        return res.status(502).json({ status: "error", message: "api error" });
@@ -1644,7 +1755,7 @@ app.get("/api/identity", async (req, res) => {
     try {
       parsedData = JSON.parse(cleanedText);
     } catch (e) {
-      parsedData = { raw_data: cleanedText };
+      parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -1748,8 +1859,14 @@ app.get("/api/bank", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
-    const response = await fetch(api_url);
+    const api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const response = await fetch(api_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
        return res.status(502).json({ status: "error", message: "api error" });
@@ -1768,7 +1885,7 @@ app.get("/api/bank", async (req, res) => {
     try {
       parsedData = JSON.parse(cleanedText);
     } catch (e) {
-      parsedData = { raw_data: cleanedText };
+      parsedData = parsePlainTextLookup(cleanedText, 'bank');
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -1872,8 +1989,14 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
-    const response = await fetch(api_url);
+    const api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const response = await fetch(api_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
        return res.status(502).json({ status: "error", message: "api error" });
@@ -1892,7 +2015,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     try {
       parsedData = JSON.parse(cleanedText);
     } catch (e) {
-      parsedData = { raw_data: cleanedText };
+      parsedData = parsePlainTextLookup(cleanedText, 'rasion');
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -2209,8 +2332,14 @@ app.get("/api/pancard", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site//osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
-    const response = await fetch(api_url);
+    const api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const response = await fetch(api_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
        return res.status(502).json({ status: "error", message: "api error" });
@@ -2229,7 +2358,7 @@ app.get("/api/pancard", async (req, res) => {
     try {
       parsedData = JSON.parse(cleanedText);
     } catch (e) {
-      parsedData = { raw_data: cleanedText };
+      parsedData = parsePlainTextLookup(cleanedText, 'pan');
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
