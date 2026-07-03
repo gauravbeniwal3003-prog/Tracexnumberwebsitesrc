@@ -66,22 +66,8 @@ app.use(helmet({
 }));
 
 // CORS Configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173").split(",");
 app.use(cors({
-  origin: (origin, callback) => {
-    if (
-      !origin || 
-      allowedOrigins.includes(origin) || 
-      origin.endsWith(".run.app") || 
-      origin.endsWith(".web.app") || 
-      origin.includes("localhost") || 
-      origin.includes("127.0.0.1")
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Not allowed by CORS: ${origin}`));
-    }
-  },
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -3299,6 +3285,15 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
     console.error("[MANUAL_CLAIM_CRITICAL_FAIL]", err);
     return res.status(500).json({ error: "Internal Server Error" });
   }
+});
+
+// Global JSON error handler to prevent HTML stack traces or HTML errors
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Global Express Error Handler:", err);
+  res.status(err.status || 500).json({
+    status: "error",
+    error: err.message || "An unexpected backend error occurred."
+  });
 });
 
 // Vite middleware for development

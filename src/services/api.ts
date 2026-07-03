@@ -15,13 +15,14 @@ export const safeFetchJson = async (response: Response): Promise<any> => {
     rawText.trim().startsWith('<!doctype') ||
     rawText.trim().startsWith('<html')
   ) {
-    throw new Error('Received HTML response instead of JSON. The backend server might be starting up, offline, or experiencing an issue.');
+    const preview = rawText.trim().slice(0, 200).replace(/\s+/g, ' ');
+    throw new Error(`Received HTML response instead of JSON. URL: ${response.url} (Status: ${response.status}). Preview: "${preview}"`);
   }
   
   try {
     return JSON.parse(rawText);
   } catch (err) {
-    throw new Error(`Failed to parse response JSON: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Failed to parse response JSON from ${response.url}: ${err instanceof Error ? err.message : String(err)}. Raw response: "${rawText.slice(0, 100)}"`);
   }
 };
 
@@ -160,29 +161,44 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const maxAttempts = 5;
   const delays = [1000, 2000, 3000, 4000, 5000];
   
-  
-  const backendEndpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=phone&query=${number}`;
-  
+  const backendEndpoint = `/api/user-lookup?service=phone&query=${number}`;
   const targetUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   let lastError: any = null;
 
+  // Retrieve active token for authorization with our secure backend proxy
+  let token = '';
+  try {
+    const session = await supabase.auth.getSession();
+    token = session.data.session?.access_token || '';
+  } catch (e) {
+    console.warn("Could not retrieve Supabase session token:", e);
+  }
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const useDirectFallback = true;
-      const url = useDirectFallback ? proxyUrl : backendEndpoint;
+      // Use backend primarily. Fall back to proxyUrl only if the token is missing,
+      // or after 3 failed attempts as an absolute backup layer.
+      const useFallback = !token || attempt > 3;
+      const url = useFallback ? proxyUrl : backendEndpoint;
+      
+      const headers: HeadersInit = {
+        'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
+        'Accept': 'application/json,text/plain,*/*'
+      };
+      
+      if (!useFallback && token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
-          'Accept': 'application/json,text/plain,*/*'
-        },
+        headers,
         mode: 'cors'
       });
 
-      console.log("API TRY", attempt, "STATUS", response.status);
+      console.log("API TRY", attempt, "URL", url, "STATUS", response.status);
 
       if (!response.ok) {
         throw new Error(`HTTP Status ${response.status}`);
@@ -192,8 +208,8 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       console.log("API RAW PREVIEW", rawText.slice(0, 300));
 
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE html>') || rawText.trim().startsWith('<html')) {
-        throw new Error('Received HTML page instead of JSON');
+      if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+        throw new Error(`Received HTML page instead of JSON from ${url}`);
       }
 
       let parsed: any;
@@ -233,7 +249,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       }
 
     } catch (err: any) {
-      console.warn(`API attempt ${attempt} error:`, err.message || err);
+      console.warn(`API attempt ${attempt} error on URL ${attempt > 3 ? 'fallback' : 'backend'}:`, err.message || err);
       lastError = err;
       
       if (attempt < maxAttempts) {
