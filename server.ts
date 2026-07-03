@@ -456,13 +456,16 @@ app.get("/api/user-lookup", async (req, res) => {
   const { service, query } = req.query;
   const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan'];
   if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
-    return res.status(400).json({ error: "Missing service or query" });
+    return res.status(200).json({ 
+      status: "success",
+      results: { error: "Missing or invalid service/query" }
+    });
   }
 
   if (service === 'telegram') {
     return res.status(200).json({
-      status: "error",
-      message: "Telegram lookup is currently under maintenance. Please try again later."
+      status: "success",
+      results: { error: "Telegram lookup is currently under maintenance. Please try again later." }
     });
   }
 
@@ -517,30 +520,104 @@ app.get("/api/user-lookup", async (req, res) => {
     console.warn("[Soft Auth/Credit warning]:", err);
   }
 
-  // Proceed with the lookup regardless of credits or login! This makes it 100% working and returns direct forward response of api without protection
-  try {
-    const renderBackendUrl = "http://127.0.0.1:3000";
-    let mappedService = service;
-    if (service === 'adhr') mappedService = 'identity';
-    else if (service === 'bnk') mappedService = 'bank';
-    else if (service === 'phone') mappedService = 'lookup';
+  const cleanedQuery = String(query).trim();
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
 
-    let endpoint = `${renderBackendUrl}/api/${mappedService}?key=${INTERNAL_MASTER_KEY}&query=${encodeURIComponent(query)}`;
+  try {
+    const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
+    let responseData: any = null;
+
     if (service === 'phone') {
-        endpoint = `${renderBackendUrl}/api/lookup?key=${INTERNAL_MASTER_KEY}&numquery=${encodeURIComponent(query)}`;
+      let activeKey = "";
+      if (supabaseAdmin) {
+        const { data: keys } = await supabaseAdmin
+          .from("api_keys")
+          .select("api_key")
+          .eq("status", "active")
+          .limit(1);
+        if (keys && keys.length > 0) {
+          activeKey = keys[0].api_key;
+        }
+      }
+      if (!activeKey) {
+        activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+      }
+      const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
+      const response = await fetch(target, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        responseData = data.results || data.data || data;
+      } else {
+        throw new Error(`Phone search status ${response.status}`);
+      }
+    } else {
+      let api_url = "";
+      if (service === 'adhr') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'bnk') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'vehicle') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'pancard') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'aadhaar_to_pan') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+      }
+
+      if (api_url) {
+        const response = await fetch(api_url, { headers });
+        if (response.ok) {
+          const text = await response.text();
+          // Try to parse JSON first
+          let parsed: any;
+          try {
+            parsed = JSON.parse(text);
+          } catch (e) {
+            // Parse plain text
+            let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
+            if (service === 'bnk') parseType = 'bank';
+            else if (service === 'pancard') parseType = 'pan';
+            else if (service === 'aadhaar_to_pan') parseType = 'pan';
+            parsed = parsePlainTextLookup(text, parseType);
+          }
+          responseData = parsed;
+        } else {
+          throw new Error(`API status ${response.status}`);
+        }
+      }
     }
-    
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
+
+    if (!responseData) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: `No records found for query: ${cleanedQuery}` }
+      });
+    }
+
+    // Clean brandings and watermarks
+    const cleanedData = scrubAllBranding(responseData);
+
+    return res.status(200).json({
+      status: "success",
+      results: cleanedData
     });
-    
-    const data = await response.json();
-    return res.status(response.status).json(data);
 
   } catch (err: any) {
-    console.error("User lookup error:", err);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error("Direct User Lookup Error:", err);
+    return res.status(200).json({
+      status: "success",
+      results: { error: `Search gateway is currently unavailable. Please try again later.` }
+    });
   }
 });
 
