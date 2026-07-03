@@ -33,6 +33,7 @@ const item = {
 export default function ResultCard({ data, index }: ResultCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [isCopiedAll, setIsCopiedAll] = useState(false);
 
   const isTelegram = data.platform === "Telegram Lookup" || !!data.telegram_id;
 
@@ -43,10 +44,14 @@ export default function ResultCard({ data, index }: ResultCardProps) {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleShare = async () => {
-    let shareText = '';
+  const standardKeys = ['result_no', 'status', 'results', 'platform', 'id', 'address', 'raw_data'];
+  const customEntries = Object.entries(data).filter(([k]) => !standardKeys.includes(k));
+  const isCustomLookup = customEntries.some(([k]) => !['name', 'father_name', 'mobile', 'alt_mobile', 'email', 'aadhar_number', 'state_circle', 'operator'].includes(k));
+  const itemData = data as any;
+
+  const getFormattedText = () => {
     if (isTelegram) {
-      shareText = `
+      return `
 🔍 *TRACEXDATA - TELEGRAM INTEL*
 --------------------------------
 ✈️ Telegram ID: ${data.telegram_id || 'N/A'}
@@ -57,8 +62,34 @@ export default function ResultCard({ data, index }: ResultCardProps) {
 --------------------------------
 *Powered by TRACEXDATA Intelligence*
       `.trim();
+    } else if (isCustomLookup) {
+      const customLines = customEntries
+        .map(([k, v]) => {
+          const cleanKey = k
+            .replace(/_/g, ' ')
+            .split(' ')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+          return `🔹 ${cleanKey}: ${v || 'N/A'}`;
+        })
+        .join('\n');
+      
+      const addrLine = data.address && data.address !== '0' && data.address.toLowerCase() !== 'n/a'
+        ? `\n🏠 Address: ${data.address}`
+        : '';
+
+      return `
+🔍 *TRACEXDATA - PREMIUM MATCH*
+--------------------------------
+${customLines}${addrLine}
+
+🌐 Website: tracexdata-api.onrender.com
+📢 Telegram: t.me/Gaurav_beni_0001
+--------------------------------
+*Powered by TRACEXDATA Intelligence*
+      `.trim();
     } else {
-      shareText = `
+      return `
 🔍 *TRACEXDATA - VERIFIED RECORD*
 --------------------------------
 👤 Name: ${data.name || 'Unknown'}
@@ -77,6 +108,17 @@ export default function ResultCard({ data, index }: ResultCardProps) {
 *Powered by TRACEXDATA Intelligence*
       `.trim();
     }
+  };
+
+  const handleCopyAll = () => {
+    const shareText = getFormattedText();
+    navigator.clipboard.writeText(shareText);
+    setIsCopiedAll(true);
+    setTimeout(() => setIsCopiedAll(false), 2000);
+  };
+
+  const handleShare = async () => {
+    const shareText = getFormattedText();
 
     if (navigator.share) {
       try {
@@ -98,11 +140,6 @@ export default function ResultCard({ data, index }: ResultCardProps) {
   let fields: any[] = [];
   let title = data.name && data.name !== '0' ? data.name : "Unknown Person";
   let labelText = "Verified Record";
-
-  const standardKeys = ['result_no', 'status', 'results', 'platform', 'id', 'address', 'raw_data'];
-  const customEntries = Object.entries(data).filter(([k]) => !standardKeys.includes(k));
-  const isCustomLookup = customEntries.some(([k]) => !['name', 'father_name', 'mobile', 'alt_mobile', 'email', 'aadhar_number', 'state_circle', 'operator'].includes(k));
-  const itemData = data as any;
 
   if (isTelegram) {
     labelText = "Telegram Verification";
@@ -188,15 +225,24 @@ export default function ResultCard({ data, index }: ResultCardProps) {
             </h2>
           </div>
         </div>
-        <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-3">
-          <button 
-            onClick={handleShare}
-            className="px-3 py-1 md:px-4 md:py-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-400 hover:bg-cyan-500/10 hover:text-cyan-400 transition-all flex items-center gap-1.5 md:gap-2 text-[9px] md:text-[10px] font-bold uppercase tracking-widest"
-          >
-            {isSharing ? <Check size={10} className="md:w-3 text-green-400" /> : <Share2 size={10} className="md:w-3" />}
-            {isSharing ? 'Copied' : 'Share'}
-          </button>
-          <div className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[9px] md:text-[10px] font-bold tracking-tighter uppercase whitespace-nowrap">
+        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleCopyAll}
+              className="px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all flex items-center gap-1.5 text-[9px] md:text-[10px] font-extrabold uppercase tracking-widest whitespace-nowrap"
+            >
+              {isCopiedAll ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+              {isCopiedAll ? 'Copied' : 'Copy Result'}
+            </button>
+            <button 
+              onClick={handleShare}
+              className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white transition-all flex items-center gap-1.5 text-[9px] md:text-[10px] font-bold uppercase tracking-widest whitespace-nowrap"
+            >
+              {isSharing ? <Check size={10} className="text-emerald-400" /> : <Share2 size={10} />}
+              {isSharing ? 'Copied' : 'Share'}
+            </button>
+          </div>
+          <div className="px-2.5 py-1 md:px-3 md:py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[9px] md:text-[10px] font-extrabold tracking-widest uppercase whitespace-nowrap">
             VIP ACCESS
           </div>
         </div>

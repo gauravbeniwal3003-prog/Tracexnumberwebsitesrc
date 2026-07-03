@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2 } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
@@ -19,6 +19,7 @@ import { useAuth } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
 import { REDIRECT_URL } from './redirectConfig.ts';
+import PromoDealModal from './components/PromoDealModal.tsx';
 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import ScrollToTop from './components/ScrollToTop.tsx';
@@ -151,6 +152,9 @@ export default function App() {
           <LoginModal onClose={() => setIsLoginOpen(false)} />
         )}
       </AnimatePresence>
+
+      {/* Exclusive Personal Deal Popup */}
+      <PromoDealModal />
     </Router>
   );
 }
@@ -208,6 +212,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<any[]>([]);
+  const [copiedStep2, setCopiedStep2] = useState(false);
+  const [copiedRawFeed, setCopiedRawFeed] = useState(false);
+  const [copiedRawResults, setCopiedRawResults] = useState(false);
 
   const hasUnlimitedAction = () => {
     if (!profile?.unlimited_expiry) return false;
@@ -969,11 +976,29 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto"
+                    className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto relative"
                   >
                     <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2 flex justify-between items-center">
                       <span>Step 2: Official Registry Raw Record Feed</span>
-                      <span className="text-emerald-400 font-bold">SUCCESS</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
+                              .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
+                              .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
+                              .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
+                            navigator.clipboard.writeText(scrubbed);
+                            setCopiedStep2(true);
+                            setTimeout(() => setCopiedStep2(false), 2000);
+                          }}
+                          className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-emerald-500/30 text-zinc-400 hover:text-emerald-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
+                        >
+                          {copiedStep2 ? <Check size={10} className="text-emerald-400" /> : <Clipboard size={10} />}
+                          {copiedStep2 ? 'Copied' : 'Copy'}
+                        </button>
+                        <span className="text-emerald-400 font-bold">SUCCESS</span>
+                      </div>
                     </div>
                     {(() => {
                       const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
@@ -992,18 +1017,49 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-card p-4 md:p-6 font-mono text-[10px] md:text-sm whitespace-pre-wrap leading-relaxed text-zinc-200 border-cyan-500/30 bg-cyan-500/5 select-all"
+                  className="glass-card p-4 md:p-6 font-mono text-[10px] md:text-sm whitespace-pre-wrap leading-relaxed text-zinc-200 border-cyan-500/30 bg-cyan-500/5 select-all relative"
                 >
+                  <div className="flex justify-between items-center mb-2 border-b border-white/5 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                    <span>Raw Trace Output</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(result.raw_results);
+                        setCopiedRawResults(true);
+                        setTimeout(() => setCopiedRawResults(false), 2000);
+                      }}
+                      className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
+                    >
+                      {copiedRawResults ? <Check size={10} className="text-cyan-400" /> : <Clipboard size={10} />}
+                      {copiedRawResults ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                   {result.raw_results}
                 </motion.div>
               ) : (service === 'vehicle' || service === 'pancard') ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto"
+                  className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto relative"
                 >
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2">
-                    Official Registry Raw Record Feed
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2 flex justify-between items-center">
+                    <span>Official Registry Raw Record Feed</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const scrubbed = JSON.stringify(result.results, null, 2)
+                          .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
+                          .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
+                          .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
+                        navigator.clipboard.writeText(scrubbed);
+                        setCopiedRawFeed(true);
+                        setTimeout(() => setCopiedRawFeed(false), 2000);
+                      }}
+                      className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-emerald-500/30 text-zinc-400 hover:text-emerald-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
+                    >
+                      {copiedRawFeed ? <Check size={10} className="text-emerald-400" /> : <Clipboard size={10} />}
+                      {copiedRawFeed ? 'Copied' : 'Copy'}
+                    </button>
                   </div>
                   {(() => {
                     const scrubbed = JSON.stringify(result.results, null, 2)

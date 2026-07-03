@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, CreditCard, Zap, CheckCircle2, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
-import { CREDIT_PLANS, UNLIMITED_PLANS, API_PLANS, PricingPlan } from '../types.ts';
+import { CREDIT_PLANS, UNLIMITED_PLANS, API_PLANS, PricingPlan, SPECIAL_DEAL_PLAN } from '../types.ts';
 import { useAuth } from '../services/AuthContext.tsx';
 import { supabase } from '../services/supabase.ts';
 import { getOfferStatus, getPlanPrice } from '../services/promo.ts';
@@ -43,13 +43,13 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
 
     const handleExternalPayment = (e: any) => {
       const { planId } = e.detail;
-      const allPlans = [...CREDIT_PLANS, ...UNLIMITED_PLANS, ...API_PLANS];
+      const allPlans = [...CREDIT_PLANS, ...UNLIMITED_PLANS, ...API_PLANS, SPECIAL_DEAL_PLAN];
       const plan = allPlans.find(p => p.id === planId);
       if (plan) handlePurchase(plan);
     };
 
     if (initialPayment) {
-      const allPlans = [...CREDIT_PLANS, ...UNLIMITED_PLANS, ...API_PLANS];
+      const allPlans = [...CREDIT_PLANS, ...UNLIMITED_PLANS, ...API_PLANS, SPECIAL_DEAL_PLAN];
       const plan = allPlans.find(p => p.id === initialPayment.planId);
       if (plan) {
          // Tiny delay to ensure modal is ready

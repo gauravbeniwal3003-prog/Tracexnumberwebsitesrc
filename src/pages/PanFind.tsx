@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ShieldCheck, ArrowLeft, Loader2, Sparkles, AlertCircle, FileSearch, Check, Shield, Search, Send, CreditCard, Clipboard } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground';
+import { safeFetchJson } from '../services/api.ts';
 
 export default function PanFind() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,11 +40,11 @@ export default function PanFind() {
       const response = await fetch(`${renderBackendUrl}/api/panfind?order_id=${encodeURIComponent(oid)}&aadhaar_number=${encodeURIComponent(aadhaar)}`);
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = await safeFetchJson(response).catch(() => ({}));
         throw new Error(errorData.error || `Failed to verify payment or retrieve record.`);
       }
 
-      const data = await response.json();
+      const data = await safeFetchJson(response);
       setResults(data);
       setVerificationStatus('success');
     } catch (err: any) {
@@ -87,11 +88,11 @@ export default function PanFind() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = await safeFetchJson(response).catch(() => ({}));
         throw new Error(errorData.error || `Server Error ${response.status}`);
       }
 
-      const orderData = await response.json();
+      const orderData = await safeFetchJson(response);
       if (orderData.error) {
         throw new Error(orderData.error);
       }

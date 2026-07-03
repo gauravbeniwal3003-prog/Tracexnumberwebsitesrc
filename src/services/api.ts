@@ -5,6 +5,26 @@
 
 import { supabase } from './supabase.ts';
 
+export const safeFetchJson = async (response: Response): Promise<any> => {
+  const contentType = response.headers.get('content-type') || '';
+  const rawText = await response.text();
+  
+  if (
+    contentType.toLowerCase().includes('text/html') ||
+    rawText.trim().startsWith('<!DOCTYPE') ||
+    rawText.trim().startsWith('<!doctype') ||
+    rawText.trim().startsWith('<html')
+  ) {
+    throw new Error('Received HTML response instead of JSON. The backend server might be starting up, offline, or experiencing an issue.');
+  }
+  
+  try {
+    return JSON.parse(rawText);
+  } catch (err) {
+    throw new Error(`Failed to parse response JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
+
 export interface LookupResult {
   name: string;
   father_name: string;
@@ -435,7 +455,7 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
       throw new Error(`Engine returned status ${response.status}`);
     }
 
-    const apiData = await response.json();
+    const apiData = await safeFetchJson(response);
     if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
       return { 
         status: true, 
@@ -481,7 +501,7 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
       throw new Error(`Engine returned status ${response.status}`);
     }
 
-    const apiData = await response.json();
+    const apiData = await safeFetchJson(response);
     if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
       return { 
         status: true, 
@@ -557,7 +577,7 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
         throw new Error(errorData.error || errorData.message || `Engine returned status ${response.status}`);
       }
 
-      const apiData = await response.json();
+      const apiData = await safeFetchJson(response);
       
       // Mirror the precise, flexible results / raw_results checking logic from Aadhaar identity lookup
       if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
@@ -640,7 +660,7 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
         throw new Error(errorData.error || errorData.message || `Engine returned status ${response.status}`);
       }
 
-      const apiData = await response.json();
+      const apiData = await safeFetchJson(response);
       
       // Mirror the precise, flexible results / raw_results checking logic from Aadhaar identity lookup
       if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
@@ -694,11 +714,11 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await safeFetchJson(response).catch(() => ({}));
       throw new Error(errorData.error || `Server returned status ${response.status}`);
     }
 
-    return await response.json();
+    return await safeFetchJson(response);
   } catch (error: any) {
     console.error('Aadhaar to PAN lookup error:', error);
     return {

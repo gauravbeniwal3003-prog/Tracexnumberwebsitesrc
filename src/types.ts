@@ -53,3 +53,11 @@ export const API_PLANS: PricingPlan[] = [
   { id: 'api_combo', name: 'All Combo Special', price: 1499, type: 'unlimited', value: 720 },
 ];
 
+export const SPECIAL_DEAL_PLAN: PricingPlan = {
+  id: 'u1m_special200',
+  name: 'Special Deal: 1 Month Unlimited',
+  price: 200,
+  type: 'unlimited',
+  value: 720
+};
+

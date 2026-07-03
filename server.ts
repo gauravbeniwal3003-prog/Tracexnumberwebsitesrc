@@ -1151,7 +1151,7 @@ async function fulfillOrder(orderId: string, userId: string) {
             'u1h': 1, 'unlimited_1h': 1,
             'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
             'u1w': 168, 'unlimited_1w': 168,
-            'u1m': 720, 'unlimited_1m': 720
+            'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
         };
         const hours = hoursMap[plan_id as string] || 0;
         const now = new Date();
