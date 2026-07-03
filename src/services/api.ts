@@ -6,15 +6,8 @@
 import { supabase } from './supabase.ts';
 
 export const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.endsWith('.run.app')
-    ) {
-      return '';
-    }
+  if (import.meta.env.VITE_RENDER_BACKEND_URL) {
+    return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
   return 'https://tracexdata-api.onrender.com';
 };
@@ -75,7 +68,16 @@ export interface ApiResponse {
 export const validateLookupResponse = (data: any): boolean => {
   if (!data) return false;
   
-  let results = data.results;
+  // Normalize: if the data is a flat object containing record details directly, wrap it
+  if (data && typeof data === 'object') {
+    if (!data.results && !data.data && !data.records) {
+      if (data.name || data.mobile || data.father_name || data.full_name) {
+        data.results = { "1": data };
+      }
+    }
+  }
+
+  let results = data.results || data.records;
   if (!results && data.raw && data.raw.results) {
     results = data.raw.results;
   }
@@ -112,7 +114,16 @@ export const parseLookupResults = (data: any, number: string = ''): ApiResponse 
     return { status: false, results: {} };
   }
 
-  let rawResults = data.results;
+  // Normalize flat records
+  if (data && typeof data === 'object') {
+    if (!data.results && !data.data && !data.records) {
+      if (data.name || data.mobile || data.father_name || data.full_name) {
+        data.results = { "1": data };
+      }
+    }
+  }
+
+  let rawResults = data.results || data.records;
   if (!rawResults && data.raw && data.raw.results) {
     rawResults = data.raw.results;
   }
@@ -176,7 +187,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const delays = [1000, 2000, 3000, 4000, 5000];
   
   const backendEndpoint = `${getApiBaseUrl()}/api/user-lookup?service=phone&query=${number}`;
-  const targetUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${number}`;
+  const targetUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   let lastError: any = null;
@@ -192,12 +203,11 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // Use backend primarily. Fall back to proxyUrl only if the token is missing,
-      // or after 3 failed attempts as an absolute backup layer.
-      const useFallback = !token || attempt > 3;
+      // Use backend primarily. Fall back to proxyUrl only after 3 failed attempts as an absolute backup layer.
+      const useFallback = attempt > 3;
       const url = useFallback ? proxyUrl : backendEndpoint;
       
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
         'Accept': 'application/json,text/plain,*/*'
       };
@@ -466,18 +476,19 @@ const scrubBranding = (obj: any): any => {
 export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA Identity Card Intelligence...');
   try {
-    
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
 
-    
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token || '';
+    const headers: Record<string, string> = {
+      'Accept': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const response = await fetch(endpoint, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+      headers
     });
 
 
@@ -512,18 +523,19 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
 export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA BA&NK Intelligence...');
   try {
-    
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
 
-    
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token || '';
+    const headers: Record<string, string> = {
+      'Accept': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const response = await fetch(endpoint, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+      headers
     });
 
 
@@ -588,16 +600,18 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
       
       const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
 
-      
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || '';
+      const headers: Record<string, string> = {
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-    });
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers
+      });
 
 
       if (!response.ok) {
@@ -671,16 +685,18 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
       
       const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
 
-      
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || '';
+      const headers: Record<string, string> = {
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-    });
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers
+      });
 
 
       if (!response.ok) {

@@ -18,6 +18,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = 3000;
 
 // Supabase Configuration
@@ -546,13 +547,63 @@ app.get("/api/user-lookup", async (req, res) => {
       if (!activeKey) {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
+      
+      const newApiUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(cleanedQuery)}`;
       const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
-      const response = await fetch(target, { headers });
-      if (response.ok) {
-        const data = await response.json();
-        responseData = data.results || data.data || data;
-      } else {
-        throw new Error(`Phone search status ${response.status}`);
+      
+      try {
+        console.log(`Querying new phone API: ${newApiUrl}`);
+        const response = await fetch(newApiUrl, { headers });
+        if (response.ok) {
+          const text = await response.text();
+          console.log("New Phone API response preview:", text.slice(0, 300));
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed === 'object') {
+              let records = parsed.results || parsed.data || parsed.records;
+              if (!records) {
+                if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
+                  records = { "1": parsed };
+                } else {
+                  const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
+                  if (hasNestedObject) {
+                    records = parsed;
+                  }
+                }
+              }
+              if (records) {
+                if (Array.isArray(records)) {
+                  const map: Record<string, any> = {};
+                  records.forEach((rec, idx) => {
+                    if (rec && typeof rec === 'object') {
+                      map[`Result ${idx + 1}`] = rec;
+                    }
+                  });
+                  responseData = { results: map };
+                } else {
+                  responseData = { results: records };
+                }
+              } else {
+                responseData = parsed;
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse JSON from new phone API, trying old fallback");
+          }
+        }
+      } catch (err) {
+        console.error("New phone API failed, falling back to old target:", err);
+      }
+
+      if (!responseData) {
+        console.log(`Falling back to old phone target: ${target}`);
+        const response = await fetch(target, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          responseData = data.results || data.data || data;
+        } else {
+          throw new Error(`Phone search status ${response.status}`);
+        }
       }
     } else {
       let api_url = "";
@@ -888,66 +939,115 @@ app.get("/api/lookup", async (req, res) => {
 
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
+      const newApiUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(targetQuery)}`;
       const searchParams = new URLSearchParams();
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
       const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?${searchParams.toString()}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let rawData: any = null;
+      let responseStatus = 200;
 
+      // Try new phone API first
       try {
-        const response = await fetch(target, {
-          headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
-          signal: controller.signal
+        console.log(`SaaS lookup querying new phone API: ${newApiUrl}`);
+        const response = await fetch(newApiUrl, {
+          headers: { 
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+          }
         });
-        clearTimeout(timeoutId);
+        if (response.ok) {
+          const text = await response.text();
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed === 'object') {
+              // Ensure we received actual records/data
+              const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records;
+              if (hasData) {
+                rawData = parsed;
+                responseStatus = response.status;
+              }
+            }
+          } catch (e) {
+            console.warn("SaaS fail to parse new phone API json, using old target");
+          }
+        }
+      } catch (err) {
+        console.error("SaaS new phone API failed, falling back:", err);
+      }
 
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const rawData = await response.json();
-          const newCount = (keyRecord.requests_used || 0) + 1;
-          
-          if (!isMaster && keyRecord.id) {
+      // Fallback if new API didn't return data
+      if (!rawData) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        try {
+          console.log(`SaaS lookup falling back to old target: ${target}`);
+          const response = await fetch(target, {
+            headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            rawData = await response.json();
+            responseStatus = response.status;
+          }
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId);
+          console.error("SaaS old phone fallback failed:", fetchErr);
+        }
+      }
+
+      if (rawData) {
+        const newCount = (keyRecord.requests_used || 0) + 1;
+        if (!isMaster && keyRecord.id) {
+          try {
             await supabaseAdmin.from("api_keys").update({ 
               requests_used: newCount,
               last_used_at: new Date().toISOString()
             }).eq("id", keyRecord.id);
+          } catch (dbErr) {
+            console.error("Failed to update api_keys requests_used:", dbErr);
           }
-
-          const recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
-          let parsedRecords: any[] = [];
-          if (Array.isArray(recordsRaw)) {
-            parsedRecords = recordsRaw;
-          } else if (recordsRaw && typeof recordsRaw === 'object') {
-            if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
-              parsedRecords = [recordsRaw];
-            } else {
-              parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
-            }
-          }
-
-          const filtered = formatUnifiedSaaSResponse({
-            type: 'phone',
-            query: targetQuery,
-            expiresAt: keyRecord.expires_at,
-            planName: keyRecord.plan_name,
-            requestsUsed: newCount,
-            records: parsedRecords
-          });
-          
-          await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
-          return res.status(response.status).json(filtered);
-        } else {
-          await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
-          return res.status(502).json({ 
-            status: "error", 
-            message: "Downstream Provider: Invalid JSON Response"
-          });
         }
-      } catch (fetchErr: any) {
-        clearTimeout(timeoutId);
-        throw new Error(`Connection Timeout: Downstream provider failed to respond within 12s`);
+
+        let recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
+        if (!recordsRaw || (typeof recordsRaw === 'object' && Object.keys(recordsRaw).length === 0)) {
+          if (rawData.name || rawData.mobile || rawData.father_name) {
+            recordsRaw = [rawData];
+          }
+        }
+
+        let parsedRecords: any[] = [];
+        if (Array.isArray(recordsRaw)) {
+          parsedRecords = recordsRaw;
+        } else if (recordsRaw && typeof recordsRaw === 'object') {
+          if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
+            parsedRecords = [recordsRaw];
+          } else {
+            parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
+          }
+        }
+
+        const filtered = formatUnifiedSaaSResponse({
+          type: 'phone',
+          query: targetQuery,
+          expiresAt: keyRecord.expires_at,
+          planName: keyRecord.plan_name,
+          requestsUsed: newCount,
+          records: parsedRecords
+        });
+        
+        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
+        return res.status(responseStatus).json(filtered);
+      } else {
+        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
+        return res.status(502).json({ 
+          status: "error", 
+          message: "Downstream Provider: Unresponsive or Invalid JSON Response"
+        });
       }
     } else if ((lookupType as string) === 'telegram') {
       const target_username = targetQuery.startsWith('@') ? targetQuery : `@${targetQuery}`;
@@ -2583,40 +2683,43 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
   }
 
-  if (!authHeader) {
-    return res.status(401).json({ error: "Authentication is required" });
-  }
+  let user: any = null;
+  let isGuest = true;
 
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) {
-    return res.status(401).json({ error: "Authentication token is empty" });
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "");
+    if (token && token !== "null" && token !== "undefined") {
+      try {
+        if (supabaseAdmin) {
+          const { data: userData } = await supabaseAdmin.auth.getUser(token);
+          if (userData?.user) {
+            user = userData.user;
+            isGuest = false;
+          }
+        }
+      } catch (err) {
+        console.warn("Aadhaar to PAN soft authentication ignored:", err);
+      }
+    }
   }
 
   try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: "Engine Offline: Database connection failure" });
-    }
-
-    // 1. Authenticate user session
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
-      return res.status(401).json({ error: "Access Denied: Invalid or expired user session" });
-    }
-
     // 2. First, check if result is already cached in the database (Bypass charging user completely)
     let cachedRecord: any = null;
-    try {
-      const { data, error } = await supabaseAdmin
-        .from("aadhaar_pan_results")
-        .select("*")
-        .eq("aadhaar_number", targetAadhaar)
-        .maybeSingle();
+    if (supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("aadhaar_pan_results")
+          .select("*")
+          .eq("aadhaar_number", targetAadhaar)
+          .maybeSingle();
 
-      if (!error && data) {
-        cachedRecord = data;
+        if (!error && data) {
+          cachedRecord = data;
+        }
+      } catch (cacheErr) {
+        console.warn("Aadhaar to PAN database cache check failed:", cacheErr);
       }
-    } catch (cacheErr) {
-      console.warn("Aadhaar to PAN database cache check failed:", cacheErr);
     }
 
     if (cachedRecord && cachedRecord.pan_number && cachedRecord.raw_data) {
@@ -2632,34 +2735,34 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       });
     }
 
-    // 3. Fetch user profile to verify credits (only if not cached)
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
+    // Only verify and deduct credits if user is NOT a guest
+    if (!isGuest && user && supabaseAdmin) {
+      const { data: profile, error: profileErr } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
 
-    if (profileErr || !profile) {
-      return res.status(404).json({ error: "Profile record not found" });
-    }
+      if (profileErr || !profile) {
+        return res.status(404).json({ error: "Profile record not found" });
+      }
 
-    const currentCredits = Number(profile.credits || 0);
-    const cost = 150;
+      const currentCredits = Number(profile.credits || 0);
+      const cost = 150;
 
-    if (currentCredits < cost) {
-      return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
-    }
+      if (currentCredits < cost) {
+        return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
+      }
 
-    
-    // 4. Deduct 150 credits atomically
-    // Try RPC first for atomic deduction
-    const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
-        user_id: user.id,
-        amount: cost
-    });
+      // Deduct 150 credits atomically
+      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
+          user_id: user.id,
+          amount: cost
+      });
 
-    if (rpcError || rpcSuccess === false) {
-        return res.status(500).json({ error: "Failed to deduct credits atomically. Please try again or check your balance." });
+      if (rpcError || rpcSuccess === false) {
+          return res.status(500).json({ error: "Failed to deduct credits atomically. Please try again or check your balance." });
+      }
     }
 
     // 5. Query External PAN Find API
@@ -2700,22 +2803,24 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       return res.json({
         status: "failed",
         pan_found: false,
-        message: "No PAN number found for this Aadhaar number. 150 credits deducted.",
-        credits_deducted: 150,
+        message: isGuest ? "No PAN number found for this Aadhaar number." : "No PAN number found for this Aadhaar number. 150 credits deducted.",
+        credits_deducted: isGuest ? 0 : 150,
         results: apiData ? scrubAllBranding(apiData) : null
       });
     }
 
     // 7. Store successful result in database public.aadhaar_pan_results
     const scrubbedApiData = scrubAllBranding(apiData || {});
-    try {
-      await supabaseAdmin.from("aadhaar_pan_results").insert({
-        aadhaar_number: targetAadhaar,
-        pan_number: retrievedPan,
-        raw_data: scrubbedApiData
-      });
-    } catch (dbInsertErr) {
-      console.error("Failed to insert successful Aadhaar to PAN result into DB cache:", dbInsertErr);
+    if (supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("aadhaar_pan_results").insert({
+          aadhaar_number: targetAadhaar,
+          pan_number: retrievedPan,
+          raw_data: scrubbedApiData
+        });
+      } catch (dbInsertErr) {
+        console.error("Failed to insert successful Aadhaar to PAN result into DB cache:", dbInsertErr);
+      }
     }
 
     // 8. Return successful search payload
@@ -2723,7 +2828,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       status: "success",
       pan_found: true,
       pan: retrievedPan,
-      credits_deducted: 150,
+      credits_deducted: isGuest ? 0 : 150,
       results: scrubbedApiData
     });
 

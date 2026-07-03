@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
@@ -215,6 +215,54 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const [copiedStep2, setCopiedStep2] = useState(false);
   const [copiedRawFeed, setCopiedRawFeed] = useState(false);
   const [copiedRawResults, setCopiedRawResults] = useState(false);
+  const [copiedResponse, setCopiedResponse] = useState(false);
+
+  const getFormattedResponse = () => {
+    let targetObj: any = null;
+
+    if (aadhaarPanResult) {
+      targetObj = {
+        status: "success",
+        pan: aadhaarPanResult.pan,
+        aadhaar_details: aadhaarPanResult.aadhaar_response,
+      };
+      if (aadhaarPanResult.pancard_loading) {
+        targetObj.pancard_details = "Loading secondary database registry...";
+      } else if (aadhaarPanResult.pancard_error) {
+        targetObj.pancard_error = aadhaarPanResult.pancard_error;
+      } else if (aadhaarPanResult.pancard_result) {
+        targetObj.pancard_details = aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result;
+      }
+    } else if (result) {
+      if (result.raw_results) {
+        try {
+          targetObj = JSON.parse(result.raw_results);
+        } catch (e) {
+          targetObj = result.raw_results;
+        }
+      } else if (result.results) {
+        targetObj = result.results;
+      } else {
+        targetObj = result;
+      }
+    }
+
+    if (!targetObj) return "";
+
+    let str = typeof targetObj === 'string' ? targetObj : JSON.stringify(targetObj, null, 2);
+
+    // Clean brandings and watermarks properly
+    str = str
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|exploitsindia)/gi, "")
+      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/buy_url/gi, "api_url")
+      .replace(/https:\/\/tracexdata-api\.onrender\.com\/buy-api/gi, "")
+      .replace(/https:\/\/exploitsindia\.site\S*/gi, "")
+      .replace(/https:\/\/techvishalboss\.com\S*/gi, "");
+
+    return str;
+  };
 
   const hasUnlimitedAction = () => {
     if (!profile?.unlimited_expiry) return false;
@@ -303,10 +351,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const handleSearch = useCallback(async (e?: React.FormEvent, forceQuery?: string) => {
     if (e) e.preventDefault();
     if (isLoading) return;
+
     if (!user) {
-      setError('Please sign in to access TRACEXDATA Intelligence.');
+      setError('Authentication Required: Please Sign In to your TRACEXDATA account to continue searching.');
+      handleOpenLogin();
       return;
     }
+
     if (cooldown > 0) {
       setError(`System cooling down. Please wait ${cooldown}s before next query.`);
       return;
@@ -363,6 +414,12 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       creditCost = 20;
     } else if (service === 'aadhaar_to_pan') {
       creditCost = 150;
+    }
+
+    if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
+      setError(`Insufficient Credits: This lookup costs ${creditCost} CTR, but you only have ${profile?.credits || 0} CTR. Please top up your wallet.`);
+      handleOpenPricing();
+      return;
     }
 
 
@@ -786,6 +843,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           </Link>
         </div>
 
+        {/* Testing Mode Banner removed for Production Mode */}
+
         {service === 'telegram' ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -901,190 +960,50 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         <div className="min-h-[100px]">
           {isLoading ? (
             <Skeleton message={loadingMessage} />
-          ) : aadhaarPanResult ? (
-            <div className="space-y-6">
-              {/* Step 1: Aadhaar to PAN Result */}
+          ) : (aadhaarPanResult || result) ? (
+            <div className="space-y-4">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-6 border-cyan-500/30 bg-cyan-500/5"
+                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-4 border-cyan-500/30 bg-cyan-500/5"
               >
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-indigo-500 to-cyan-500" />
                 
                 <div className="flex items-center justify-between border-b border-white/5 pb-4">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-                      <ShieldCheck size={18} />
+                      <Terminal size={18} />
                     </div>
                     <div>
                       <h3 className="font-bold text-white uppercase tracking-wide text-xs md:text-sm">
-                        Step 1: Aadhaar to PAN Decrypted
+                        Direct Database Feed
                       </h3>
                       <p className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">
-                        STATUS: SUCCESSFUL DECRYPTION
+                        STATUS: SECURE DECRYPTED
                       </p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono text-zinc-500 bg-white/5 px-2 py-1 rounded-md">
-                    -150 CTR
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const formatted = getFormattedResponse();
+                      navigator.clipboard.writeText(formatted);
+                      setCopiedResponse(true);
+                      setTimeout(() => setCopiedResponse(false), 2000);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest cursor-pointer"
+                  >
+                    {copiedResponse ? <Check size={11} className="text-cyan-400" strokeWidth={3} /> : <Clipboard size={11} />}
+                    {copiedResponse ? 'Copied' : 'Copy'}
+                  </button>
                 </div>
 
-                <div className="space-y-3 font-mono">
-                  <div className="p-4 rounded-xl bg-cyan-500/5 border border-cyan-500/10 flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] text-cyan-400 font-bold uppercase tracking-wider">Allocated PAN Number</span>
-                      <span className="text-sm md:text-lg font-extrabold text-white tracking-widest">{aadhaarPanResult.pan}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard.writeText(aadhaarPanResult.pan)}
-                      className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center justify-center group"
-                      title="Copy PAN"
-                    >
-                      <Clipboard size={14} className="group-hover:scale-110 transition-transform" />
-                    </button>
-                  </div>
-
-                  {aadhaarPanResult.aadhaar_response && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Linking Status</span>
-                        <span className="text-xs text-zinc-200 capitalize">{aadhaarPanResult.aadhaar_response.aadhaar_status || "Linked"}</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Target Aadhaar</span>
-                        <span className="text-xs text-zinc-200">{phoneNumber}</span>
-                      </div>
-                    </div>
-                  )}
+                <div className="relative">
+                  <pre className="text-left font-mono whitespace-pre-wrap text-emerald-400 select-all overflow-x-auto text-[11px] md:text-xs leading-relaxed p-4 bg-zinc-950/80 border border-zinc-900 rounded-xl max-h-[600px] overflow-y-auto">
+                    {getFormattedResponse()}
+                  </pre>
                 </div>
               </motion.div>
-
-              {/* Step 2: PAN Card Details */}
-              <div className="relative">
-                {aadhaarPanResult.pancard_loading ? (
-                  <div className="glass-card p-8 flex flex-col items-center justify-center gap-3 border-purple-500/20 bg-purple-500/5">
-                    <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
-                    <span className="text-xs font-mono text-purple-300 animate-pulse">Getting PAN details...</span>
-                  </div>
-                ) : aadhaarPanResult.pancard_error ? (
-                  <div className="glass-card p-6 border-red-500/20 bg-red-500/5 text-center text-red-400 text-xs font-mono">
-                    {aadhaarPanResult.pancard_error}
-                  </div>
-                ) : aadhaarPanResult.pancard_result ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto relative"
-                  >
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2 flex justify-between items-center">
-                      <span>Step 2: Official Registry Raw Record Feed</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
-                              .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
-                              .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-                              .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
-                            navigator.clipboard.writeText(scrubbed);
-                            setCopiedStep2(true);
-                            setTimeout(() => setCopiedStep2(false), 2000);
-                          }}
-                          className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-emerald-500/30 text-zinc-400 hover:text-emerald-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
-                        >
-                          {copiedStep2 ? <Check size={10} className="text-emerald-400" /> : <Clipboard size={10} />}
-                          {copiedStep2 ? 'Copied' : 'Copy'}
-                        </button>
-                        <span className="text-emerald-400 font-bold">SUCCESS</span>
-                      </div>
-                    </div>
-                    {(() => {
-                      const scrubbed = JSON.stringify(aadhaarPanResult.pancard_result.results || aadhaarPanResult.pancard_result, null, 2)
-                        .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
-                        .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-                        .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
-                      return scrubbed;
-                    })()}
-                  </motion.div>
-                ) : null}
-              </div>
-            </div>
-          ) : result ? (
-            <div className="space-y-6">
-              {result.raw_results ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="glass-card p-4 md:p-6 font-mono text-[10px] md:text-sm whitespace-pre-wrap leading-relaxed text-zinc-200 border-cyan-500/30 bg-cyan-500/5 select-all relative"
-                >
-                  <div className="flex justify-between items-center mb-2 border-b border-white/5 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                    <span>Raw Trace Output</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(result.raw_results);
-                        setCopiedRawResults(true);
-                        setTimeout(() => setCopiedRawResults(false), 2000);
-                      }}
-                      className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
-                    >
-                      {copiedRawResults ? <Check size={10} className="text-cyan-400" /> : <Clipboard size={10} />}
-                      {copiedRawResults ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  {result.raw_results}
-                </motion.div>
-              ) : (service === 'vehicle' || service === 'pancard') ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="glass-card p-4 md:p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed text-emerald-400 border-emerald-500/20 bg-emerald-500/5 select-all overflow-x-auto relative"
-                >
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-3 border-b border-white/5 pb-2 flex justify-between items-center">
-                    <span>Official Registry Raw Record Feed</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const scrubbed = JSON.stringify(result.results, null, 2)
-                          .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
-                          .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-                          .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
-                        navigator.clipboard.writeText(scrubbed);
-                        setCopiedRawFeed(true);
-                        setTimeout(() => setCopiedRawFeed(false), 2000);
-                      }}
-                      className="px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-emerald-500/30 text-zinc-400 hover:text-emerald-400 transition-all flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-widest cursor-pointer"
-                    >
-                      {copiedRawFeed ? <Check size={10} className="text-emerald-400" /> : <Clipboard size={10} />}
-                      {copiedRawFeed ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  {(() => {
-                    const scrubbed = JSON.stringify(result.results, null, 2)
-                      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "")
-                      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-                      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "");
-                    return scrubbed;
-                  })()}
-                </motion.div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between mb-2 px-2">
-                    <div className="flex items-center gap-2 text-zinc-400 text-[10px] md:text-xs uppercase tracking-widest">
-                      <ShieldCheck size={14} className="text-cyan-500" />
-                      Live Trace Results
-                    </div>
-                    <div className="text-[10px] font-mono text-zinc-600 bg-white/5 px-2 py-1 rounded-md">
-                      {Object.keys(result.results).length} Recs
-                    </div>
-                  </div>
-                  {Object.entries(result.results).map(([key, data], idx) => (
-                    <ResultCard key={key} data={data as any} index={idx} />
-                  ))}
-                </>
-              )}
 
               {service === 'telegram' && (
                 <motion.div
