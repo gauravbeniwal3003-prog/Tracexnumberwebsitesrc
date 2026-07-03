@@ -152,7 +152,7 @@ ALTER TABLE public.protected_vehicles ENABLE ROW LEVEL SECURITY;
 
 -- Select/Insert policies for Telegram/Vehicle cache
 DROP POLICY IF EXISTS "Anyone can read cached telegrams" ON public.telegram_search_results;
-CREATE POLICY "Anyone can read cached telegrams" ON public.telegram_search_results FOR SELECT USING (TRUE);
+CREATE POLICY "Anyone can read cached telegrams" ON public.telegram_search_results FOR SELECT USING (FALSE);
 
 DROP POLICY IF EXISTS "Anyone can insert telegram cache" ON public.telegram_search_results;
 CREATE POLICY "Anyone can insert telegram cache" ON public.telegram_search_results FOR INSERT WITH CHECK (TRUE);
@@ -220,7 +220,7 @@ ALTER TABLE public.api_logs ENABLE ROW LEVEL SECURITY;
 
 -- Select policies
 DROP POLICY IF EXISTS "Anyone can select api_keys" ON public.api_keys;
-CREATE POLICY "Anyone can select api_keys" ON public.api_keys FOR SELECT USING (TRUE);
+CREATE POLICY "Anyone can select api_keys" ON public.api_keys FOR SELECT USING (FALSE);
 
 DROP POLICY IF EXISTS "Anyone can select api_settings" ON public.api_settings;
 CREATE POLICY "Anyone can select api_settings" ON public.api_settings FOR SELECT USING (TRUE);
@@ -355,8 +355,33 @@ ALTER TABLE public.aadhaar_pan_results ENABLE ROW LEVEL SECURITY;
 
 -- Select/Insert policies
 DROP POLICY IF EXISTS "Anyone can read cached aadhaar_pan_results" ON public.aadhaar_pan_results;
-CREATE POLICY "Anyone can read cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR SELECT USING (TRUE);
+CREATE POLICY "Anyone can read cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR SELECT USING (FALSE);
 
 DROP POLICY IF EXISTS "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_pan_results;
-CREATE POLICY "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR INSERT WITH CHECK (TRUE);
+CREATE POLICY "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_pan_results FOR INSERT WITH CHECK (FALSE);
 
+
+-- ==========================================
+-- 11. ATOMIC CREDIT DEDUCTION RPC
+-- ==========================================
+CREATE OR REPLACE FUNCTION deduct_credits(user_id UUID, amount INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    current_credits INTEGER;
+BEGIN
+    -- Select current credits with lock to prevent race condition
+    SELECT credits INTO current_credits 
+    FROM public.profiles 
+    WHERE id = user_id 
+    FOR UPDATE;
+
+    IF current_credits >= amount THEN
+        UPDATE public.profiles SET credits = credits - amount WHERE id = user_id;
+        RETURN TRUE;
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+$$;

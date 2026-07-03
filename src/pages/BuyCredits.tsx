@@ -32,7 +32,7 @@ export default function BuyCredits() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
           }
         });
         if (response.ok) {
@@ -153,10 +153,13 @@ export default function BuyCredits() {
     const finalAmount = getPlanPrice(plan);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || '';
       const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/create-order`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           user_id: user.id,

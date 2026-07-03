@@ -140,8 +140,8 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const maxAttempts = 5;
   const delays = [1000, 2000, 3000, 4000, 5000];
   
-  const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-  const backendEndpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/lookup?key=TX-SYSTEM-INTERNAL-ADMIN&query=${number}`;
+  
+  const backendEndpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=phone&query=${number}`;
   
   const targetUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
@@ -150,7 +150,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const useDirectFallback = attempt > 2 || !renderBackendUrl;
+      const useDirectFallback = true;
       const url = useDirectFallback ? proxyUrl : backendEndpoint;
       
       const response = await fetch(url, {
@@ -398,16 +398,20 @@ export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> =
   // 2. Query SaaS proxy
   console.log('Searching TRACEXDATA Telegram Intelligence...');
   try {
-    const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-    const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/telegram?key=TX-SYSTEM-INTERNAL-ADMIN&query=${telegramId}`;
+    
+    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=telegram&query=${telegramId}`;
 
+    
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
     const response = await fetch(endpoint, {
       method: 'GET',
-      mode: 'cors',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
       }
     });
+
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -422,10 +426,7 @@ export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> =
       // Save cache in background
       (async () => {
         try {
-          await supabase.from('telegram_search_results').upsert({
-            telegram_id: telegramId,
-            raw_data: apiData.results
-          }, { onConflict: 'telegram_id' });
+          console.log('Skipping insecure client-side cache');
         } catch (e) {
           console.error('Failed to cache Telegram result:', e);
         }
@@ -469,7 +470,7 @@ const scrubBranding = (obj: any): any => {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'success', 'status', 'found', 'message', 'api_info', 'powered_by', 'owner', 'contact', 'buy_api', 'support', 'owner_telegram'].includes(lowerKey)) {
+      if (['branding', 'success', 'status', 'found', 'message', 'api_info', 'powered_by', 'buy_api', 'support', 'owner_telegram'].includes(lowerKey)) {
         continue;
       }
       cleaned[key] = scrubBranding(val);
@@ -482,16 +483,20 @@ const scrubBranding = (obj: any): any => {
 export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA Identity Card Intelligence...');
   try {
-    const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-    const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/identity?key=TX-SYSTEM-INTERNAL-ADMIN&query=${encodeURIComponent(aadharNo)}`;
+    
+    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
 
+    
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
     const response = await fetch(endpoint, {
       method: 'GET',
-      mode: 'cors',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
       }
     });
+
 
     if (!response.ok) {
       throw new Error(`Engine returned status ${response.status}`);
@@ -524,16 +529,20 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
 export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA BA&NK Intelligence...');
   try {
-    const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-    const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/bank?key=TX-SYSTEM-INTERNAL-ADMIN&query=${encodeURIComponent(ifsc)}`;
+    
+    const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
 
+    
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
     const response = await fetch(endpoint, {
       method: 'GET',
-      mode: 'cors',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
       }
     });
+
 
     if (!response.ok) {
       throw new Error(`Engine returned status ${response.status}`);
@@ -593,16 +602,20 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     try {
       console.log(`Vehicle RC lookup attempt ${attempt} of ${maxTries}...`);
-      const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-      const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/vehicle?key=TX-SYSTEM-INTERNAL-ADMIN&query=${cleanVehicleNo}`;
+      
+      const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
 
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -672,16 +685,20 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     try {
       console.log(`PN Card lookup attempt ${attempt} of ${maxTries}...`);
-      const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-      const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/pancard?key=TX-SYSTEM-INTERNAL-ADMIN&query=${cleanPancardNo}`;
+      
+      const endpoint = `${''.replace(/\/$/, '')}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
 
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -731,8 +748,8 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     const sessionRes = await supabase.auth.getSession();
     const token = sessionRes.data.session?.access_token;
     
-    const renderBackendUrl = 'https://tracexdata-api.onrender.com';
-    const endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/aadhaar-to-pan`;
+    
+    const endpoint = `${''.replace(/\/$/, '')}/api/aadhaar-to-pan`;
 
     const response = await fetch(endpoint, {
       method: 'POST',

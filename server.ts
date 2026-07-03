@@ -1,20 +1,25 @@
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import cors from "cors";
+
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
+
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
+
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
 
 // Supabase Configuration
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,10 +33,9 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 
 if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  console.log("[TRACEXDATA] Supabase Admin initialized with SERVICE_ROLE_KEY");
-} else if (supabase) {
-  supabaseAdmin = supabase;
-  console.log("[TRACEXDATA] Supabase Admin initialized fallback to ANON_KEY");
+  console.log("[TRACEXDATA] Supabase Admin initialized securely.");
+} else {
+  console.error("[CRITICAL SECURITY ERROR] SUPABASE_SERVICE_ROLE_KEY is missing. Backend operations requiring admin privileges will fail.");
 }
 
 // Cashfree Configuration
@@ -39,7 +43,72 @@ const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
 const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
 const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || "https://api.cashfree.com/pg";
 
-app.use(express.json());
+
+// Security Middleware (Helmet)
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https://*"],
+      connectSrc: ["'self'", "https://*"],
+      frameSrc: ["'self'", "https://sdk.cashfree.com"]
+    }
+  } : false,
+  crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'same-origin' }
+}));
+
+// CORS Configuration
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:5173").split(",");
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+// Rate Limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', globalLimiter);
+
+// Specific Rate Limiters for sensitive endpoints
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // Limit each IP to 5 requests per minute
+  message: { error: 'Too many requests!' }
+});
+app.use('/api/user-lookup', searchLimiter);
+app.use('/api/lookup', searchLimiter);
+app.use('/api/aadhaar-to-pan', searchLimiter);
+app.use('/api/panfind', searchLimiter);
+const sensitiveLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50, // Limit each IP to 50 sensitive requests per hour
+  message: { error: "Too many sensitive requests from this IP, please try again later." },
+});
+app.use('/api/cashfree', sensitiveLimiter);
+app.use('/api/admin', sensitiveLimiter);
+
+// Strict JSON parsing
+app.use(express.json({ limit: '10kb' }));
+
 
 // Healthy Check
 app.get("/api/health", (req, res) => {
@@ -167,7 +236,7 @@ async function logSearchHistory(req: express.Request, searchType: string, query:
     // 2. If no user from token, check if there's an api key
     if (!userId) {
       const key = String(req.query.key || req.body.key || "").trim();
-      if (key && key !== "TX-SYSTEM-INTERNAL-ADMIN") {
+      if (key && key !== INTERNAL_MASTER_KEY) {
         const { data: keyRecords } = await supabaseAdmin
           .from("api_keys")
           .select("user_id, user_email")
@@ -299,6 +368,103 @@ function cleanBrandingObject(obj: any): any {
 }
 
 // Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
+
+app.get("/api/user-lookup", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Session token missing" });
+  }
+  const token = authHeader.replace("Bearer ", "");
+  
+  const { service, query } = req.query;
+  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan'];
+  if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
+    return res.status(400).json({ error: "Missing service or query" });
+  }
+
+  if (!supabaseAdmin) return res.status(500).json({ error: "Database offline" });
+
+  try {
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Session invalid or expired" });
+    }
+
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+      
+    if (profileErr || !profile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    let isUnlimited = false;
+    if (profile.unlimited_expiry) {
+      const expiry = new Date(profile.unlimited_expiry);
+      if (expiry > new Date()) {
+        isUnlimited = true;
+      }
+    }
+
+    let creditCost = 1;
+    if (service === 'telegram') {
+      creditCost = 8;
+    } else if (service === 'adhr') {
+      creditCost = 12;
+    } else if (service === 'bnk') {
+      creditCost = 18;
+    } else if (service === 'vehicle') {
+      creditCost = 10;
+    } else if (service === 'pancard') {
+      creditCost = 20;
+    } else if (service === 'aadhaar_to_pan') {
+      creditCost = 150;
+    }
+    const currentCredits = Number(profile.credits || 0);
+    
+    if (!isUnlimited) {
+      if (currentCredits < creditCost) {
+        return res.status(403).json({ error: "Insufficient credits." });
+      }
+
+      // Try RPC first for atomic deduction
+      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
+          user_id: user.id,
+          amount: creditCost
+      });
+
+      if (rpcError || rpcSuccess === false) {
+          return res.status(500).json({ error: "Failed to deduct credits atomically." });
+      }
+    }
+
+    const renderBackendUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
+    let mappedService = service;
+    if (service === 'adhr') mappedService = 'identity';
+    else if (service === 'bnk') mappedService = 'bank';
+    else if (service === 'phone') mappedService = 'lookup';
+
+    let endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/${mappedService}?key=${INTERNAL_MASTER_KEY}&query=${encodeURIComponent(query)}`;
+    if (service === 'phone') {
+        endpoint = `${renderBackendUrl.replace(/\/$/, '')}/api/lookup?key=${INTERNAL_MASTER_KEY}&numquery=${encodeURIComponent(query)}`;
+    }
+    
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    const data = await response.json();
+    return res.status(response.status).json(data);
+
+  } catch (err: any) {
+    console.error("User lookup error:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 app.get("/api/lookup", async (req, res) => {
   const { 
     key, 
@@ -318,10 +484,16 @@ app.get("/api/lookup", async (req, res) => {
   const startTime = Date.now();
 
   // Basic CORS and Content-Type
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!key) return res.status(401).json({ status: "error", message: "API key is required" });
+
+  // Input Validation
+  if (service && (typeof service !== 'string' || service.length > 50)) {
+    return res.status(400).json({ status: "error", message: "Invalid service requested" });
+  }
+
 
   if (!supabaseAdmin) {
     return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
@@ -333,7 +505,7 @@ app.get("/api/lookup", async (req, res) => {
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -353,7 +525,7 @@ app.get("/api/lookup", async (req, res) => {
       keyRecord = keyRecords?.[0];
 
       if (keyErr || !keyRecord) {
-        console.error("[AUTH_FAIL]", keyErr, "Key:", key);
+        console.error("[AUTH_FAIL]", keyErr);
         return res.status(401).json({ status: "error", message: "Access Denied: Invalid or unauthorized API key" });
       }
 
@@ -692,8 +864,42 @@ app.get("/api/lookup", async (req, res) => {
         api_url = `https://exploitsindia.site//hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "RASION";
       } else if (lookupType === 'vehicle') {
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
         logPrefix = "VEHICLE";
+        
+        // Check database cache first for speed of response
+        try {
+          const { data: cachedRow } = await supabaseAdmin
+            .from("vehicle_search_results")
+            .select("raw_data")
+            .eq("vehicle_number", targetQuery)
+            .maybeSingle();
+
+          if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+            console.log(`[CACHE HIT] Serving Vehicle lookup ${targetQuery} via /api/lookup from DB Cache`);
+            const newCount = (keyRecord.requests_used || 0) + 1;
+            if (!isMaster && keyRecord?.id) {
+              await supabaseAdmin.from("api_keys").update({ 
+                requests_used: newCount,
+                last_used_at: new Date().toISOString()
+              }).eq("id", keyRecord.id);
+            }
+            await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
+
+            const filtered = formatUnifiedSaaSResponse({
+              type: 'vehicle',
+              query: targetQuery,
+              expiresAt: keyRecord.expires_at,
+              planName: keyRecord.plan_name,
+              requestsUsed: newCount,
+              records: [cachedRow.raw_data]
+            });
+            return res.json(filtered);
+          }
+        } catch (cacheErr) {
+          console.error("Vehicle Cache check error inside /api/lookup:", cacheErr);
+        }
+
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
       }
 
       const response = await fetch(api_url);
@@ -702,25 +908,59 @@ app.get("/api/lookup", async (req, res) => {
       }
 
       const text = await response.text();
-      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-      const lowerText = cleanedText.toLowerCase();
+      let parsedData: any;
+      let isJson = false;
 
-      if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+      try {
+        parsedData = JSON.parse(text);
+        isJson = true;
+      } catch (e) {
+        const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+        try {
+          parsedData = JSON.parse(cleanedText);
+          isJson = true;
+        } catch (err) {
+          parsedData = { raw_data: cleanedText };
+        }
+      }
+
+      let isError = false;
+      if (isJson && parsedData) {
+        const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+        const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
+        if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+          isError = true;
+        }
+      } else {
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim()) {
+          isError = true;
+        }
+      }
+
+      if (isError) {
          await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "failed", Date.now() - startTime);
          return res.status(404).json({ status: "error", message: `No identity records found in ${logPrefix} database for ${targetQuery}` });
       }
 
-      let parsedData: any;
-      try {
-        parsedData = JSON.parse(cleanedText);
-        if (lookupType === 'vehicle' && parsedData && parsedData.api_creator) {
-          delete parsedData.api_creator;
-        }
-      } catch (e) {
-        parsedData = { raw_data: cleanedText };
+      if (lookupType === 'vehicle' && parsedData && parsedData.api_creator) {
+        delete parsedData.api_creator;
       }
 
       const cleanedData = cleanBrandingObject(parsedData);
+
+      // Save to database cache if it's a vehicle lookup
+      if (lookupType === 'vehicle' && cleanedData && Object.keys(cleanedData).length > 0) {
+        try {
+          await supabaseAdmin.from("vehicle_search_results").upsert({
+            vehicle_number: targetQuery,
+            raw_data: cleanedData
+          }, { onConflict: "vehicle_number" });
+          console.log(`[CACHE SAVE] Saved Vehicle lookup ${targetQuery} via /api/lookup to DB Cache`);
+        } catch (cacheSaveErr) {
+          console.error("Failed to save Vehicle result to database cache:", cacheSaveErr);
+        }
+      }
       const newCount = (keyRecord.requests_used || 0) + 1;
       if (!isMaster && keyRecord?.id) {
         await supabaseAdmin.from("api_keys").update({ 
@@ -766,7 +1006,20 @@ async function fulfillOrder(orderId: string, userId: string) {
       .eq("payment_id", orderId)
       .single();
 
-    if (claimErr || !claim || claim.status === "success") return;
+    if (claimErr || !claim || claim.status === "success" || claim.status === "consumed") return;
+
+    // Atomic Lock
+    const { data: lockResult, error: lockErr } = await supabaseAdmin
+      .from("payment_claims")
+      .update({ status: "processing" })
+      .eq("payment_id", orderId)
+      .eq("status", "pending")
+      .select();
+
+    if (lockErr || !lockResult || lockResult.length === 0) {
+      console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed.`);
+      return;
+    }
 
     const { plan_id, user_email } = claim;
 
@@ -899,14 +1152,48 @@ async function fulfillOrder(orderId: string, userId: string) {
 }
 
 // Cashfree Routes
+
 app.post("/api/cashfree/create-order", async (req, res) => {
   const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
+  
+  let authenticatedUserId = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "");
+    if (supabaseAdmin) {
+      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+      if (!error && user) {
+        authenticatedUserId = user.id;
+      }
+    }
+  }
+
+  if (!isPgPay && !authenticatedUserId) {
+    return res.status(401).json({ error: "Unauthorized. Authentication required to create an order." });
+  }
+
+  // Override user_id with the authenticated user ID (prevent IDOR)
+  if (!isPgPay && authenticatedUserId) {
+    req.body.user_id = authenticatedUserId;
+  }
+
   if (!supabaseAdmin && !isPgPay) {
     return res.status(500).json({ error: "Backend not configured (Supabase Admin missing)" });
   }
 
   try {
     const { user_id, user_email, plan_id, amount, customer_phone, customer_name, return_url } = req.body;
+    
+    // Strict input validation
+    if (!amount || typeof amount !== 'number' || amount <= 0 || amount > 100000) {
+      return res.status(400).json({ error: "Invalid payment amount" });
+    }
+    if (plan_id !== "pgpay_manual" && plan_id !== "panfind") {
+      if (!user_id || typeof user_id !== 'string') {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+    }
+
 
     if ((!user_id && !isPgPay) || !plan_id || !amount) {
       return res.status(400).json({ error: "Missing required parameters" });
@@ -987,10 +1274,16 @@ app.post("/api/cashfree/create-order", async (req, res) => {
   }
 });
 
+
 app.get("/api/cashfree/status/:order_id", async (req, res) => {
   const { order_id } = req.params;
+  
+  if (!order_id || typeof order_id !== 'string' || order_id.trim().length === 0 || order_id.length > 100) {
+    return res.status(400).json({ error: "Invalid Order ID." });
+  }
 
   try {
+
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
       const renderBackendUrl = "https://tracexdata-api.onrender.com";
@@ -1055,7 +1348,7 @@ app.get("/api/telegram", async (req, res) => {
   const targetTelegramId = String(query || telegram || api || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetTelegramId) {
@@ -1069,7 +1362,7 @@ app.get("/api/telegram", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1237,7 +1530,7 @@ app.get("/api/identity", async (req, res) => {
   let targetQuery = String(query || aadhar || identity || exploits || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -1258,7 +1551,7 @@ app.get("/api/identity", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1361,7 +1654,7 @@ app.get("/api/bank", async (req, res) => {
   let targetQuery = String(query || ifsc || bank || exploits || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -1382,7 +1675,7 @@ app.get("/api/bank", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1485,7 +1778,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
   let targetQuery = String(query || family || rasion || ration || exploits || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -1506,7 +1799,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1631,7 +1924,7 @@ app.get("/api/vehicle", async (req, res) => {
   let targetQuery = String(query || vehicle || vehicle_no || exploits || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -1652,7 +1945,7 @@ app.get("/api/vehicle", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1705,6 +1998,29 @@ app.get("/api/vehicle", async (req, res) => {
       }
     }
 
+    // 1. Check database cache first for speed of response
+    const { data: cachedRow, error: cacheErr } = await supabaseAdmin
+      .from("vehicle_search_results")
+      .select("raw_data")
+      .eq("vehicle_number", targetQuery)
+      .maybeSingle();
+
+    if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+      console.log(`[CACHE HIT] Serving Vehicle lookup for ${targetQuery} from database cache.`);
+      
+      // Record telemetry for successful search
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: (keyRecord.requests_used || 0) + 1,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+
+      await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "success", Date.now() - startTime);
+      return res.json({ status: "success", results: cachedRow.raw_data });
+    }
+
+    // 2. Fetch from the external provider if not cached
     const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
@@ -1713,25 +2029,62 @@ app.get("/api/vehicle", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
+    let parsedData: any;
+    let isJson = false;
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+    try {
+      // Try to parse the original JSON first to ensure structure integrity
+      parsedData = JSON.parse(text);
+      isJson = true;
+    } catch (e) {
+      // Fallback: clean branding and try parsing again
+      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+      try {
+        parsedData = JSON.parse(cleanedText);
+        isJson = true;
+      } catch (err) {
+        parsedData = { raw_data: cleanedText };
+      }
+    }
+
+    // Smart Error Detection: Check if response actually represents a failure
+    let isError = false;
+    if (isJson && parsedData) {
+      const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+      const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+        isError = true;
+      }
+    } else {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim()) {
+        isError = true;
+      }
+    }
+
+    if (isError) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
        return res.status(404).json({ status: "error", message: "api error" });
     }
 
-    let parsedData: any;
-    try {
-      parsedData = JSON.parse(cleanedText);
-      if (parsedData && parsedData.api_creator) {
-        delete parsedData.api_creator;
-      }
-    } catch (e) {
-      parsedData = { raw_data: cleanedText };
+    if (parsedData && parsedData.api_creator) {
+      delete parsedData.api_creator;
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
+
+    // Save success result in the database cache
+    if (cleanedData && Object.keys(cleanedData).length > 0) {
+      try {
+        await supabaseAdmin.from("vehicle_search_results").upsert({
+          vehicle_number: targetQuery,
+          raw_data: cleanedData
+        }, { onConflict: "vehicle_number" });
+        console.log(`[CACHE SAVE] Saved Vehicle lookup for ${targetQuery} to database cache.`);
+      } catch (cacheSaveErr) {
+        console.error("Failed to save Vehicle result to database cache:", cacheSaveErr);
+      }
+    }
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -1758,7 +2111,7 @@ app.get("/api/pancard", async (req, res) => {
   let targetQuery = String(query || pan || pn || pancard || exploits || "").trim();
   const startTime = Date.now();
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -1779,7 +2132,7 @@ app.get("/api/pancard", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === "TX-SYSTEM-INTERNAL-ADMIN";
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1878,7 +2231,6 @@ app.get("/api/pancard", async (req, res) => {
 // PAN Find secure payment lookup endpoint
 app.get("/api/panfind", async (req, res) => {
   const { order_id, aadhaar_number } = req.query;
-
   if (!order_id || !aadhaar_number) {
     return res.status(400).json({ error: "Missing required query parameters: order_id and aadhaar_number" });
   }
@@ -1889,11 +2241,30 @@ app.get("/api/panfind", async (req, res) => {
   }
 
   try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Backend not configured" });
+    }
+
+    // 0. IDOR / Replay Attack Prevention
+    // Check if this order_id was already consumed in payment_claims table
+    const { data: claim, error: claimErr } = await supabaseAdmin
+      .from("payment_claims")
+      .select("*")
+      .eq("payment_id", order_id)
+      .single();
+      
+    if (claimErr || !claim) {
+      return res.status(404).json({ error: "Order not found in database. Cannot verify payment." });
+    }
+    
+    if (claim.status === "consumed") {
+      return res.status(403).json({ error: "This payment has already been consumed. Please generate a new order." });
+    }
+
     let order_status = "";
     
     // 1. Verify payment status with Cashfree
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      console.log("[PANFIND] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
       const renderBackendUrl = "https://tracexdata-api.onrender.com";
       const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
       const data: any = await response.json();
@@ -1912,6 +2283,19 @@ app.get("/api/panfind", async (req, res) => {
 
     if (order_status !== "PAID") {
       return res.status(402).json({ error: "Payment verification failed. Please complete the Rs. 150 payment." });
+    }
+
+    // Mark as consumed immediately to prevent race conditions (re-entrancy)
+    // Atomic consumption
+    const { data: consumeResult, error: consumeErr } = await supabaseAdmin
+      .from("payment_claims")
+      .update({ status: "consumed" })
+      .eq("payment_id", order_id)
+      .neq("status", "consumed")
+      .select();
+
+    if (consumeErr || !consumeResult || consumeResult.length === 0) {
+      return res.status(403).json({ error: "This payment was already consumed or could not be locked." });
     }
 
     // 2. Execute target API lookup
@@ -2058,14 +2442,16 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
     }
 
-    // 4. Deduct 150 credits
-    const { error: deductError } = await supabaseAdmin
-      .from("profiles")
-      .update({ credits: Math.max(0, currentCredits - cost) })
-      .eq("id", user.id);
+    
+    // 4. Deduct 150 credits atomically
+    // Try RPC first for atomic deduction
+    const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
+        user_id: user.id,
+        amount: cost
+    });
 
-    if (deductError) {
-      return res.status(500).json({ error: "Failed to deduct lookup credits. Please try again." });
+    if (rpcError || rpcSuccess === false) {
+        return res.status(500).json({ error: "Failed to deduct credits atomically. Please try again or check your balance." });
     }
 
     // 5. Query External PAN Find API
@@ -2236,7 +2622,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     return res.json({ status: "success", data: mergedProfiles });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -2265,11 +2651,11 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[POST_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
     return res.json({ status: "success", data: data?.[0] });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -2293,11 +2679,11 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[PUT_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
     return res.json({ status: "success", data: data?.[0] });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -2314,11 +2700,11 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[DELETE_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
     return res.json({ status: "success", message: "User profile deleted successfully" });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -2333,7 +2719,7 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
 
     if (claimsErr) {
       console.error("[GET_ADMIN_EARNINGS_ERR]", claimsErr);
-      return res.status(500).json({ error: claimsErr.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
 
     // Calculate today, yesterday, and full week
@@ -2425,7 +2811,7 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     console.error("[ADMIN_EARNINGS_FAIL]", err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -2442,12 +2828,115 @@ app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[GET_ADMIN_HISTORY_ERR]", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
 
     return res.json({ status: "success", data });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
+// --- ADMIN API KEYS ---
+app.get("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('api_keys').select('*').order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ data });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
+  try {
+    const { user_email, plan_name, days } = req.body;
+    const apiKey = "tx_" + crypto.randomBytes(16).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + (days || 30));
+
+    const { data, error } = await supabaseAdmin.from('api_keys').insert({
+      user_email,
+      api_key: apiKey,
+      plan_name,
+      requests_used: 0,
+      request_limit: null,
+      expires_at: expiresAt.toISOString(),
+      status: 'active'
+    }).select().single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ data });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabaseAdmin.from('api_keys').delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ status: "success" });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
+// --- COMPREHENSIVE ADMIN DATA ENDPOINT ---
+app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
+  try {
+    const [
+      { data: apiKeys },
+      { data: apiLogs },
+      { data: settings },
+      { count: totalKeysCount },
+      { count: activeKeysCount },
+      { count: totalLogsCount },
+      { count: userCount },
+      { data: revenueData }
+    ] = await Promise.all([
+      supabaseAdmin.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100),
+      supabaseAdmin.from('api_logs').select('*, api_keys(user_email)').order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('api_settings').select('*').limit(1).maybeSingle(),
+      supabaseAdmin.from('api_keys').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabaseAdmin.from('api_logs').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('api_keys').select('plan_name')
+    ]);
+
+    const pricing: Record<string, number> = {
+      'Unified Pro API (15 Days)': 299,
+      'Unified Pro API (30 Days)': 599,
+      'Identity Lookup (1 Month)': 499,
+      'Bank/IFSC Lookup (1 Month)': 499,
+      'Vehicle Lookup (1 Month)': 499,
+      'PN Card Lookup (1 Month)': 999,
+      'PAN Card Lookup (1 Month)': 999,
+      'All Combo Special (1 Month)': 1499
+    };
+    const revenue = (revenueData || []).reduce((acc: number, curr: any) => acc + (pricing[curr.plan_name] || 0), 0);
+
+    return res.json({
+      status: 'success',
+      data: {
+        apiKeys: apiKeys || [],
+        apiLogs: apiLogs || [],
+        settings: settings || null,
+        stats: {
+          totalKeys: totalKeysCount || 0,
+          totalRequests: totalLogsCount || 0,
+          activeKeys: activeKeysCount || 0,
+          revenue: revenue,
+          totalUsers: userCount || 0
+        }
+      }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -2479,7 +2968,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
 
     if (claimsErr) {
       console.error("[RECONCILE_USER_CLAIMS_ERR]", claimsErr);
-      return res.status(500).json({ error: claimsErr.message });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
 
     if (!pendingClaims || pendingClaims.length === 0) {
@@ -2536,17 +3025,19 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
     });
   } catch (err: any) {
     console.error("[RECONCILE_API_CRITICAL_FAIL]", err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // --- SINGLE MANUAL TRANSACTION CLAIM GATEWAY ---
 
+
 app.post("/api/cashfree/claim-manual", async (req, res) => {
   const { order_id } = req.body;
-  if (!order_id) {
+  if (!order_id || typeof order_id !== 'string' || order_id.trim().length === 0 || order_id.length > 100) {
     return res.status(400).json({ error: "Please supply a valid Cashfree Order ID." });
   }
+
 
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -2572,10 +3063,15 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
       .select("*")
       .eq("payment_id", trimmedOrderId)
       .maybeSingle();
-
     if (claim && claim.status === "success") {
       return res.status(400).json({ error: "This reference has already been successfully claimed and posted." });
     }
+
+    // IDOR Protection: Verify ownership
+    if (claim && claim.user_id && claim.user_id !== user.id) {
+      return res.status(403).json({ error: "Unauthorized. This order does not belong to your account." });
+    }
+
 
     // 2. Fetch live data from Cashfree
     let isPaid = false;
@@ -2648,34 +3144,38 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
     });
   } catch (err: any) {
     console.error("[MANUAL_CLAIM_CRITICAL_FAIL]", err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // Vite middleware for development
-if (process.env.NODE_ENV !== "production") {
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: "spa",
-  });
-  app.use(vite.middlewares);
-} else {
-  const distPath = path.join(process.cwd(), "dist");
-  app.get("/sitemap.xml", (req, res) => {
-    res.header("Content-Type", "application/xml");
-    res.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.sendFile(path.join(distPath, "sitemap.xml"));
-  });
-  app.get("/robots.txt", (req, res) => {
-    res.header("Content-Type", "text/plain");
-    res.sendFile(path.join(distPath, "robots.txt"));
-  });
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
+async function setupVite() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.get("/sitemap.xml", (req, res) => {
+      res.header("Content-Type", "application/xml");
+      res.header("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(path.join(distPath, "sitemap.xml"));
+    });
+    app.get("/robots.txt", (req, res) => {
+      res.header("Content-Type", "text/plain");
+      res.sendFile(path.join(distPath, "robots.txt"));
+    });
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+setupVite().then(() => {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 });

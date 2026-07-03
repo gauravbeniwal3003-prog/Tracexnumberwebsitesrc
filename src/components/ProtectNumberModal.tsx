@@ -9,6 +9,7 @@ import { X, ShieldCheck, Check, Loader2, Phone, ShieldAlert, MessageSquare, Car 
 import { useAuth } from '../services/AuthContext.tsx';
 import { PROTECTION_PRICES } from '../types.ts';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
+import { supabase } from '../services/supabase.ts';
 
 interface ProtectNumberModalProps {
   onClose: () => void;
@@ -69,10 +70,13 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
     const finalAmount = getPrice();
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || '';
       const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/create-order`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           user_id: user.id,

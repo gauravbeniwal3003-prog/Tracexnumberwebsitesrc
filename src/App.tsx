@@ -155,6 +155,9 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' }) {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const handleOpenLogin = () => {};
+  const handleOpenPricing = () => {};
+  const handleOpenProtect = () => {};
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Initializing Engine...');
@@ -167,6 +170,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     pancard_error: string | null;
   } | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [searchHistory, setSearchHistory] = useState<any[]>([]);
+
+  const hasUnlimitedAction = () => {
+    if (!profile?.unlimited_expiry) return false;
+    return new Date(profile.unlimited_expiry) > new Date();
+  };
 
   // Cooldown timer
   useEffect(() => {
@@ -237,70 +247,34 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         'Correlating Status & Category Indexes...',
         'Structuring Financial Intel Logs...'
       ];
-    } else if (service === 'aadhaar_to_pan') {
-      messages = [
-        'Syncing with Income Tax Department & UIDAI...',
-        'Initializing Secure Bypasses...',
-        'Verifying Aadhaar Number Integrity...',
-        'Extracting Target PAN Association...',
-        'Retrieving Linked Account Details...',
-        'Formatting Identity & PAN Intelligence...'
-      ];
     }
-
+    
     let i = 0;
     const interval = setInterval(() => {
-      setLoadingMessage(messages[i % messages.length]);
-      i++;
-    }, 1200);
-
+      i = (i + 1) % messages.length;
+      setLoadingMessage(messages[i]);
+    }, 800);
     return () => clearInterval(interval);
   }, [isLoading, service]);
 
-  const [error, setError] = useState<string | null>(null);
-  const [searchHistory, setSearchHistory] = useState(getHistory());
-
-  const hasUnlimitedAction = () => {
-    if (!profile?.unlimited_expiry) return false;
-    return new Date(profile.unlimited_expiry) > new Date();
-  };
-
-  const handleOpenPricing = () => {
-    navigate('/pricing');
-  };
-
-  const handleOpenProtect = () => {
-    window.dispatchEvent(new CustomEvent('open-protect', {
-      detail: { tab: service === 'phone' ? 'mobile' : service }
-    }));
-  };
-
-  const handleOpenLogin = () => {
-    window.dispatchEvent(new CustomEvent('open-login'));
-  };
-
-  const handleSearch = useCallback(async (e?: React.FormEvent, num?: string) => {
+  const handleSearch = useCallback(async (e?: React.FormEvent, forceQuery?: string) => {
     if (e) e.preventDefault();
-    
-    // REQUIRE LOGIN FOR SEARCH
+    if (isLoading) return;
     if (!user) {
-      window.dispatchEvent(new CustomEvent('open-login'));
+      setError('Please sign in to access TRACEXDATA Intelligence.');
+      return;
+    }
+    if (cooldown > 0) {
+      setError(`System cooling down. Please wait ${cooldown}s before next query.`);
       return;
     }
 
-    let targetVal = num || phoneNumber;
-    if (service === 'phone') {
-      targetVal = cleanIndianPhoneNumber(targetVal);
-    }
-
-    if (!targetVal) {
-      setError(`Please enter a valid search query.`);
-      return;
-    }
+    const targetVal = forceQuery || phoneNumber.trim();
+    if (!targetVal) return;
 
     if (service === 'phone') {
       if (targetVal.length < 10) {
-        setError('Please enter a valid 10-digit Indian mobile number.');
+        setError('Please enter a valid 10-digit mobile number.');
         return;
       }
     } else if (service === 'telegram') {
@@ -336,9 +310,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     }
 
     let creditCost = 5;
-    if (service === 'telegram') {
-      creditCost = 8;
-    } else if (service === 'adhr') {
+    if (service === 'adhr') {
       creditCost = 12;
     } else if (service === 'bnk') {
       creditCost = 18;
@@ -350,20 +322,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       creditCost = 150;
     }
 
-    // Check credits/subscription
-    if (service === 'aadhaar_to_pan') {
-      if ((profile?.credits || 0) < creditCost) {
-        setError(`Insufficient credits. You need at least ${creditCost} credits to perform Aadhaar to PAN lookup. (Note: Aadhaar to PAN is not included in any unlimited plans).`);
-        handleOpenPricing();
-        return;
-      }
-    } else {
-      if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
-        setError(`Insufficient credits. You need at least ${creditCost} credits to perform this lookup.`);
-        handleOpenPricing();
-        return;
-      }
-    }
+
+    // Credit checks are now handled securely on the backend.
+  
 
     setError(null);
     setIsLoading(true);
@@ -508,10 +469,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         // Background credit deduction
         if (!hasUnlimitedAction() && profile?.id) {
           (async () => {
-            const { error: deductError } = await supabase
-              .from('profiles')
-              .update({ credits: Math.max(0, (profile?.credits || 0) - creditCost) })
-              .eq('id', profile.id);
+            const deductError = null; // Credit deducted securely on backend
             
             if (!deductError) {
               await refreshProfile();

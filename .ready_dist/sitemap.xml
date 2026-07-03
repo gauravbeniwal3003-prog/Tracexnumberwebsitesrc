@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Primary Landing Page (Phone Number Lookup) -->
+  <url>
+    <loc>https://tracexnumber.web.app/</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  
+  <!-- Telegram Intelligence Router -->
+  <url>
+    <loc>https://tracexnumber.web.app/telegram</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- Identity/Aadhaar Lookup Module -->
+  <url>
+    <loc>https://tracexnumber.web.app/identity</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- Bank Details / IFSC Lookup -->
+  <url>
+    <loc>https://tracexnumber.web.app/bank</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- Vehicle Details RTO Query -->
+  <url>
+    <loc>https://tracexnumber.web.app/vehicle</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- SEO & Trends Portal -->
+  <url>
+    <loc>https://tracexnumber.web.app/trends</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <!-- About Senior Developer & Cyber Expert Gaurav Beniwal -->
+  <url>
+    <loc>https://tracexnumber.web.app/about-gaurav-beniwal</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <!-- Pricing & Premium Token Packages -->
+  <url>
+    <loc>https://tracexnumber.web.app/pricing</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://tracexnumber.web.app/buy-credits</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- API Pricing Options -->
+  <url>
+    <loc>https://tracexnumber.web.app/buy-api</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Complete API Documentation -->
+  <url>
+    <loc>https://tracexnumber.web.app/api-docs</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <!-- Security, Contact and Terms -->
+  <url>
+    <loc>https://tracexnumber.web.app/contactus</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://tracexnumber.web.app/terms</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://tracexnumber.web.app/refund</loc>
+    <lastmod>2026-06-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

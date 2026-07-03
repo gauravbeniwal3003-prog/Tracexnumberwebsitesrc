@@ -246,16 +246,18 @@ export default function AdminDashboard() {
     const days = newKeyData.plan_name.includes("15 Days") ? 15 : 30;
     expiresAt.setDate(expiresAt.getDate() + days);
 
-    const { error } = await supabase.from('api_keys').insert({
-      user_id: user?.id, // Admin created keys associated with admin or null
-      user_email: newKeyData.user_email,
-      api_key: apiKey,
-      plan_name: newKeyData.plan_name,
-      requests_used: 0,
-      request_limit: null, // Unlimited request plan
-      expires_at: expiresAt.toISOString(),
-      status: 'active'
-    });
+          const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      let error = null;
+      if (token) {
+        const res = await fetch('/api/admin/api-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ user_email: newKeyData.user_email, plan_name: newKeyData.plan_name, days })
+        });
+        const json = await res.json();
+        if (!res.ok) error = { message: json.error };
+      }
 
     if (error) {
       alert("Error creating key: " + error.message);
@@ -294,7 +296,19 @@ export default function AdminDashboard() {
   const handleDeleteKey = async (id: string) => {
     if (!confirm("Are you sure you want to delete this key? Access will be revoked immediately.")) return;
     
-    const { error } = await supabase.from('api_keys').delete().eq('id', id);
+          const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      let error = null;
+      if (token) {
+        const res = await fetch(`/api/admin/api-keys/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          error = { message: json.error };
+        }
+      }
     if (!error) fetchData();
   };
 
