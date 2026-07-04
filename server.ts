@@ -3344,6 +3344,44 @@ app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
   }
 });
 
+app.put("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { plan_name, status, expires_at, user_email } = req.body;
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { error } = await db.from('api_keys').update({
+      plan_name,
+      request_limit: null, // Force null for unlimited request plans
+      status,
+      expires_at,
+      user_email
+    }).eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ status: "success" });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/api/admin/api-settings", verifyAdminToken, async (req, res) => {
+  try {
+    const { id, real_api_url } = req.body;
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { error } = await db.from('api_settings').upsert({
+      id: id || undefined,
+      real_api_url,
+      updated_at: new Date().toISOString(),
+      updated_by: (req as any).adminUser?.id
+    });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ status: "success" });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 
 // --- COMPREHENSIVE ADMIN DATA ENDPOINT ---
 app.get("/api/admin/system", verifyAdminToken, async (req, res) => {

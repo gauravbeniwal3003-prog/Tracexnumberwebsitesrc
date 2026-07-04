@@ -284,13 +284,32 @@ export default function AdminDashboard() {
   const handleUpdateKey = async () => {
     if (!selectedKey) return;
 
-    const { error } = await supabase.from('api_keys').update({
-      plan_name: selectedKey.plan_name,
-      request_limit: null, // Force null for unlimited request plans
-      status: selectedKey.status,
-      expires_at: selectedKey.expires_at,
-      user_email: selectedKey.user_email
-    }).eq('id', selectedKey.id);
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    let error = null;
+
+    if (token) {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys/${selectedKey.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            plan_name: selectedKey.plan_name,
+            status: selectedKey.status,
+            expires_at: selectedKey.expires_at,
+            user_email: selectedKey.user_email
+          })
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          error = { message: json.error || json.message || "Failed to update API Key." };
+        }
+      } catch (e: any) {
+        error = { message: e.message || "Network error updating API Key." };
+      }
+    } else {
+      error = { message: "No active session found." };
+    }
 
     if (error) {
       alert("Error updating key: " + error.message);
@@ -320,13 +339,36 @@ export default function AdminDashboard() {
   };
 
   const handleUpdateSettings = async () => {
-    const { error } = await supabase.from('api_settings').upsert({
-      id: settings.id || undefined,
-      real_api_url: settings.real_api_url,
-      updated_at: new Date().toISOString(),
-      updated_by: user?.id
-    });
-    if (!error) alert("Settings Saved Successfully!");
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    let error = null;
+
+    if (token) {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            id: settings.id || undefined,
+            real_api_url: settings.real_api_url
+          })
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          error = { message: json.error || json.message || "Failed to update settings." };
+        }
+      } catch (e: any) {
+        error = { message: e.message || "Network error saving settings." };
+      }
+    } else {
+      error = { message: "No active session found." };
+    }
+
+    if (error) {
+      alert("Error saving settings: " + error.message);
+    } else {
+      alert("Settings Saved Successfully!");
+    }
   };
 
   const handleCreateUser = async () => {

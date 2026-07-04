@@ -567,16 +567,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           })();
         }
 
-        // Background credit deduction
-        if (!hasUnlimitedAction() && profile?.id) {
-          (async () => {
-            const deductError = null; // Credit deducted securely on backend
-            
-            if (!deductError) {
-              await refreshProfile();
-            }
-          })();
-        }
         setCooldown(5);
       } else {
         setError(data.error || 'No records found or service temporarily unavailable.');
@@ -620,6 +610,14 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
     } finally {
       setIsLoading(false);
+      // Always refresh user profile state to sync latest credit balance with database after lookup attempt
+      if (!hasUnlimitedAction() && profile?.id) {
+        try {
+          await refreshProfile();
+        } catch (e) {
+          console.error('Failed to refresh profile:', e);
+        }
+      }
     }
   }, [phoneNumber, profile, service, hasUnlimitedAction, refreshProfile]);
 
