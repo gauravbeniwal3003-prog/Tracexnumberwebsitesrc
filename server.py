@@ -436,6 +436,7 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
             
         record_data = {}
         part_lines = part.split('\n')
+        last_key = None
         
         for line in part_lines:
             line = line.strip()
@@ -449,6 +450,8 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
             )
             clean_line = emoji_pattern.sub('', line).strip()
             clean_line = clean_line.replace('*', '').strip()
+            if not clean_line or clean_line.startswith('─') or clean_line.startswith('━'):
+                continue
             
             if ':' in clean_line:
                 parts_kv = clean_line.split(':', 1)
@@ -459,40 +462,51 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
                 val_raw = re.sub(r'<\/?code>', '', val_raw).strip()
                 
                 if not val_raw or val_raw.upper() in ["", "NONE", "NULL", "N/A"]:
+                    last_key = None
                     continue
                     
                 key_lower = key_raw.lower()
+                mapped_key = ""
                 
                 # Standardize fields to match ResultCard definitions
                 if "name" in key_lower and "father" not in key_lower:
-                    record_data["name"] = val_raw
+                    mapped_key = "name"
                 elif "father" in key_lower:
-                    record_data["father_name"] = val_raw
+                    mapped_key = "father_name"
                 elif "mobile" in key_lower or "phone" in key_lower:
-                    record_data["mobile"] = val_raw
+                    mapped_key = "mobile"
                 elif "address" in key_lower:
-                    record_data["address"] = val_raw
+                    mapped_key = "address"
                 elif "aadhaar" in key_lower or "identity" in key_lower:
-                    record_data["aadhar_number"] = val_raw
+                    mapped_key = "aadhar_number"
                 elif "circle" in key_lower or "operator" in key_lower:
-                    record_data["state_circle"] = val_raw
+                    mapped_key = "state_circle"
                 elif "branch" in key_lower:
-                    record_data["branch"] = val_raw
+                    mapped_key = "branch"
                 elif "ifsc" in key_lower:
-                    record_data["ifsc"] = val_raw
+                    mapped_key = "ifsc"
                 elif "city" in key_lower:
-                    record_data["city"] = val_raw
+                    mapped_key = "city"
                 elif "district" in key_lower:
-                    record_data["district"] = val_raw
+                    mapped_key = "district"
                 elif "state" in key_lower:
-                    record_data["state"] = val_raw
+                    mapped_key = "state"
                 elif "family" in key_lower:
-                    record_data["family_id"] = val_raw
+                    mapped_key = "family_id"
                 else:
                     # Generic key sanitizer
                     clean_key = re.sub(r'[^a-zA-Z0-9\s_]', '', key_raw).strip().lower().replace(' ', '_')
                     if clean_key:
-                        record_data[clean_key] = val_raw
+                        mapped_key = clean_key
+                
+                if mapped_key:
+                    record_data[mapped_key] = val_raw
+                    last_key = mapped_key
+                else:
+                    last_key = None
+            else:
+                if last_key and last_key in record_data:
+                    record_data[last_key] = f"{record_data[last_key]} {clean_line}"
                         
         if record_data:
             # Set default main name key so the card displays nicely
@@ -1242,7 +1256,7 @@ async def saas_lookup(
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
         # Hardcoded primary engine source as requested to avoid environment variable dependency
-        target_template = "https://techvishalboss.com/api/v1/lookup.php"
+        target_template = "https://numberimfo.vishalboss.sbs/api.php"
         
         try:
             settings_query = db.table("api_settings").select("real_api_url").limit(1).execute()
@@ -1254,13 +1268,15 @@ async def saas_lookup(
             pass
         
         if not target_template:
-            target_template = "https://techvishalboss.com/api/v1/lookup.php"
+            target_template = "https://numberimfo.vishalboss.sbs/api.php"
 
         # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
         target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
 
         # Execution
-        if "ENTER_TARGET_HERE" not in target_template:
+        if "numberimfo.vishalboss.sbs" in target_template:
+            final_url = f"https://numberimfo.vishalboss.sbs/api.php?service=number&number={num}"
+        elif "ENTER_TARGET_HERE" not in target_template:
             key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
             service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
             final_url = f"{target_template.rstrip('/')}?key={key_param}&service={service_param}&number={num}"

@@ -128,75 +128,56 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     setLoading(true);
     
-    // Fetch Stats using efficient HEAD counts
-    const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-    const { count: totalKeysCount } = await supabase.from('api_keys').select('*', { count: 'exact', head: true });
-    const { count: totalLogsCount } = await supabase.from('api_logs').select('*', { count: 'exact', head: true });
-    const { count: activeKeysCount } = await supabase.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active');
-    
-    const { data: revenueData } = await supabase.from('api_keys').select('plan_name');
-    
-    // Calculate total revenue based on plans
-    const pricing: any = { 
-      'STARTER': 499, 
-      'PRO': 999, 
-      'CORE': 2499, 
-      'LEGACY': 0,
-      'Unified Pro API (15 Days)': 499,
-      'Unified Infinity API (30 Days)': 799,
-      'Number Lookup (1 Month)': 400,
-      'Telegram Lookup (1 Month)': 550,
-      'Identity Card Lookup (1 Month)': 500,
-      'BA&NK Lookup (1 Month)': 600,
-      'Vehicle Lookup (1 Month)': 499,
-      'PN Card Lookup (1 Month)': 999,
-      'PAN Card Lookup (1 Month)': 999,
-      'All Combo Special (1 Month)': 1499
-    };
-    const rev = (revenueData || []).reduce((acc, curr) => acc + (pricing[curr.plan_name] || 0), 0);
-
-    setStats({
-      totalKeys: totalKeysCount || 0,
-      totalRequests: totalLogsCount || 0,
-      activeKeys: activeKeysCount || 0,
-      revenue: rev,
-      totalUsers: userCount || 0
-    });
-
-    // Fetch Keys (Actual data for listing)
-    const { data: apiKeys } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100);
-    setKeys(apiKeys || []);
-
-    // Fetch Logs
-    const { data: apiLogs } = await supabase.from('api_logs')
-      .select('*, api_keys(user_email)')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    setLogs(apiLogs || []);
-
-    // Fetch Settings
-    const { data: config } = await supabase.from('api_settings').select('*').limit(1).single();
-    if (config) setSettings(config);
-
-    // Fetch Registered User Profiles via Secure Admin Service Proxy
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       
       if (token) {
-        const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
+        // 1. Fetch Comprehensive Admin System Stats, Keys, Logs, Settings via Secure Proxy
+        try {
+          const sysResponse = await fetch(`${getApiBaseUrl()}/api/admin/system`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const sysJson = await sysResponse.json();
+          if (sysResponse.ok && sysJson.status === 'success') {
+            const sysData = sysJson.data;
+            setStats(sysData.stats || {
+              totalKeys: 0,
+              totalRequests: 0,
+              activeKeys: 0,
+              revenue: 0,
+              totalUsers: 0
+            });
+            setKeys(sysData.apiKeys || []);
+            setLogs(sysData.apiLogs || []);
+            if (sysData.settings) {
+              setSettings(sysData.settings);
+            }
+          } else {
+            console.error("Failed to load admin system data:", sysJson.error);
           }
-        });
-        const resJson = await response.json();
-        if (response.ok && resJson.status === 'success') {
-          setProfiles(resJson.data || []);
-        } else {
-          console.error("Failed to load profiles:", resJson.error);
+        } catch (sysErr) {
+          console.error("Error fetching admin system data:", sysErr);
         }
 
-        // Fetch earnings data
+        // 2. Fetch Registered User Profiles via Secure Admin Service Proxy
+        try {
+          const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const resJson = await response.json();
+          if (response.ok && resJson.status === 'success') {
+            setProfiles(resJson.data || []);
+          } else {
+            console.error("Failed to load profiles:", resJson.error);
+          }
+        } catch (profileErr) {
+          console.error("Error fetching profiles:", profileErr);
+        }
+
+        // 3. Fetch earnings data
         try {
           const earningsResponse = await fetch(`${getApiBaseUrl()}/api/admin/earnings`, {
             headers: {
@@ -214,7 +195,7 @@ export default function AdminDashboard() {
           console.error("Error fetching admin earnings:", earningsErr);
         }
 
-        // Fetch Search History Logs
+        // 4. Fetch Search History Logs
         try {
           const historyResponse = await fetch(`${getApiBaseUrl()}/api/admin/history`, {
             headers: {
@@ -247,18 +228,23 @@ export default function AdminDashboard() {
     const days = newKeyData.plan_name.includes("15 Days") ? 15 : 30;
     expiresAt.setDate(expiresAt.getDate() + days);
 
-          const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      let error = null;
-      if (token) {
-        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ user_email: newKeyData.user_email, plan_name: newKeyData.plan_name, days })
-        });
-        const json = await res.json();
-        if (!res.ok) error = { message: json.error };
-      }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    let error = null;
+    if (token) {
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ 
+          user_email: newKeyData.user_email, 
+          plan_name: newKeyData.plan_name, 
+          days,
+          custom_key: newKeyData.custom_key || undefined
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) error = { message: json.error };
+    }
 
     if (error) {
       alert("Error creating key: " + error.message);

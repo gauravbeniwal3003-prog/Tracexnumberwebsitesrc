@@ -371,76 +371,84 @@ function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'r
   const result: any = {};
   const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
 
-  if (type === 'aadhar') {
-    const aadhaarMatch = cleanText.match(/(?:Aadhaar|Aadhar):\s*([0-9Xx\s\-]+)/i);
-    const nameMatch = cleanText.match(/Name:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
-    const fatherMatch = cleanText.match(/Father Name:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
-    const mobileMatch = cleanText.match(/Mobile:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
-    const addressMatch = cleanText.match(/Address:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
-    const circleMatch = cleanText.match(/Circle:\s*([^🪪👤👨📱🏠📡💳🆘📌━─\r\n]+)/i);
+  const lines = cleanText.split('\n');
+  let lastKey: string | null = null;
 
-    if (nameMatch) result.name = nameMatch[1].trim();
-    if (fatherMatch) result.father_name = fatherMatch[1].trim();
-    if (mobileMatch) result.mobile = mobileMatch[1].trim();
-    if (addressMatch) result.address = addressMatch[1].trim();
-    if (circleMatch) {
-      result.state_circle = circleMatch[1].trim();
-      result.operator = circleMatch[1].trim();
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    // Strip emojis
+    const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+    if (!cleanLine) continue;
+    if (cleanLine.startsWith('─') || cleanLine.startsWith('━') || cleanLine.startsWith('─') || cleanLine.startsWith('━')) continue;
+
+    if (cleanLine.includes(':')) {
+      const colonIdx = cleanLine.indexOf(':');
+      const keyRaw = cleanLine.substring(0, colonIdx).trim();
+      const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
+
+      if (!valRaw || ['none', 'null', 'n/a'].includes(valRaw.toLowerCase())) {
+        lastKey = null;
+        continue;
+      }
+
+      const keyLower = keyRaw.toLowerCase();
+      let mappedKey = '';
+
+      if (type === 'aadhar') {
+        if (keyLower.includes('name') && !keyLower.includes('father')) mappedKey = 'name';
+        else if (keyLower.includes('father')) mappedKey = 'father_name';
+        else if (keyLower.includes('mobile') || keyLower.includes('phone')) mappedKey = 'mobile';
+        else if (keyLower.includes('address')) mappedKey = 'address';
+        else if (keyLower.includes('circle') || keyLower.includes('operator')) mappedKey = 'state_circle';
+        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
+      } else if (type === 'pan') {
+        if (keyLower.includes('full name') || (keyLower.includes('name') && !keyLower.includes('father'))) mappedKey = 'name';
+        else if (keyLower.includes('pan number') || keyLower.includes('pan_number')) mappedKey = 'pan_number';
+        else if (keyLower.includes('pan status')) mappedKey = 'pan_status';
+        else if (keyLower.includes('gender')) mappedKey = 'gender';
+        else if (keyLower.includes('dob') || keyLower.includes('birth')) mappedKey = 'date_of_birth';
+        else if (keyLower.includes('linked')) mappedKey = 'aadhaar_linked';
+        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
+      } else if (type === 'bank') {
+        if (keyLower.includes('bank name')) mappedKey = 'bank_name';
+        else if (keyLower.includes('bank code')) mappedKey = 'bank_code';
+        else if (keyLower.includes('branch')) mappedKey = 'branch';
+        else if (keyLower.includes('address')) mappedKey = 'address';
+        else if (keyLower.includes('city')) mappedKey = 'city';
+        else if (keyLower.includes('centre')) mappedKey = 'centre';
+        else if (keyLower.includes('district')) mappedKey = 'district';
+        else if (keyLower.includes('state')) mappedKey = 'state';
+        else if (keyLower.includes('pin')) mappedKey = 'pin_code';
+        else if (keyLower.includes('micr')) mappedKey = 'micr_code';
+        else if (keyLower.includes('contact')) mappedKey = 'contact';
+        else if (keyLower.includes('neft')) mappedKey = 'neft';
+        else if (keyLower.includes('rtgs')) mappedKey = 'rtgs';
+        else if (keyLower.includes('imps')) mappedKey = 'imps';
+        else if (keyLower.includes('upi')) mappedKey = 'upi';
+      } else if (type === 'rasion') {
+        if (keyLower.includes('name')) mappedKey = 'name';
+        else if (keyLower.includes('family') || keyLower.includes('rasion') || keyLower.includes('ration')) mappedKey = 'family_id';
+      }
+
+      if (!mappedKey) {
+        // Fallback generic key mapping
+        mappedKey = keyRaw.replace(/[^a-zA-Z0-9\s_]/g, '').trim().toLowerCase().replace(/\s+/g, '_');
+      }
+
+      if (mappedKey) {
+        result[mappedKey] = valRaw;
+        lastKey = mappedKey;
+      } else {
+        lastKey = null;
+      }
+    } else {
+      // Append to the last active key if we have one and the line is not a standard skip
+      if (lastKey && result[lastKey]) {
+        result[lastKey] = result[lastKey] + ' ' + cleanLine;
+      }
     }
-    if (aadhaarMatch) result.aadhar_number = aadhaarMatch[1].trim();
-  } else if (type === 'pan') {
-    const panNoMatch = cleanText.match(/PAN Number\s*:\s*([^\r\n]+)/i);
-    const statusMatch = cleanText.match(/PAN Status\s*:\s*([^\r\n]+)/i);
-    const nameMatch = cleanText.match(/Full Name\s*:\s*([^\r\n]+)/i);
-    const genderMatch = cleanText.match(/Gender\s*:\s*([^\r\n]+)/i);
-    const dobMatch = cleanText.match(/Date of Birth\s*:\s*([^\r\n]+)/i);
-    const linkedMatch = cleanText.match(/Aadhaar Linked\s*:\s*([^\r\n]+)/i);
-    const aadharMatch = cleanText.match(/Aadhaar Number\s*:\s*([^\r\n]+)/i);
-
-    if (nameMatch) result.name = nameMatch[1].trim();
-    if (panNoMatch) result.pan_number = panNoMatch[1].trim();
-    if (statusMatch) result.pan_status = statusMatch[1].trim();
-    if (genderMatch) result.gender = genderMatch[1].trim();
-    if (dobMatch) result.date_of_birth = dobMatch[1].trim();
-    if (linkedMatch) result.aadhaar_linked = linkedMatch[1].trim();
-    if (aadharMatch) result.aadhar_number = aadharMatch[1].trim();
-  } else if (type === 'bank') {
-    const bankNameMatch = cleanText.match(/Bank Name:\s*([^\r\n]+)/i);
-    const bankCodeMatch = cleanText.match(/Bank Code:\s*([^\r\n]+)/i);
-    const branchMatch = cleanText.match(/Branch:\s*([^\r\n]+)/i);
-    const addressMatch = cleanText.match(/Address:\s*([^\r\n]+)/i);
-    const cityMatch = cleanText.match(/City:\s*([^\r\n]+)/i);
-    const centreMatch = cleanText.match(/Centre:\s*([^\r\n]+)/i);
-    const districtMatch = cleanText.match(/District:\s*([^\r\n]+)/i);
-    const stateMatch = cleanText.match(/State:\s*([^\r\n]+)/i);
-    const pinMatch = cleanText.match(/PIN Code:\s*([^\r\n]+)/i);
-    const micrMatch = cleanText.match(/MICR Code:\s*([^\r\n]+)/i);
-    const contactMatch = cleanText.match(/Contact:\s*([^\r\n]+)/i);
-    const neftMatch = cleanText.match(/NEFT:\s*([^\r\n]+)/i);
-    const rtgsMatch = cleanText.match(/RTGS:\s*([^\r\n]+)/i);
-    const impsMatch = cleanText.match(/IMPS:\s*([^\r\n]+)/i);
-    const upiMatch = cleanText.match(/UPI:\s*([^\r\n]+)/i);
-
-    if (bankNameMatch) result.bank_name = bankNameMatch[1].trim();
-    if (bankCodeMatch) result.bank_code = bankCodeMatch[1].trim();
-    if (branchMatch) result.branch = branchMatch[1].trim();
-    if (addressMatch) result.address = addressMatch[1].trim();
-    if (cityMatch) result.city = cityMatch[1].trim();
-    if (centreMatch) result.centre = centreMatch[1].trim();
-    if (districtMatch) result.district = districtMatch[1].trim();
-    if (stateMatch) result.state = stateMatch[1].trim();
-    if (pinMatch) result.pin_code = pinMatch[1].trim();
-    if (micrMatch) result.micr_code = micrMatch[1].trim();
-    if (contactMatch) result.contact = contactMatch[1].trim();
-    if (neftMatch) result.neft = neftMatch[1].trim();
-    if (rtgsMatch) result.rtgs = rtgsMatch[1].trim();
-    if (impsMatch) result.imps = impsMatch[1].trim();
-    if (upiMatch) result.upi = upiMatch[1].trim();
-  } else if (type === 'rasion') {
-    const nameMatch = cleanText.match(/Name:\s*([^\r\n]+)/i);
-    const familyMatch = cleanText.match(/(?:Family|Rasion|Ration):\s*([^\r\n]+)/i);
-    if (nameMatch) result.name = nameMatch[1].trim();
-    if (familyMatch) result.family_id = familyMatch[1].trim();
   }
 
   const parsedKeys = Object.keys(result);
@@ -947,7 +955,7 @@ app.get("/api/lookup", async (req, res) => {
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${encodeURIComponent(targetQuery)}`;
+      const target = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 
@@ -2879,6 +2887,12 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     (req as any).adminUser = user;
+    (req as any).adminClient = SUPABASE_SERVICE_ROLE_KEY
+      ? supabaseAdmin
+      : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false },
+          global: { headers: { Authorization: `Bearer ${token}` } }
+        });
     next();
   } catch (err) {
     console.error("[ADMIN_MIDDLEWARE_FAIL]", err);
@@ -2888,6 +2902,7 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
+    const db = (req as any).adminClient || supabaseAdmin;
     let authData: any = null;
     try {
       const response = await supabaseAdmin.auth.admin.listUsers();
@@ -2899,7 +2914,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       console.warn("Failed to list users from auth admin API:", authErr.message);
     }
     
-    const { data: profileData, error: profileError } = await supabaseAdmin
+    const { data: profileData, error: profileError } = await db
       .from("profiles")
       .select("*")
       .order("email", { ascending: true });
@@ -2949,10 +2964,11 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   }
 
   try {
-    const randId = id || crypto.randomUUID();
+    const db = (req as any).adminClient || supabaseAdmin;
+    const randId = id || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"));
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("profiles")
       .insert({
         id: randId,
@@ -2980,9 +2996,10 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { email, full_name, credits, unlimited_expiry } = req.body;
 
   try {
+    const db = (req as any).adminClient || supabaseAdmin;
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("profiles")
       .upsert({
         id: id,
@@ -3007,9 +3024,14 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
 
   try {
-    await supabaseAdmin.auth.admin.deleteUser(id);
+    const db = (req as any).adminClient || supabaseAdmin;
+    try {
+      await supabaseAdmin.auth.admin.deleteUser(id);
+    } catch (e) {
+      console.warn("Could not delete user from auth admin API:", e);
+    }
     
-    const { error } = await supabaseAdmin
+    const { error } = await db
       .from("profiles")
       .delete()
       .eq("id", id);
@@ -3028,7 +3050,8 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
 app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
   try {
-    const { data: claims, error: claimsErr } = await supabaseAdmin
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { data: claims, error: claimsErr } = await db
       .from("payment_claims")
       .select("*")
       .order("created_at", { ascending: false });
@@ -3096,7 +3119,7 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
     let profilesByUserId: Record<string, any> = {};
     
     if (userIds.length > 0) {
-      const { data: profiles } = await supabaseAdmin
+      const { data: profiles } = await db
         .from("profiles")
         .select("id, email, full_name")
         .in("id", userIds);
@@ -3133,10 +3156,11 @@ app.get("/api/admin/earnings", verifyAdminToken, async (req, res) => {
 
 app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
   try {
-    if (!supabaseAdmin) {
+    const db = (req as any).adminClient || supabaseAdmin;
+    if (!db) {
       return res.status(500).json({ error: "Supabase connection offline" });
     }
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("search_history")
       .select("*")
       .order("created_at", { ascending: false })
@@ -3157,7 +3181,8 @@ app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
 // --- ADMIN API KEYS ---
 app.get("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.from('api_keys').select('*').order('created_at', { ascending: false });
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { data, error } = await db.from('api_keys').select('*').order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ data });
   } catch (err: any) {
@@ -3167,12 +3192,13 @@ app.get("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
 
 app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
   try {
-    const { user_email, plan_name, days } = req.body;
-    const apiKey = "tx_" + crypto.randomBytes(16).toString("hex");
+    const { user_email, plan_name, days, custom_key } = req.body;
+    const db = (req as any).adminClient || supabaseAdmin;
+    const apiKey = custom_key || ("tx_" + crypto.randomBytes(16).toString("hex"));
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + (days || 30));
 
-    const { data, error } = await supabaseAdmin.from('api_keys').insert({
+    const { data, error } = await db.from('api_keys').insert({
       user_email,
       api_key: apiKey,
       plan_name,
@@ -3192,7 +3218,8 @@ app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
 app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabaseAdmin.from('api_keys').delete().eq('id', id);
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { error } = await db.from('api_keys').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ status: "success" });
   } catch (err: any) {
@@ -3204,6 +3231,7 @@ app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
 // --- COMPREHENSIVE ADMIN DATA ENDPOINT ---
 app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
   try {
+    const db = (req as any).adminClient || supabaseAdmin;
     const [
       { data: apiKeys },
       { data: apiLogs },
@@ -3214,14 +3242,14 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
       { count: userCount },
       { data: revenueData }
     ] = await Promise.all([
-      supabaseAdmin.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100),
-      supabaseAdmin.from('api_logs').select('*, api_keys(user_email)').order('created_at', { ascending: false }).limit(50),
-      supabaseAdmin.from('api_settings').select('*').limit(1).maybeSingle(),
-      supabaseAdmin.from('api_keys').select('*', { count: 'exact', head: true }),
-      supabaseAdmin.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabaseAdmin.from('api_logs').select('*', { count: 'exact', head: true }),
-      supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }),
-      supabaseAdmin.from('api_keys').select('plan_name')
+      db.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100),
+      db.from('api_logs').select('*, api_keys(user_email)').order('created_at', { ascending: false }).limit(50),
+      db.from('api_settings').select('*').limit(1).maybeSingle(),
+      db.from('api_keys').select('*', { count: 'exact', head: true }),
+      db.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      db.from('api_logs').select('*', { count: 'exact', head: true }),
+      db.from('profiles').select('*', { count: 'exact', head: true }),
+      db.from('api_keys').select('plan_name')
     ]);
 
     const pricing: Record<string, number> = {

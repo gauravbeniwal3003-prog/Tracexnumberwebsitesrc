@@ -9,7 +9,10 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
     return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
-  return 'https://tracexdata-api.onrender.com';
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return '';
 };
 
 export const safeFetchJson = async (response: Response): Promise<any> => {
@@ -310,35 +313,28 @@ export const lookupNumber = async (number: string): Promise<ApiResponse> => {
     if (rawData && isValid) {
       const parsed = parseLookupResults(rawData, number);
       
-      const resultString = JSON.stringify(parsed.results).toLowerCase();
-      const hasUnknown = resultString.includes('"unknown"') || 
-                         resultString.includes('unknown') || 
-                         resultString.includes('no result') || 
-                         resultString.includes('no records') || 
-                         resultString.includes('no record') || 
-                         resultString.includes('api error') || 
-                         resultString.includes('not found') || 
-                         resultString.includes('error');
-
-      if (parsed.status && Object.keys(parsed.results).length > 0 && !hasUnknown) {
-        (async () => {
-          try {
-            await supabase.from('search_results').upsert({ 
-              mobile_number: number, 
-              raw_data: parsed.results 
-            }, { onConflict: 'mobile_number' });
-          } catch (e) {}
-        })();
-        return parsed;
-      } else if (hasUnknown) {
-        return {
-          status: false,
-          results: {},
-          error: rawData?.message || 'No Records: The engine returned an empty or error state for this number.'
-        };
-      } else {
-        return parsed;
+      if (parsed.status && Object.keys(parsed.results).length > 0) {
+        const keys = Object.keys(parsed.results);
+        const hasRealData = keys.some(k => !['error', 'message', 'status'].includes(k.toLowerCase()));
+        
+        if (hasRealData) {
+          (async () => {
+            try {
+              await supabase.from('search_results').upsert({ 
+                mobile_number: number, 
+                raw_data: parsed.results 
+              }, { onConflict: 'mobile_number' });
+            } catch (e) {}
+          })();
+          return parsed;
+        }
       }
+
+      return {
+        status: false,
+        results: {},
+        error: rawData?.message || 'No Record Found for this number.'
+      };
     }
 
     return {
