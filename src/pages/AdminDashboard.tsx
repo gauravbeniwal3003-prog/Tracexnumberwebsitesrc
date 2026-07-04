@@ -1254,19 +1254,20 @@ export default function AdminDashboard() {
                         <button 
                           onClick={() => {
                             const planUpper = String(key.plan_name || "").toUpperCase();
+                            const baseDomain = getApiBaseUrl().replace(/\/$/, "");
                             let targetUrl = "";
                             if (planUpper.includes("TELEGRAM")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001`;
+                              targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001`;
                             } else if (planUpper.includes("VEHICLE")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/vehicle?key=${key.api_key}&query=BR07PB6268`;
+                              targetUrl = `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/pancard?key=${key.api_key}&query=NTEPK1628C`;
+                              targetUrl = `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C`;
                             } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/identity?key=${key.api_key}&query=381933049732`;
+                              targetUrl = `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/bank?key=${key.api_key}&query=ABCD0001325`;
+                              targetUrl = `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325`;
                             } else {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/lookup?key=${key.api_key}&number=9879712345`;
+                              targetUrl = `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                             }
                             navigator.clipboard.writeText(targetUrl);
                             alert('Full API URL Copied!');

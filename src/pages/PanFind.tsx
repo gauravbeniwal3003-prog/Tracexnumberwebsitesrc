@@ -3,13 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ShieldCheck, ArrowLeft, Loader2, Sparkles, AlertCircle, FileSearch, Check, Shield, Search, Send, CreditCard, Clipboard } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground';
-import { safeFetchJson } from '../services/api.ts';
+import { safeFetchJson, getApiBaseUrl } from '../services/api.ts';
 
 export default function PanFind() {
   const [searchParams, setSearchParams] = useSearchParams();
   const orderId = searchParams.get('order_id');
   const queryAadhaar = searchParams.get('aadhaar_number');
-  const renderBackendUrl = "https://tracexdata-api.onrender.com";
+  const renderBackendUrl = getApiBaseUrl();
 
   // Input States
   const [aadhaarNumber, setAadhaarNumber] = useState(queryAadhaar || '');

@@ -5,6 +5,7 @@ import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import { useNavigate } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
+import { getApiBaseUrl } from '../services/api.ts';
 
 interface ApiKey {
   id: string;
@@ -209,7 +210,7 @@ export default function ApiDashboard() {
                           onClick={() => {
                             const planUpper = String(key.plan_name || "").toUpperCase();
                             let targetUrl = "";
-                            const baseDomain = "https://tracexdata-api.onrender.com";
+                            const baseDomain = getApiBaseUrl();
                             
                             if (planUpper.includes("TELEGRAM")) {
                               targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&query=@gaurav_beniwal_0001`;

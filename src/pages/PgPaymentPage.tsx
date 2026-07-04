@@ -4,6 +4,7 @@ import { useParams, useSearchParams, useNavigate, Navigate } from 'react-router-
 import { ShieldCheck, Zap, CreditCard, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Camera, Sparkles, User, Mail, Phone, IndianRupee } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground.tsx';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
+import { getApiBaseUrl } from '../services/api.ts';
 
 interface PgPaymentPageProps {
   fallbackFixed?: boolean;
@@ -73,7 +74,7 @@ export default function PgPaymentPage({ fallbackFixed, customSegment }: PgPaymen
   const verifyPayment = async (oid: string) => {
     setVerificationStatus('loading');
     try {
-      const renderBackendUrl = "https://tracexdata-api.onrender.com";
+      const renderBackendUrl = getApiBaseUrl();
       const response = await fetch(`${renderBackendUrl.replace(/\/$/, "")}/api/cashfree/status/${oid}`);
       
       if (!response.ok) {
@@ -112,7 +113,7 @@ export default function PgPaymentPage({ fallbackFixed, customSegment }: PgPaymen
     setIsProcessing(true);
     setErrorMsg(null);
 
-    const renderBackendUrl = "https://tracexdata-api.onrender.com";
+    const renderBackendUrl = getApiBaseUrl();
 
     try {
       const payload = {

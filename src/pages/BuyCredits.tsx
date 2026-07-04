@@ -112,7 +112,7 @@ export default function BuyCredits() {
   const checkPaymentStatus = async (orderId: string) => {
     try {
       setIsProcessing(true);
-      const backendUrl = "https://tracexdata-api.onrender.com";
+      const backendUrl = getApiBaseUrl();
       const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/status/${orderId}`);
       
       if (!response.ok) {
@@ -150,7 +150,7 @@ export default function BuyCredits() {
     }
 
     setIsProcessing(true);
-    const backendUrl = "https://tracexdata-api.onrender.com";
+    const backendUrl = getApiBaseUrl();
     const finalAmount = getPlanPrice(plan);
 
     try {

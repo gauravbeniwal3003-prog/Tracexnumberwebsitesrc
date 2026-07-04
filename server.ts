@@ -22,10 +22,18 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Supabase Configuration
+const isKeyValid = (key: any): boolean => {
+  return typeof key === "string" && key.trim().split(".").length === 3;
+};
+
+const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : DEFAULT_ANON_KEY;
+
+const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = isKeyValid(rawServiceKey) ? rawServiceKey : undefined;
 
 let supabase: any;
 let supabaseAdmin: any;
@@ -3341,25 +3349,65 @@ app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
 app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
   try {
     const db = (req as any).adminClient || supabaseAdmin;
+
+    const safeQuery = async (promise: Promise<any>, fallback: any = { data: [] }) => {
+      try {
+        const res = await promise;
+        if (res.error) {
+          console.warn("[SYSTEM_SAFE_QUERY_WARNING]", res.error);
+          return fallback;
+        }
+        return res;
+      } catch (err) {
+        console.error("[SYSTEM_SAFE_QUERY_FAIL]", err);
+        return fallback;
+      }
+    };
+
     const [
-      { data: apiKeys },
-      { data: apiLogs },
-      { data: settings },
-      { count: totalKeysCount },
-      { count: activeKeysCount },
-      { count: totalLogsCount },
-      { count: userCount },
-      { data: revenueData }
+      apiKeysRes,
+      apiLogsRes,
+      settingsRes,
+      totalKeysRes,
+      activeKeysRes,
+      totalLogsRes,
+      userCountRes,
+      revenueRes
     ] = await Promise.all([
-      db.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100),
-      db.from('api_logs').select('*, api_keys(user_email)').order('created_at', { ascending: false }).limit(50),
-      db.from('api_settings').select('*').limit(1).maybeSingle(),
-      db.from('api_keys').select('*', { count: 'exact', head: true }),
-      db.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      db.from('api_logs').select('*', { count: 'exact', head: true }),
-      db.from('profiles').select('*', { count: 'exact', head: true }),
-      db.from('api_keys').select('plan_name')
+      safeQuery(db.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100)),
+      safeQuery(db.from('api_logs').select('*, api_keys(user_email)').order('created_at', { ascending: false }).limit(50), null),
+      safeQuery(db.from('api_settings').select('*').limit(1).maybeSingle(), { data: null }),
+      safeQuery(db.from('api_keys').select('*', { count: 'exact', head: true }), { count: 0 }),
+      safeQuery(db.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'), { count: 0 }),
+      safeQuery(db.from('api_logs').select('*', { count: 'exact', head: true }), { count: 0 }),
+      safeQuery(db.from('profiles').select('*', { count: 'exact', head: true }), { count: 0 }),
+      safeQuery(db.from('api_keys').select('plan_name'), { data: [] })
     ]);
+
+    const apiKeys = apiKeysRes?.data || [];
+    const settings = settingsRes?.data || null;
+    const totalKeysCount = totalKeysRes?.count || 0;
+    const activeKeysCount = activeKeysRes?.count || 0;
+    const totalLogsCount = totalLogsRes?.count || 0;
+    const userCount = userCountRes?.count || 0;
+    const revenueData = revenueRes?.data || [];
+
+    let apiLogs = [];
+    if (apiLogsRes && apiLogsRes.data) {
+      apiLogs = apiLogsRes.data;
+    } else {
+      // Fallback query without the join
+      const fallbackLogs = await safeQuery(db.from('api_logs').select('*').order('created_at', { ascending: false }).limit(50));
+      apiLogs = fallbackLogs.data || [];
+      // Enrich with emails if we have the apiKeys
+      const keysMap = new Map((apiKeys || []).map((k: any) => [k.id, k.user_email]));
+      apiLogs = apiLogs.map((log: any) => ({
+        ...log,
+        api_keys: {
+          user_email: keysMap.get(log.api_key_id) || "N/A"
+        }
+      }));
+    }
 
     const pricing: Record<string, number> = {
       'Unified Pro API (15 Days)': 299,

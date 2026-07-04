@@ -10,6 +10,7 @@ import { CREDIT_PLANS, UNLIMITED_PLANS, API_PLANS, PricingPlan, SPECIAL_DEAL_PLA
 import { useAuth } from '../services/AuthContext.tsx';
 import { supabase } from '../services/supabase.ts';
 import { getOfferStatus, getPlanPrice } from '../services/promo.ts';
+import { getApiBaseUrl } from '../services/api.ts';
 
 interface SubscriptionModalProps {
   onClose: () => void;
@@ -64,7 +65,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
   const checkPaymentStatus = async (orderId: string) => {
     try {
       setIsProcessing(true);
-      const backendUrl = "https://tracexdata-api.onrender.com";
+      const backendUrl = getApiBaseUrl();
       
       const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/status/${orderId}`);
       
@@ -129,7 +130,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
     }
 
     setIsProcessing(true);
-    const backendUrl = "https://tracexdata-api.onrender.com";
+    const backendUrl = getApiBaseUrl();
 
     const finalAmount = getPlanPrice(plan);
 

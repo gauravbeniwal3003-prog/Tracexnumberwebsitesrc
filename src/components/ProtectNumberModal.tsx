@@ -10,6 +10,7 @@ import { useAuth } from '../services/AuthContext.tsx';
 import { PROTECTION_PRICES } from '../types.ts';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
 import { supabase } from '../services/supabase.ts';
+import { getApiBaseUrl } from '../services/api.ts';
 
 interface ProtectNumberModalProps {
   onClose: () => void;
@@ -65,7 +66,7 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
     }
 
     setLoading(true);
-    const backendUrl = "https://tracexdata-api.onrender.com";
+    const backendUrl = getApiBaseUrl();
 
     const finalAmount = getPrice();
 
