@@ -19,12 +19,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Supabase Configuration
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 let supabase: any;
@@ -37,8 +37,11 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   console.log("[TRACEXDATA] Supabase Admin initialized securely.");
+} else if (supabase) {
+  supabaseAdmin = supabase;
+  console.log("[TRACEXDATA] Supabase Admin initialized fallback to ANON_KEY.");
 } else {
-  console.error("[CRITICAL SECURITY ERROR] SUPABASE_SERVICE_ROLE_KEY is missing. Backend operations requiring admin privileges will fail.");
+  console.error("[CRITICAL SECURITY ERROR] SUPABASE_SERVICE_ROLE_KEY and ANON_KEY are both missing.");
 }
 
 // Cashfree Configuration
@@ -549,7 +552,7 @@ app.get("/api/user-lookup", async (req, res) => {
       }
       
       const newApiUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(cleanedQuery)}`;
-      const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
+      const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
         console.log(`Querying new phone API: ${newApiUrl}`);
@@ -944,7 +947,7 @@ app.get("/api/lookup", async (req, res) => {
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `${renderUrl.replace(/\/$/, "")}/api/lookup?${searchParams.toString()}`;
+      const target = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_C24439EA&service=number&number=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 
