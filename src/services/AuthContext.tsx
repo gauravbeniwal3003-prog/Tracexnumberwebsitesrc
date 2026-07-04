@@ -23,10 +23,33 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const IS_TESTING_MODE = false; // Production mode enabled
 
+const dummyUser = {
+  id: 'testing-mode-user-id',
+  app_metadata: {},
+  user_metadata: { full_name: 'Administrator' },
+  aud: 'authenticated',
+  created_at: new Date().toISOString(),
+  email: 'tester@tracexdata.com',
+  phone: '',
+  role: 'authenticated',
+  updated_at: new Date().toISOString(),
+} as any;
+
+const dummyProfile = {
+  id: 'testing-mode-user-id',
+  email: 'tester@tracexdata.com',
+  credits: 999999,
+  unlimited_expiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+  full_name: 'Administrator',
+  avatar_url: '',
+  is_free_credit_claimed: true,
+  last_weekly_credit_at: new Date().toISOString(),
+} as UserProfile;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(IS_TESTING_MODE ? dummyUser : null);
+  const [profile, setProfile] = useState<UserProfile | null>(IS_TESTING_MODE ? dummyProfile : null);
+  const [loading, setLoading] = useState(IS_TESTING_MODE ? false : true);
 
   const fetchProfile = async (userId: string) => {
     if (IS_TESTING_MODE) return;
@@ -97,6 +120,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (IS_TESTING_MODE) {
+      setUser(dummyUser);
+      setProfile(dummyProfile);
+      setLoading(false);
+      return;
+    }
     let mounted = true;
 
     // Single listener for all auth events
@@ -179,6 +208,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (IS_TESTING_MODE) {
+      console.log("Sign-out disabled during active Testing Mode.");
+      return;
+    }
     await supabase.auth.signOut();
   };
 

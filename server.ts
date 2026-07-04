@@ -2754,6 +2754,24 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
   }
 
+  // Safety bypass for dummy/test Aadhaar numbers to prevent charges
+  const isDummy = /^(0+|1+|2+|3+|4+|5+|6+|7+|8+|9+|123456789012)/.test(targetAadhaar) || targetAadhaar.startsWith("9999");
+  if (isDummy) {
+    return res.json({
+      status: "success",
+      pan_found: true,
+      pan: "ABCDE1234F",
+      credits_deducted: 0,
+      results: {
+        aadhaar_number: targetAadhaar,
+        pan_number: "ABCDE1234F",
+        full_name: "TEST USER",
+        status: "SUCCESS"
+      },
+      cached: true
+    });
+  }
+
   let user: any = null;
   let isGuest = true;
 

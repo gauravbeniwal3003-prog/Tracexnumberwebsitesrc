@@ -15,7 +15,7 @@ import LoginScreen from './components/LoginScreen.tsx';
 import ProtectNumberModal from './components/ProtectNumberModal.tsx';
 import { lookupNumber, ApiResponse } from './services/api.ts';
 import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
-import { useAuth } from './services/AuthContext.tsx';
+import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
 import { REDIRECT_URL } from './redirectConfig.ts';
@@ -657,11 +657,19 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   };
 
   return (
-    <div className="relative min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden">
+    <div className={`relative min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
       <LiquidBackground />
       
+      {IS_TESTING_MODE && (
+        <div className="fixed top-0 left-0 right-0 h-[36px] bg-gradient-to-r from-cyan-950/95 via-cyan-900/95 to-emerald-950/95 text-cyan-400 text-[10px] md:text-xs font-bold text-center z-[100] flex items-center justify-center gap-2 border-b border-cyan-500/20 backdrop-blur-md shadow-[0_2px_15px_rgba(0,0,0,0.6)]">
+          <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-400" />
+          <span>🧪 Testing Mode Active — Free Search Enabled Without Sign-In</span>
+          <span className="hidden sm:inline bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">Unrestricted Admin Access</span>
+        </div>
+      )}
+      
       {/* Top Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between">
+      <nav className={`fixed ${IS_TESTING_MODE ? 'top-[36px]' : 'top-0'} left-0 right-0 p-4 z-[60] flex items-center justify-between transition-all duration-300`}>
         <a 
           href="https://t.me/Gaurav_beni_0001" 
           target="_blank" 
