@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from "../services/api";
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare } from 'lucide-react';
@@ -331,7 +332,7 @@ export default function BuyApi() {
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
               </div>
               <pre className="text-zinc-400 leading-relaxed overflow-x-auto">
-                <span className="text-cyan-400">fetch</span>(<span className="text-orange-300">"https://tracexdata-api.onrender.com/api/lookup?key=YOUR_KEY&query=987..."</span>)<br />
+                <span className="text-cyan-400">fetch</span>(<span className="text-orange-300">"{getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=YOUR_KEY&query=987..."</span>)<br />
                 &nbsp;&nbsp;.<span className="text-cyan-400">then</span>(r =&gt; r.<span className="text-cyan-400">json</span>())<br />
                 &nbsp;&nbsp;.<span className="text-cyan-400">then</span>(data =&gt; &#123;<br />
                 &nbsp;&nbsp;&nbsp;&nbsp;console.<span className="text-cyan-400">log</span>(data.results[<span className="text-orange-300">"Result 1"</span>].name);<br />

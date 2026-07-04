@@ -308,17 +308,17 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                           {(() => {
                             const planUpper = String(purchasedPlanName || "").toUpperCase();
                             if (planUpper.includes("TELEGRAM")) {
-                              return `https://tracexdata-api.onrender.com/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
                             } else if (planUpper.includes("VEHICLE")) {
-                              return `https://tracexdata-api.onrender.com/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
-                              return `https://tracexdata-api.onrender.com/api/pancard?key=${purchasedApiKey}&query=NTEPK1628C`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/pancard?key=${purchasedApiKey}&query=NTEPK1628C`;
                             } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) {
-                              return `https://tracexdata-api.onrender.com/api/identity?key=${purchasedApiKey}&query=381933049732`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/identity?key=${purchasedApiKey}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
-                              return `https://tracexdata-api.onrender.com/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
                             } else {
-                              return `https://tracexdata-api.onrender.com/api/lookup?key=${purchasedApiKey}&number=9879712345`;
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=${purchasedApiKey}&number=9879712345`;
                             }
                           })()}
                         </code>
@@ -327,17 +327,17 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             const planUpper = String(purchasedPlanName || "").toUpperCase();
                             let targetUrl = "";
                             if (planUpper.includes("TELEGRAM")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
                             } else if (planUpper.includes("VEHICLE")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/pancard?key=${purchasedApiKey}&query=NTEPK1628C`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/pancard?key=${purchasedApiKey}&query=NTEPK1628C`;
                             } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/identity?key=${purchasedApiKey}&query=381933049732`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/identity?key=${purchasedApiKey}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
                             } else {
-                              targetUrl = `https://tracexdata-api.onrender.com/api/lookup?key=${purchasedApiKey}&number=9879712345`;
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=${purchasedApiKey}&number=9879712345`;
                             }
                             navigator.clipboard.writeText(targetUrl);
                             alert('Example URL copied to clipboard!');

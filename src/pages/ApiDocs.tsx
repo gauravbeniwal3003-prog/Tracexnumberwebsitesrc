@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from "../services/api";
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Book, Code, Terminal, Layers, Globe, Copy, Check, ChevronRight, ArrowLeft } from 'lucide-react';
@@ -5,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 
 export default function ApiDocs() {
+  const baseDomain = getApiBaseUrl().replace(/\/$/, "");
   const navigate = useNavigate();
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -14,7 +16,7 @@ export default function ApiDocs() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const jsExample = `fetch("https://tracexdata-api.onrender.com/api/lookup?key=YOUR_API_KEY&query=9876543210")
+  const jsExample = `fetch("${baseDomain}/api/lookup?key=YOUR_API_KEY&query=9876543210")
   .then(response => response.json())
   .then(data => {
     if (data.status === "success") {
@@ -26,7 +28,7 @@ export default function ApiDocs() {
 
   const pythonExample = `import requests
 
-url = "https://tracexdata-api.onrender.com/api/lookup"
+url = "${baseDomain}/api/lookup" 
 params = {
     "key": "YOUR_API_KEY",
     "query": "9876543210"
@@ -100,9 +102,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/lookup?key=YOUR_KEY&number=9879712345</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/lookup?key=YOUR_KEY&number=9879712345</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/lookup?key=YOUR_KEY&number=9879712345", 'mobile_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/lookup?key=YOUR_KEY&number=9879712345`, 'mobile_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'mobile_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
@@ -117,9 +119,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001", 'tg_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001`, 'tg_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'tg_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
@@ -134,9 +136,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/identity?key=YOUR_KEY&query=381933049732</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/identity?key=YOUR_KEY&query=381933049732</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/identity?key=YOUR_KEY&query=381933049732", 'identity_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/identity?key=YOUR_KEY&query=381933049732`, 'identity_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'identity_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
@@ -151,9 +153,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/bank?key=YOUR_KEY&query=ABCD0001325</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/bank?key=YOUR_KEY&query=ABCD0001325</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/bank?key=YOUR_KEY&query=ABCD0001325", 'bank_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/bank?key=YOUR_KEY&query=ABCD0001325`, 'bank_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'bank_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
@@ -168,9 +170,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/vehicle?key=YOUR_KEY&query=BR07PB6268</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/vehicle?key=YOUR_KEY&query=BR07PB6268</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/vehicle?key=YOUR_KEY&query=BR07PB6268", 'vehicle_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/vehicle?key=YOUR_KEY&query=BR07PB6268`, 'vehicle_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'vehicle_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
@@ -185,9 +187,9 @@ if data["status"] == "success":
                   <span className="text-[9px] font-bold text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-zinc-300 break-all">GET https://tracexdata-api.onrender.com/api/pancard?key=YOUR_KEY&query=NTEPK1628C</span>
+                  <span className="text-zinc-300 break-all">GET {baseDomain}/api/pancard?key=YOUR_KEY&query=NTEPK1628C</span>
                   <button 
-                     onClick={() => copyCode("https://tracexdata-api.onrender.com/api/pancard?key=YOUR_KEY&query=NTEPK1628C", 'pancard_api')}
+                     onClick={() => copyCode(`${baseDomain}/api/pancard?key=YOUR_KEY&query=NTEPK1628C`, 'pancard_api')}
                      className="text-zinc-600 hover:text-white transition-colors ml-2 shrink-0"
                   >
                      {copied === 'pancard_api' ? <Check size={16} className="text-cyan-400" /> : <Copy size={16} />}
