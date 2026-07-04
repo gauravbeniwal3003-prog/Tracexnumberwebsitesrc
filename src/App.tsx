@@ -429,6 +429,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     setError(null);
     setIsLoading(true);
     setResult(null);
+    setAadhaarPanResult(null);
 
     try {
       // CHECK PROTECTION

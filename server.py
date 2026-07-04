@@ -415,7 +415,7 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
     lower_body = cleaned_body.lower()
     
     # If the response indicates empty result, return empty dictionary
-    if any(term in lower_body for term in ["no result", "no records found", "unknown field", "invalid number", "not found"]):
+    if any(term in lower_body for term in ["no result", "no records found", "unknown field", "invalid number", "not found", "no data found", "no data", "❌"]):
         return {}
         
     # Split text into sections by common delimiters
@@ -735,29 +735,34 @@ async def user_lookup(
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
                 if resp.status_code == 200:
                     text = resp.text.strip()
-                    if not ("html" in resp.headers.get("content-type", "").lower() or text.startswith("<!DOCTYPE") or text.startswith("<html")):
+                    # Allow plaintext responses through
+                    try:
+                        parsed = resp.json()
+                    except:
+                        print("[user-lookup] Phone API is not JSON, parsing as plain text...")
+                        parsed = parse_raw_text_to_records(text)
+                    
+                    if isinstance(parsed, dict):
                         try:
-                            parsed = resp.json()
-                            if isinstance(parsed, dict):
-                                records = parsed.get("results") or parsed.get("data") or parsed.get("records")
-                                if not records:
-                                    if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
-                                        records = {"1": parsed}
-                                    else:
-                                        has_nested = any(isinstance(v, dict) for v in parsed.values())
-                                        if has_nested:
-                                            records = parsed
-                                if records:
-                                    if isinstance(records, list):
-                                        records_map = {}
-                                        for idx, rec in enumerate(records):
-                                            if isinstance(rec, dict):
-                                                records_map[f"Result {idx + 1}"] = rec
-                                        response_data = records_map
-                                    else:
-                                        response_data = records
+                            records = parsed.get("results") or parsed.get("data") or parsed.get("records")
+                            if not records:
+                                if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
+                                    records = {"1": parsed}
                                 else:
-                                        response_data = parsed
+                                    has_nested = any(isinstance(v, dict) for v in parsed.values())
+                                    if has_nested:
+                                        records = parsed
+                            if records:
+                                if isinstance(records, list):
+                                    records_map = {}
+                                    for idx, rec in enumerate(records):
+                                        if isinstance(rec, dict):
+                                            records_map[f"Result {idx + 1}"] = rec
+                                    response_data = records_map
+                                else:
+                                    response_data = records
+                            else:
+                                response_data = parsed
                         except: pass
             except Exception as e:
                 print(f"[Phone API primary failed]: {e}")
@@ -1304,11 +1309,15 @@ async def saas_lookup(
                     raise Exception(f"HTTP code {resp.status_code}")
                 
                 body_text = resp.text.strip()
-                if "html" in resp.headers.get("content-type", "").lower() or body_text.startswith("<!DOCTYPE") or body_text.startswith("<html"):
+                if body_text.startswith("<!DOCTYPE") or body_text.startswith("<html"):
                     print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Received HTML instead of JSON")
                     raise Exception("HTML page blocked / Cloudflare gate challenge")
                 
-                payload = resp.json()
+                try:
+                    payload = resp.json()
+                except Exception as json_err:
+                    print(f"[LOOKUP_DIAGNOSTIC] Response is not JSON ({json_err}), parsing as plain text...")
+                    payload = parse_raw_text_to_records(body_text)
                 break
             except Exception as lookup_err:
                 print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} failed: {lookup_err}")

@@ -366,6 +366,63 @@ function cleanBrandingObject(obj: any): any {
   return obj;
 }
 
+// Helper to parse unstructured plain text phone responses into structured JSON
+function parsePhonePlainText(text: string): any {
+  const cleanedText = text.trim();
+  
+  if (/No\s+data\s+found/i.test(cleanedText) || /No\s+records?\s+found/i.test(cleanedText) || cleanedText.includes('❌')) {
+    if (cleanedText.includes('No data found') || cleanedText.toLowerCase().includes('no record')) {
+      return { status: false, results: {}, message: "No Record Found for this number." };
+    }
+  }
+
+  const rawBlocks = cleanedText.split(/📌\s*Additional\s*Result:/gi);
+  const results: Record<string, any> = {};
+  let recordIndex = 1;
+
+  for (const rawBlock of rawBlocks) {
+    const record: Record<string, any> = {};
+    const lines = rawBlock.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    for (const line of lines) {
+      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+      const colonIdx = cleanLine.indexOf(':');
+      if (colonIdx !== -1) {
+        const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase();
+        const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
+        
+        if (!valRaw || ['none', 'null', 'n/a', ''].includes(valRaw.toLowerCase())) {
+          continue;
+        }
+
+        let key = '';
+        if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
+        else if (keyRaw.includes('father')) key = 'father_name';
+        else if (keyRaw.includes('mobile') || keyRaw.includes('phone')) key = 'mobile';
+        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
+        else if (keyRaw.includes('alternate') || keyRaw.includes('alt_mobile') || keyRaw.includes('alt_number')) key = 'alt_mobile';
+        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('carrier') || keyRaw.includes('state')) key = 'state_circle';
+        else if (keyRaw.includes('aadhar') || keyRaw.includes('identity')) key = 'aadhar_number';
+        
+        if (key) {
+          record[key] = valRaw;
+        }
+      }
+    }
+
+    if (Object.keys(record).length > 0 && (record.name || record.mobile)) {
+      results[`Result ${recordIndex}`] = record;
+      recordIndex++;
+    }
+  }
+
+  if (Object.keys(results).length > 0) {
+    return { status: true, results };
+  }
+
+  return { status: false, results: {}, message: "No Record Found for this number." };
+}
+
 // Helper to parse unstructured plain text responses into structured JSON
 function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any {
   const result: any = {};
@@ -568,38 +625,40 @@ app.get("/api/user-lookup", async (req, res) => {
         if (response.ok) {
           const text = await response.text();
           console.log("New Phone API response preview:", text.slice(0, 300));
+          let parsed: any = null;
           try {
-            const parsed = JSON.parse(text);
-            if (parsed && typeof parsed === 'object') {
-              let records = parsed.results || parsed.data || parsed.records;
-              if (!records) {
-                if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
-                  records = { "1": parsed };
-                } else {
-                  const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
-                  if (hasNestedObject) {
-                    records = parsed;
-                  }
-                }
-              }
-              if (records) {
-                if (Array.isArray(records)) {
-                  const map: Record<string, any> = {};
-                  records.forEach((rec, idx) => {
-                    if (rec && typeof rec === 'object') {
-                      map[`Result ${idx + 1}`] = rec;
-                    }
-                  });
-                  responseData = { results: map };
-                } else {
-                  responseData = { results: records };
-                }
+            parsed = JSON.parse(text);
+          } catch (e) {
+            console.log("Failed to parse JSON from phone API, trying plaintext parser...");
+            parsed = parsePhonePlainText(text);
+          }
+          if (parsed && typeof parsed === 'object') {
+            let records = parsed.results || parsed.data || parsed.records;
+            if (!records) {
+              if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
+                records = { "1": parsed };
               } else {
-                responseData = parsed;
+                const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
+                if (hasNestedObject) {
+                  records = parsed;
+                }
               }
             }
-          } catch (e) {
-            console.warn("Failed to parse JSON from new phone API, trying old fallback");
+            if (records) {
+              if (Array.isArray(records)) {
+                const map: Record<string, any> = {};
+                records.forEach((rec, idx) => {
+                  if (rec && typeof rec === 'object') {
+                    map[`Result ${idx + 1}`] = rec;
+                  }
+                });
+                responseData = { results: map };
+              } else {
+                responseData = { results: records };
+              }
+            } else {
+              responseData = parsed;
+            }
           }
         }
       } catch (err) {
@@ -970,18 +1029,19 @@ app.get("/api/lookup", async (req, res) => {
         });
         if (response.ok) {
           const text = await response.text();
+          let parsed: any = null;
           try {
-            const parsed = JSON.parse(text);
-            if (parsed && typeof parsed === 'object') {
-              // Ensure we received actual records/data
-              const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records;
-              if (hasData) {
-                rawData = parsed;
-                responseStatus = response.status;
-              }
-            }
+            parsed = JSON.parse(text);
           } catch (e) {
-            console.warn("SaaS fail to parse new phone API json, using old target");
+            console.log("SaaS phone lookup text is not JSON, parsing plain text...");
+            parsed = parsePhonePlainText(text);
+          }
+          if (parsed && typeof parsed === 'object') {
+            const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records || parsed.status === true || (parsed.status === undefined && Object.keys(parsed).length > 0) || parsed.message;
+            if (hasData) {
+              rawData = parsed;
+              responseStatus = response.status;
+            }
           }
         }
       } catch (err) {

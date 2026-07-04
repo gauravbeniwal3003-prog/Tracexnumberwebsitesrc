@@ -68,6 +68,62 @@ export interface ApiResponse {
   };
 }
 
+export const parsePhonePlainText = (text: string): any => {
+  const cleanedText = text.trim();
+  
+  if (/No\s+data\s+found/i.test(cleanedText) || /No\s+records?\s+found/i.test(cleanedText) || cleanedText.includes('❌')) {
+    if (cleanedText.includes('No data found') || cleanedText.toLowerCase().includes('no record')) {
+      return { status: false, results: {}, message: "No Record Found for this number." };
+    }
+  }
+
+  const rawBlocks = cleanedText.split(/📌\s*Additional\s*Result:/gi);
+  const results: Record<string, any> = {};
+  let recordIndex = 1;
+
+  for (const rawBlock of rawBlocks) {
+    const record: Record<string, any> = {};
+    const lines = rawBlock.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    for (const line of lines) {
+      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+      const colonIdx = cleanLine.indexOf(':');
+      if (colonIdx !== -1) {
+        const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase();
+        const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
+        
+        if (!valRaw || ['none', 'null', 'n/a', ''].includes(valRaw.toLowerCase())) {
+          continue;
+        }
+
+        let key = '';
+        if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
+        else if (keyRaw.includes('father')) key = 'father_name';
+        else if (keyRaw.includes('mobile') || keyRaw.includes('phone')) key = 'mobile';
+        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
+        else if (keyRaw.includes('alternate') || keyRaw.includes('alt_mobile') || keyRaw.includes('alt_number')) key = 'alt_mobile';
+        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('carrier') || keyRaw.includes('state')) key = 'state_circle';
+        else if (keyRaw.includes('aadhar') || keyRaw.includes('identity')) key = 'aadhar_number';
+        
+        if (key) {
+          record[key] = valRaw;
+        }
+      }
+    }
+
+    if (Object.keys(record).length > 0 && (record.name || record.mobile)) {
+      results[`Result ${recordIndex}`] = record;
+      recordIndex++;
+    }
+  }
+
+  if (Object.keys(results).length > 0) {
+    return { status: true, results };
+  }
+
+  return { status: false, results: {}, message: "No Record Found for this number." };
+};
+
 export const validateLookupResponse = (data: any): boolean => {
   if (!data) return false;
   
@@ -248,10 +304,12 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
 
       let data = parsed;
       if (parsed && 'contents' in parsed && url.includes('allorigins')) {
+        const contentsText = typeof parsed.contents === 'string' ? parsed.contents.trim() : '';
         try {
-          data = typeof parsed.contents === 'string' ? JSON.parse(parsed.contents.trim()) : parsed.contents;
+          data = JSON.parse(contentsText);
         } catch (e) {
-          throw new Error('Failed to parse wrapped AllOrigins payload');
+          console.log("AllOrigins content is not JSON, parsing as phone plain text...");
+          data = parsePhonePlainText(contentsText);
         }
       }
 
@@ -469,13 +527,106 @@ const scrubBranding = (obj: any): any => {
   return obj;
 };
 
-export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
-  console.log('Searching TRACEXDATA Identity Card Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
+export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
+  const result: any = {};
+  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+  const lines = cleanText.split('\n');
+  let lastKey: string | null = null;
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    // Strip emojis
+    const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+    if (!cleanLine) continue;
+    if (cleanLine.startsWith('─') || cleanLine.startsWith('━')) continue;
+
+    if (cleanLine.includes(':')) {
+      const colonIdx = cleanLine.indexOf(':');
+      const keyRaw = cleanLine.substring(0, colonIdx).trim();
+      const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
+
+      if (!valRaw || ['none', 'null', 'n/a'].includes(valRaw.toLowerCase())) {
+        lastKey = null;
+        continue;
+      }
+
+      const keyLower = keyRaw.toLowerCase();
+      let mappedKey = '';
+
+      if (type === 'aadhar') {
+        if (keyLower.includes('name') && !keyLower.includes('father')) mappedKey = 'name';
+        else if (keyLower.includes('father')) mappedKey = 'father_name';
+        else if (keyLower.includes('mobile') || keyLower.includes('phone')) mappedKey = 'mobile';
+        else if (keyLower.includes('address')) mappedKey = 'address';
+        else if (keyLower.includes('circle') || keyLower.includes('operator')) mappedKey = 'state_circle';
+        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
+      } else if (type === 'pan') {
+        if (keyLower.includes('full name') || (keyLower.includes('name') && !keyLower.includes('father'))) mappedKey = 'name';
+        else if (keyLower.includes('pan number') || keyLower.includes('pan_number')) mappedKey = 'pan_number';
+        else if (keyLower.includes('pan status')) mappedKey = 'pan_status';
+        else if (keyLower.includes('gender')) mappedKey = 'gender';
+        else if (keyLower.includes('dob') || keyLower.includes('birth')) mappedKey = 'date_of_birth';
+        else if (keyLower.includes('linked')) mappedKey = 'aadhaar_linked';
+        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
+      } else if (type === 'bank') {
+        if (keyLower.includes('bank name')) mappedKey = 'bank_name';
+        else if (keyLower.includes('bank code')) mappedKey = 'bank_code';
+        else if (keyLower.includes('branch')) mappedKey = 'branch';
+        else if (keyLower.includes('address')) mappedKey = 'address';
+        else if (keyLower.includes('city')) mappedKey = 'city';
+        else if (keyLower.includes('centre')) mappedKey = 'centre';
+        else if (keyLower.includes('district')) mappedKey = 'district';
+        else if (keyLower.includes('state')) mappedKey = 'state';
+        else if (keyLower.includes('pin')) mappedKey = 'pin_code';
+        else if (keyLower.includes('micr')) mappedKey = 'micr_code';
+        else if (keyLower.includes('contact')) mappedKey = 'contact';
+        else if (keyLower.includes('neft')) mappedKey = 'neft';
+        else if (keyLower.includes('rtgs')) mappedKey = 'rtgs';
+        else if (keyLower.includes('imps')) mappedKey = 'imps';
+        else if (keyLower.includes('upi')) mappedKey = 'upi';
+      } else if (type === 'rasion') {
+        if (keyLower.includes('name')) mappedKey = 'name';
+        else if (keyLower.includes('family') || keyLower.includes('rasion') || keyLower.includes('ration')) mappedKey = 'family_id';
+      }
+
+      if (!mappedKey) {
+        // Fallback generic key mapping
+        mappedKey = keyRaw.replace(/[^a-zA-Z0-9\s_]/g, '').trim().toLowerCase().replace(/\s+/g, '_');
+      }
+
+      if (mappedKey) {
+        result[mappedKey] = valRaw;
+        lastKey = mappedKey;
+      } else {
+        lastKey = null;
+      }
+    } else {
+      // Append to the last active key if we have one and the line is not a standard skip
+      if (lastKey && result[lastKey]) {
+        result[lastKey] = result[lastKey] + ' ' + cleanLine;
+      }
+    }
+  }
+
+  const parsedKeys = Object.keys(result);
+  if (parsedKeys.length > 0) {
+    result.raw_data = cleanText;
+    return result;
+  }
+  return { raw_data: cleanText };
+};
+
+export const fetchWithFallback = async (
+  endpoint: string,
+  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle',
+  query: string,
+  token: string
+): Promise<any> => {
+  // 1. Try primary backend first
+  try {
     const headers: Record<string, string> = {
       'Accept': 'application/json'
     };
@@ -486,14 +637,125 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
       method: 'GET',
       headers
     });
-
-
-    if (!response.ok) {
-      throw new Error(`Engine returned status ${response.status}`);
+    
+    if (response.ok) {
+      const rawText = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('text/html') && !rawText.trim().startsWith('<!DOCTYPE') && !rawText.trim().startsWith('<html')) {
+        try {
+          return JSON.parse(rawText);
+        } catch (e) {
+          console.warn("Primary endpoint responded with non-JSON text, checking content...");
+        }
+      } else {
+        console.warn("Primary endpoint responded with HTML page. Triggering provider fallback.");
+      }
+    } else {
+      console.warn(`Primary endpoint returned status ${response.status}. Triggering provider fallback.`);
     }
+  } catch (err: any) {
+    console.warn(`Primary endpoint failed: ${err.message || err}. Triggering provider fallback.`);
+  }
 
-    const apiData = await safeFetchJson(response);
-    if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
+  // 2. Fallback: Query direct API via AllOrigins CORS proxy
+  let directUrl = '';
+  if (serviceType === 'adhr') {
+    directUrl = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(query)}`;
+  } else if (serviceType === 'bnk') {
+    directUrl = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(query)}`;
+  } else if (serviceType === 'pancard') {
+    directUrl = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(query)}`;
+  } else if (serviceType === 'vehicle') {
+    const key = import.meta.env.VITE_LOOKUP_API_KEY || "TVB_SGL_BCFC1E32";
+    directUrl = `https://techvishalboss.com/api/v1/lookup.php?key=${key}&service=vehicle&rc=${encodeURIComponent(query)}`;
+  }
+
+  if (!directUrl) {
+    throw new Error("No direct lookup URL configured for fallback.");
+  }
+
+  console.log(`Fallback proxy routing: ${directUrl}`);
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
+  const proxyResponse = await fetch(proxyUrl);
+  if (!proxyResponse.ok) {
+    throw new Error(`Direct gateway proxy returned status ${proxyResponse.status}`);
+  }
+
+  const parsedProxy = await proxyResponse.json();
+  const contentsText = typeof parsedProxy.contents === 'string' ? parsedProxy.contents.trim() : '';
+
+  if (!contentsText) {
+    throw new Error("Empty response returned from direct provider API.");
+  }
+
+  // Proper no data and error response handling
+  const lowerContents = contentsText.toLowerCase();
+  if (
+    lowerContents.includes("no data found") || 
+    lowerContents.includes("no record") || 
+    lowerContents.includes("not found") || 
+    lowerContents.includes("no result") ||
+    lowerContents.includes("invalid key") ||
+    lowerContents.includes("invalid query") ||
+    lowerContents.includes("under maintenance") ||
+    lowerContents.trim() === "null" ||
+    lowerContents.trim() === "[]" ||
+    lowerContents.trim() === "{}"
+  ) {
+    return {
+      status: 'error',
+      message: contentsText.length < 100 ? contentsText : "No records found for this query."
+    };
+  }
+
+  // Parse direct payload
+  let parsedPayload: any;
+  try {
+    parsedPayload = JSON.parse(contentsText);
+    
+    // Check if provider returned an error message in JSON
+    const lowerMsg = String(parsedPayload.message || parsedPayload.error || "").toLowerCase();
+    if (lowerMsg.includes("no result") || lowerMsg.includes("not found") || lowerMsg.includes("no records")) {
+      return {
+        status: 'error',
+        message: parsedPayload.message || parsedPayload.error || "No records found"
+      };
+    }
+  } catch (jsonErr) {
+    console.log(`Direct provider response for ${serviceType} is plain text, parsing...`);
+    if (serviceType === 'adhr') {
+      parsedPayload = parsePlainTextLookup(contentsText, 'aadhar');
+    } else if (serviceType === 'bnk') {
+      parsedPayload = parsePlainTextLookup(contentsText, 'bank');
+    } else if (serviceType === 'pancard') {
+      parsedPayload = parsePlainTextLookup(contentsText, 'pan');
+    } else {
+      parsedPayload = { raw_data: contentsText };
+    }
+  }
+
+  if (parsedPayload) {
+    return {
+      status: 'success',
+      results: parsedPayload,
+      raw_results: contentsText
+    };
+  }
+
+  throw new Error("Failed to process fallback provider response.");
+};
+
+export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
+  console.log('Searching TRACEXDATA Identity Card Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+
+    const apiData = await fetchWithFallback(endpoint, 'adhr', aadharNo, token);
+
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
       return { 
         status: true, 
         results: scrubBranding(apiData.results || {}), 
@@ -503,7 +765,7 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
       return {
         status: false,
         results: {},
-        error: apiData.message || apiData.error || 'No records found for this Identity Card.'
+        error: apiData?.message || apiData?.error || 'No records found for this Identity Card.'
       };
     }
   } catch (error) {
@@ -523,24 +785,10 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
 
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token || '';
-    const headers: Record<string, string> = {
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers
-    });
 
+    const apiData = await fetchWithFallback(endpoint, 'bnk', ifsc, token);
 
-    if (!response.ok) {
-      throw new Error(`Engine returned status ${response.status}`);
-    }
-
-    const apiData = await safeFetchJson(response);
-    if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
       return { 
         status: true, 
         results: scrubBranding(apiData.results || {}), 
@@ -550,7 +798,7 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
       return {
         status: false,
         results: {},
-        error: apiData.message || apiData.error || 'No records found for this Bank/IFSC.'
+        error: apiData?.message || apiData?.error || 'No records found for this Bank/IFSC.'
       };
     }
   } catch (error) {
@@ -585,157 +833,92 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
     console.error('Vehicle cache read failure:', e);
   }
 
-  // 2. Query SaaS proxy with 3-times smart retry system
-  console.log('Searching TRACEXDATA Vehicle Intelligence with up to 3 smart retries...');
-  const maxTries = 3;
-  let lastError: any = null;
+  // 2. Query SaaS proxy with fallback
+  console.log('Searching TRACEXDATA Vehicle Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
 
-  for (let attempt = 1; attempt <= maxTries; attempt++) {
-    try {
-      console.log(`Vehicle RC lookup attempt ${attempt} of ${maxTries}...`);
-      
-      const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
 
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || '';
-      const headers: Record<string, string> = {
-        'Accept': 'application/json'
+    const apiData = await fetchWithFallback(endpoint, 'vehicle', cleanVehicleNo, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      // Save cache in background if cleanResults has entries
+      if (cleanResults && Object.keys(cleanResults).length > 0) {
+        (async () => {
+          try {
+            await supabase.from('vehicle_search_results').upsert({
+              vehicle_number: cleanVehicleNo,
+              raw_data: cleanResults
+            }, { onConflict: 'vehicle_number' });
+          } catch (e) {
+            console.error('Failed to cache Vehicle result:', e);
+          }
+        })();
+      }
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
       };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers
-      });
-
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try { errorData = JSON.parse(errorText); } catch (e) { errorData = { error: errorText }; }
-        throw new Error(errorData.error || errorData.message || `Engine returned status ${response.status}`);
-      }
-
-      const apiData = await safeFetchJson(response);
-      
-      // Mirror the precise, flexible results / raw_results checking logic from Aadhaar identity lookup
-      if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
-        const cleanResults = scrubBranding(apiData.results || {});
-        const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-        // Save cache in background if cleanResults has entries
-        if (cleanResults && Object.keys(cleanResults).length > 0) {
-          (async () => {
-            try {
-              await supabase.from('vehicle_search_results').upsert({
-                vehicle_number: cleanVehicleNo,
-                raw_data: cleanResults
-              }, { onConflict: 'vehicle_number' });
-            } catch (e) {
-              console.error('Failed to cache Vehicle result:', e);
-            }
-          })();
-        }
-
-        return { 
-          status: true, 
-          results: cleanResults, 
-          raw_results: cleanRawResults 
-        };
-      } else {
-        return {
-          status: false,
-          results: {},
-          error: apiData.message || apiData.error || 'No records found for this Vehicle Number.'
-        };
-      }
-    } catch (error: any) {
-      console.error(`Vehicle lookup attempt ${attempt} error:`, error);
-      lastError = error;
-      
-      if (attempt < maxTries) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || 'No records found for this Vehicle Number.'
+      };
     }
+  } catch (error: any) {
+    console.error(`Vehicle lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
   }
-
-  return {
-    status: false,
-    results: {},
-    error: lastError instanceof Error ? lastError.message : 'Server down after 3 retry attempts. Please try again later.'
-  };
 };
 
 export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => {
   const cleanPancardNo = pancardNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   
-  // Query SaaS proxy with 3-times smart retry system
-  console.log('Searching TRACEXDATA PN Card Intelligence with up to 3 smart retries...');
-  const maxTries = 3;
-  let lastError: any = null;
+  console.log('Searching TRACEXDATA PN Card Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
 
-  for (let attempt = 1; attempt <= maxTries; attempt++) {
-    try {
-      console.log(`PN Card lookup attempt ${attempt} of ${maxTries}...`);
-      
-      const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
 
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || '';
-      const headers: Record<string, string> = {
-        'Accept': 'application/json'
+    const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
       };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers
-      });
-
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try { errorData = JSON.parse(errorText); } catch (e) { errorData = { error: errorText }; }
-        throw new Error(errorData.error || errorData.message || `Engine returned status ${response.status}`);
-      }
-
-      const apiData = await safeFetchJson(response);
-      
-      // Mirror the precise, flexible results / raw_results checking logic from Aadhaar identity lookup
-      if (apiData.status === 'success' && (apiData.results || apiData.raw_results)) {
-        const cleanResults = scrubBranding(apiData.results || {});
-        const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-        return { 
-          status: true, 
-          results: cleanResults, 
-          raw_results: cleanRawResults 
-        };
-      } else {
-        return {
-          status: false,
-          results: {},
-          error: apiData.message || apiData.error || 'No records found for this PN Card.'
-        };
-      }
-    } catch (error: any) {
-      console.error(`PN Card lookup attempt ${attempt} error:`, error);
-      lastError = error;
-      
-      if (attempt < maxTries) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || 'No records found for this PN Card.'
+      };
     }
+  } catch (error: any) {
+    console.error(`PN Card lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
   }
-
-  return {
-    status: false,
-    results: {},
-    error: lastError instanceof Error ? lastError.message : 'Server down after 3 retry attempts. Please try again later.'
-  };
 };
 
 export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
@@ -743,24 +926,53 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     const sessionRes = await supabase.auth.getSession();
     const token = sessionRes.data.session?.access_token;
     
-    
     const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
-      },
-      body: JSON.stringify({ aadhaar_number: aadhaarNo })
-    });
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ aadhaar_number: aadhaarNo })
+      });
 
-    if (!response.ok) {
-      const errorData = await safeFetchJson(response).catch(() => ({}));
-      throw new Error(errorData.error || `Server returned status ${response.status}`);
+      if (response.ok) {
+        return await safeFetchJson(response);
+      }
+      throw new Error(`Engine returned status ${response.status}`);
+    } catch (primaryErr) {
+      console.warn("Primary Aadhaar-to-PAN endpoint failed, attempting fallback directly...", primaryErr);
+      // Fallback!
+      const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+      const directUrl = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(aadhaarNo)}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
+      
+      const fallbackResponse = await fetch(proxyUrl);
+      if (!fallbackResponse.ok) {
+        throw new Error("Direct Aadhaar-to-PAN provider is also offline.");
+      }
+      
+      const proxyData = await fallbackResponse.json();
+      const contentsText = typeof proxyData.contents === 'string' ? proxyData.contents.trim() : '';
+      if (!contentsText) {
+        throw new Error("Empty response received from direct Aadhaar-to-PAN provider.");
+      }
+      
+      const apiData = JSON.parse(contentsText);
+      const retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
+      const panFound = retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found");
+      
+      return {
+        status: "success",
+        pan_found: !!panFound,
+        pan: retrievedPan,
+        credits_deducted: 0,
+        results: apiData,
+        cached: false
+      };
     }
-
-    return await safeFetchJson(response);
   } catch (error: any) {
     console.error('Aadhaar to PAN lookup error:', error);
     return {
