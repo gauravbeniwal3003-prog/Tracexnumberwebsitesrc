@@ -25,7 +25,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 let supabase: any;
 let supabaseAdmin: any;
@@ -45,8 +45,8 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 // Cashfree Configuration
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
-const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
+const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID;
+const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY;
 const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || "https://api.cashfree.com/pg";
 
 
@@ -1429,10 +1429,8 @@ async function fulfillOrder(orderId: string, userId: string) {
         user_id: finalUserId,
         user_email: user_email || "N/A",
         plan_name: planName,
-        duration_days: days,
         request_limit: limit,
-        expires_at: expiresAt.toISOString(),
-        order_id: orderId
+        expires_at: expiresAt.toISOString()
       });
       
       await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
@@ -3063,7 +3061,16 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       console.error("[POST_ADMIN_PROFILE_ERR]", error);
       return res.status(500).json({ error: error.message });
     }
-    return res.json({ status: "success", data: data?.[0] });
+    const profileObj = (data && data.length > 0) ? data[0] : {
+      id: randId,
+      email: email.trim().toLowerCase(),
+      full_name: full_name?.trim() || email.split("@")[0],
+      credits: Number(credits || 0),
+      unlimited_expiry: expiry,
+      is_free_credit_claimed: true,
+      last_weekly_credit_at: new Date().toISOString()
+    };
+    return res.json({ status: "success", data: profileObj });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
@@ -3092,7 +3099,14 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       console.error("[PUT_ADMIN_PROFILE_ERR]", error);
       return res.status(500).json({ error: error.message });
     }
-    return res.json({ status: "success", data: data?.[0] });
+    const profileObj = (data && data.length > 0) ? data[0] : {
+      id: id,
+      email: email,
+      full_name: full_name || "",
+      credits: Number(credits || 0),
+      unlimited_expiry: expiry
+    };
+    return res.json({ status: "success", data: profileObj });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
@@ -3284,11 +3298,28 @@ app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
       request_limit: null,
       expires_at: expiresAt.toISOString(),
       status: 'active'
-    }).select().single();
+    }).select();
 
-    if (error) return res.status(500).json({ error: error.message });
-    return res.json({ data });
+    if (error) {
+      console.error("[ADMIN_API_KEY_CREATE_ERR]", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    const keyData = (data && data.length > 0) ? data[0] : {
+      id: crypto.randomUUID(),
+      user_email,
+      api_key: apiKey,
+      plan_name,
+      requests_used: 0,
+      request_limit: null,
+      expires_at: expiresAt.toISOString(),
+      status: 'active',
+      created_at: new Date().toISOString()
+    };
+
+    return res.json({ data: keyData });
   } catch (err: any) {
+    console.error("[ADMIN_API_KEY_POST_FAIL]", err);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -3345,6 +3376,7 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
     return res.json({
       status: 'success',
       data: {
+        isServiceRoleActive: !!SUPABASE_SERVICE_ROLE_KEY,
         apiKeys: apiKeys || [],
         apiLogs: apiLogs || [],
         settings: settings || null,

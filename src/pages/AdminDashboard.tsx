@@ -31,6 +31,7 @@ export default function AdminDashboard() {
   };
   const [isAdmin, setIsAdmin] = useState(false);
   const [stats, setStats] = useState<any>({});
+  const [isServiceRoleActive, setIsServiceRoleActive] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Stats State
@@ -141,6 +142,7 @@ export default function AdminDashboard() {
           const sysJson = await sysResponse.json();
           if (sysResponse.ok && sysJson.status === 'success') {
             const sysData = sysJson.data;
+            setIsServiceRoleActive(sysData.isServiceRoleActive);
             setStats(sysData.stats || {
               totalKeys: 0,
               totalRequests: 0,
@@ -543,6 +545,27 @@ export default function AdminDashboard() {
       </div>
 
       <main className="lg:ml-64 pt-36 lg:pt-12 px-6 max-w-6xl">
+        {isServiceRoleActive === false && (
+          <div className="mb-8 p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex gap-4 text-amber-200">
+            <div className="text-amber-400 shrink-0 mt-0.5">
+              <ShieldAlert size={22} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-400">Database Warning: Supabase Service Role Key is Missing!</h4>
+              <p className="text-xs text-amber-200/70 mt-1 leading-relaxed">
+                Your backend server is running in fallback mode using the Public Anon Key. While some actions work,
+                Supabase Row Level Security (RLS) is active and prevents reading full profiles, api keys, and transaction ledgers.
+                To resolve this and load all system statistics correctly:
+              </p>
+              <ul className="list-disc list-inside text-xs text-amber-200/60 mt-2.5 space-y-1">
+                <li>Go to your <strong className="text-amber-300">Supabase Dashboard</strong> &rarr; <strong className="text-amber-300">Project Settings</strong> &rarr; <strong className="text-amber-300">API</strong>.</li>
+                <li>Locate the <code className="bg-amber-500/20 px-1 py-0.5 rounded text-amber-300">service_role</code> private secret key.</li>
+                <li>Add <code className="bg-amber-500/20 px-1 py-0.5 rounded text-amber-300">SUPABASE_SERVICE_ROLE_KEY</code> as an Environment Variable in your <strong className="text-amber-300">Render</strong> (or Firebase hosting) dashboard and redeploy.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <h1 className="text-2xl font-bold capitalize">{activeTab} Control</h1>
