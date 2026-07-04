@@ -223,6 +223,16 @@ export default function AdminDashboard() {
   };
 
   const handleGenerateKey = async () => {
+    if (!newKeyData.user_email || !newKeyData.user_email.trim()) {
+      alert("Please enter a valid Customer Email.");
+      return;
+    }
+
+    if (newKeyData.custom_key && /\s/.test(newKeyData.custom_key)) {
+      alert("Custom Secret cannot contain whitespace.");
+      return;
+    }
+
     const apiKey = newKeyData.custom_key || `TX-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
     const expiresAt = new Date();
     const days = newKeyData.plan_name.includes("15 Days") ? 15 : 30;
@@ -232,18 +242,26 @@ export default function AdminDashboard() {
     const token = session?.access_token;
     let error = null;
     if (token) {
-      const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ 
-          user_email: newKeyData.user_email, 
-          plan_name: newKeyData.plan_name, 
-          days,
-          custom_key: newKeyData.custom_key || undefined
-        })
-      });
-      const json = await res.json();
-      if (!res.ok) error = { message: json.error };
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ 
+            user_email: newKeyData.user_email.trim(), 
+            plan_name: newKeyData.plan_name, 
+            days,
+            custom_key: newKeyData.custom_key.trim() || undefined
+          })
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          error = { message: json.error || json.message || "Unknown server error" };
+        }
+      } catch (e: any) {
+        error = { message: e.message || "Failed to connect to the server." };
+      }
+    } else {
+      error = { message: "No active session found. Please login again." };
     }
 
     if (error) {
@@ -1174,32 +1192,36 @@ export default function AdminDashboard() {
                   <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">No API keys found</p>
                 </div>
               ) : (
-                keys.map(key => (
-                  <div key={key.id} className="p-5 rounded-[24px] bg-white/2 border border-white/5 space-y-3">
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{key.user_email}</div>
-                        <div className="text-[10px] font-mono text-zinc-500 mt-1 bg-black/40 px-2 py-0.5 rounded w-fit">
-                          {key.api_key.substring(0, 8)}...
+                keys.map(key => {
+                  const keyString = key.api_key || "";
+                  const displayKey = keyString ? (keyString.length > 8 ? `${keyString.substring(0, 8)}...` : keyString) : "N/A";
+                  const expiryString = key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never";
+                  return (
+                    <div key={key.id} className="p-5 rounded-[24px] bg-white/2 border border-white/5 space-y-3">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">{key.user_email || "No Email"}</div>
+                          <div className="text-[10px] font-mono text-zinc-500 mt-1 bg-black/40 px-2 py-0.5 rounded w-fit">
+                            {displayKey}
+                          </div>
+                        </div>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          key.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'
+                        }`}>
+                          {key.status || "inactive"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 py-1.5 border-t border-b border-white/5 text-[11px]">
+                        <div>
+                          <span className="text-zinc-600 block uppercase font-bold text-[8px]">Plan</span>
+                          <span className="text-zinc-300 font-bold block truncate">{key.plan_name || "N/A"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-600 block uppercase font-bold text-[8px]">Expiry</span>
+                          <span className="text-zinc-300 block">{expiryString}</span>
                         </div>
                       </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                        key.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'
-                      }`}>
-                        {key.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 py-1.5 border-t border-b border-white/5 text-[11px]">
-                      <div>
-                        <span className="text-zinc-600 block uppercase font-bold text-[8px]">Plan</span>
-                        <span className="text-zinc-300 font-bold block truncate">{key.plan_name}</span>
-                      </div>
-                      <div>
-                        <span className="text-zinc-600 block uppercase font-bold text-[8px]">Expiry</span>
-                        <span className="text-zinc-300 block">{new Date(key.expires_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
 
                     <div className="flex items-center justify-between pt-1">
                       <div className="text-xs font-bold text-cyan-400 bg-cyan-400/5 px-2.5 py-1 rounded-lg">
@@ -1249,7 +1271,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-                ))
+                )})
               )}
             </div>
 
@@ -1284,21 +1306,25 @@ export default function AdminDashboard() {
                         </td>
                       </tr>
                     ) : (
-                      keys.map(key => (
-                        <tr key={key.id} className="hover:bg-white/2 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="text-xs font-bold text-white max-w-[150px] truncate">{key.user_email}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="text-[10px] font-mono text-zinc-500 bg-black/40 px-2 py-1 rounded w-fit">
-                              {key.api_key.substring(0, 8)}...
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-xs text-zinc-400">{key.plan_name}</td>
-                          <td className="px-6 py-4 text-xs text-zinc-400">{new Date(key.expires_at).toLocaleDateString()}</td>
-                          <td className="px-6 py-4">
-                             <div className="text-xs font-bold text-cyan-400">{key.requests_used} reqs</div>
-                           </td>
+                      keys.map(key => {
+                        const keyString = key.api_key || "";
+                        const displayKey = keyString ? (keyString.length > 8 ? `${keyString.substring(0, 8)}...` : keyString) : "N/A";
+                        const expiryString = key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never";
+                        return (
+                          <tr key={key.id} className="hover:bg-white/2 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="text-xs font-bold text-white max-w-[150px] truncate">{key.user_email || "No Email"}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-[10px] font-mono text-zinc-500 bg-black/40 px-2 py-1 rounded w-fit">
+                                {displayKey}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-zinc-400">{key.plan_name || "N/A"}</td>
+                            <td className="px-6 py-4 text-xs text-zinc-400">{expiryString}</td>
+                            <td className="px-6 py-4">
+                               <div className="text-xs font-bold text-cyan-400">{key.requests_used || 0} reqs</div>
+                             </td>
                            <td className="px-6 py-4">
                              <div className="flex items-center gap-2">
                                <button 
@@ -1331,7 +1357,7 @@ export default function AdminDashboard() {
                              </div>
                            </td>
                         </tr>
-                      ))
+                      )})
                     )}
                   </tbody>
                 </table>

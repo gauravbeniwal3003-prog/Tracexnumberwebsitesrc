@@ -559,7 +559,7 @@ app.get("/api/user-lookup", async (req, res) => {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
       
-      const newApiUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(cleanedQuery)}`;
+      const newApiUrl = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
       const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
@@ -950,12 +950,12 @@ app.get("/api/lookup", async (req, res) => {
 
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
-      const newApiUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(targetQuery)}`;
+      const newApiUrl = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
       const searchParams = new URLSearchParams();
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${encodeURIComponent(targetQuery)}`;
+      const target = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 
@@ -2953,7 +2953,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     return res.json({ status: "success", data: mergedProfiles });
   } catch (err: any) {
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 
@@ -2983,11 +2983,11 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[POST_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: "Internal Server Error" });
+      return res.status(500).json({ error: error.message });
     }
     return res.json({ status: "success", data: data?.[0] });
   } catch (err: any) {
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 
@@ -3012,11 +3012,11 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[PUT_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: "Internal Server Error" });
+      return res.status(500).json({ error: error.message });
     }
     return res.json({ status: "success", data: data?.[0] });
   } catch (err: any) {
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 
@@ -3038,11 +3038,11 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
     if (error) {
       console.error("[DELETE_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: "Internal Server Error" });
+      return res.status(500).json({ error: error.message });
     }
     return res.json({ status: "success", message: "User profile deleted successfully" });
   } catch (err: any) {
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 

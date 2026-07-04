@@ -190,7 +190,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   const delays = [1000, 2000, 3000, 4000, 5000];
   
   const backendEndpoint = `${getApiBaseUrl()}/api/user-lookup?service=phone&query=${number}`;
-  const targetUrl = `https://numberimfo.vishalboss.sbs/api.php?service=number&number=${number}`;
+  const targetUrl = `https://exploitsindia.site/osint-api/number.php?exploits=${number}`;
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   let lastError: any = null;
