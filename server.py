@@ -632,6 +632,205 @@ async def index():
         "version": "2.8.0-STABLE"
     }
 
+@app.get("/api/user-lookup")
+async def user_lookup(
+    request: Request,
+    service: Optional[str] = Query(None),
+    query: Optional[str] = Query(None)
+):
+    import urllib.parse
+    import re
+    import json
+    import time
+    from datetime import datetime
+    
+    if not service or not query:
+        return make_api_response({
+            "status": "success",
+            "results": {"error": "Missing or invalid service/query"}
+        })
+        
+    service_clean = service.lower().strip()
+    cleaned_query = query.strip()
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+    
+    # Soft auth and credit deduction (non-blocking)
+    db = get_supabase()
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.replace("Bearer ", "") if auth_header else ""
+    
+    if db and token:
+        try:
+            user_response = db.auth.get_user(token)
+            user = user_response.user if user_response else None
+            if user:
+                profile_query = db.table("profiles").select("*").eq("id", user.id).maybe_single().execute()
+                profile = profile_query.data if profile_query and profile_query.data else None
+                if profile:
+                    is_unlimited = False
+                    if profile.get('unlimited_expiry'):
+                        try:
+                            clean_exp = profile['unlimited_expiry'].replace('Z', '')
+                            if '+' in clean_exp:
+                                clean_exp = clean_exp.split('+')[0]
+                            expiry_dt = datetime.fromisoformat(clean_exp)
+                            if expiry_dt > datetime.utcnow():
+                                is_unlimited = True
+                        except: pass
+                        
+                    credit_cost = 1
+                    if service_clean == 'telegram':
+                        credit_cost = 8
+                    elif service_clean == 'adhr':
+                        credit_cost = 12
+                    elif service_clean == 'bnk':
+                        credit_cost = 18
+                    elif service_clean == 'vehicle':
+                        credit_cost = 10
+                    elif service_clean == 'pancard':
+                        credit_cost = 20
+                    elif service_clean == 'aadhaar_to_pan':
+                        credit_cost = 150
+                        
+                    current_credits = int(profile.get('credits') or 0)
+                    if not is_unlimited and current_credits >= credit_cost:
+                        try:
+                            db.rpc("deduct_credits", {
+                                "user_id": user.id,
+                                "amount": credit_cost
+                            }).execute()
+                        except Exception as rpc_err:
+                            print(f"[Soft Auth RPC err]: {rpc_err}")
+        except Exception as auth_err:
+            print(f"[Soft Auth error]: {auth_err}")
+            
+    response_data = None
+    raw_results = None
+    
+    try:
+        if service_clean == 'phone':
+            # Query the primary phone API
+            new_api_url = f"https://numberimfo.vishalboss.sbs/api.php?service=number&number={urllib.parse.quote(cleaned_query)}"
+            try:
+                print(f"[user-lookup] Fetching phone API: {new_api_url}")
+                resp = requests.get(new_api_url, headers=headers, timeout=12)
+                if resp.status_code == 200:
+                    text = resp.text.strip()
+                    if not ("html" in resp.headers.get("content-type", "").lower() or text.startswith("<!DOCTYPE") or text.startswith("<html")):
+                        try:
+                            parsed = resp.json()
+                            if isinstance(parsed, dict):
+                                records = parsed.get("results") or parsed.get("data") or parsed.get("records")
+                                if not records:
+                                    if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
+                                        records = {"1": parsed}
+                                    else:
+                                        has_nested = any(isinstance(v, dict) for v in parsed.values())
+                                        if has_nested:
+                                            records = parsed
+                                if records:
+                                    if isinstance(records, list):
+                                        records_map = {}
+                                        for idx, rec in enumerate(records):
+                                            if isinstance(rec, dict):
+                                                records_map[f"Result {idx + 1}"] = rec
+                                        response_data = records_map
+                                    else:
+                                        response_data = records
+                                else:
+                                        response_data = parsed
+                        except: pass
+            except Exception as e:
+                print(f"[Phone API primary failed]: {e}")
+                
+            if not response_data:
+                # Fallback to saas_lookup internally
+                print(f"[user-lookup] Falling back to old phone target...")
+                try:
+                    res = await saas_lookup(request=request, key="TX-SYSTEM-INTERNAL-ADMIN", number=cleaned_query)
+                    if res and isinstance(res, dict):
+                        response_data = res.get("results")
+                except Exception as fb_err:
+                    print(f"[Phone API fallback failed]: {fb_err}")
+                    
+        else:
+            api_url = ""
+            if service_clean == 'adhr':
+                target_query = re.sub(r'[^0-9]', '', cleaned_query)
+                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'bnk':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'vehicle':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(target_query)}"
+            elif service_clean == 'pancard':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'aadhaar_to_pan' or service_clean == 'aadhaar_pan':
+                target_query = re.sub(r'[^0-9]', '', cleaned_query)
+                api_key = "c8117598aafa71238a4bf8377087b0ff"
+                api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={urllib.parse.quote(target_query)}"
+                
+            if api_url:
+                print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
+                resp = requests.get(api_url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    text = resp.text or ""
+                    cleaned_body = clean_branding_text_line_by_line(text)
+                    raw_results = cleaned_body
+                    
+                    # Try to parse JSON first
+                    try:
+                        parsed = resp.json()
+                        response_data = parsed
+                    except:
+                        # Parse plain text
+                        parsed_records = parse_raw_text_to_records(text, cleaned_query)
+                        response_data = parsed_records
+                else:
+                    raise Exception(f"API status {resp.status_code}")
+                    
+        if not response_data:
+            return make_api_response({
+                "status": "success",
+                "results": {"error": f"No records found for query: {cleaned_query}"}
+            })
+            
+        # Clean brandings recursively
+        cleaned_data = clean_branding_recursive(response_data)
+        
+        # Save cache for vehicle if successful
+        if service_clean == 'vehicle' and cleaned_data and isinstance(cleaned_data, dict) and len(cleaned_data) > 0 and db:
+            try:
+                db.table("vehicle_search_results").upsert({
+                    "vehicle_number": re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper(),
+                    "raw_data": cleaned_data
+                }, on_conflict="vehicle_number").execute()
+            except Exception as cache_err:
+                print(f"[Vehicle Cache Err] {cache_err}")
+                
+        ret = {
+            "status": "success",
+            "results": cleaned_data
+        }
+        if raw_results is not None:
+            ret["raw_results"] = clean_branding_recursive(raw_results)
+            
+        return make_api_response(ret)
+        
+    except Exception as err:
+        print(f"[user-lookup error]: {err}")
+        return make_api_response({
+            "status": "success",
+            "results": {"error": "Search gateway is currently unavailable. Please try again later."}
+        })
+
 @app.get("/api/lookup")
 async def saas_lookup(
     request: Request,

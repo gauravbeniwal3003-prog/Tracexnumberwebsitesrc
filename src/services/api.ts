@@ -244,7 +244,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       }
 
       let data = parsed;
-      if (parsed && 'contents' in parsed) {
+      if (parsed && 'contents' in parsed && url.includes('allorigins')) {
         try {
           data = typeof parsed.contents === 'string' ? JSON.parse(parsed.contents.trim()) : parsed.contents;
         } catch (e) {
