@@ -28,9 +28,9 @@ const isKeyValid = (key: any): boolean => {
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
+const SUPABASE_URL = 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : DEFAULT_ANON_KEY;
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
 
 const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = isKeyValid(rawServiceKey) ? rawServiceKey : undefined;
