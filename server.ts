@@ -566,7 +566,6 @@ app.get("/api/user-lookup", async (req, res) => {
               isUnlimited = true;
             }
           }
-
           let creditCost = 1;
           if (service === 'telegram') {
             creditCost = 8;
@@ -584,8 +583,11 @@ app.get("/api/user-lookup", async (req, res) => {
           const currentCredits = Number(profile.credits || 0);
           
           if (!isUnlimited && currentCredits >= creditCost) {
-            // Deduct credits if possible
-            await supabaseAdmin.rpc("deduct_credits", {
+            // Deduct credits if possible, using the user's token to pass RLS
+            const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+              global: { headers: { Authorization: `Bearer ${token}` } }
+            });
+            await userClient.rpc("deduct_credits", {
                 user_id: user.id,
                 amount: creditCost
             });
@@ -2850,7 +2852,10 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
 
       // Deduct 150 credits atomically
-      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
+      const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } }
+      });
+      const { data: rpcSuccess, error: rpcError } = await userClient.rpc("deduct_credits", {
           user_id: user.id,
           amount: cost
       });
