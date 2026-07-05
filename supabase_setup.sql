@@ -367,6 +367,7 @@ CREATE POLICY "Anyone can insert cached aadhaar_pan_results" ON public.aadhaar_p
 CREATE OR REPLACE FUNCTION deduct_credits(user_id UUID, amount INTEGER)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 DECLARE
     current_credits INTEGER;

@@ -9,7 +9,10 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
     return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
-  return '';
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return 'https://tracexdata-api.onrender.com';
 };
 
 export const safeFetchJson = async (response: Response): Promise<any> => {

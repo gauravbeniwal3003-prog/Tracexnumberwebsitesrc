@@ -546,57 +546,94 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Soft auth and credit deduction (non-blocking)
+  // Strict auth and credit deduction
   try {
-    if (supabaseAdmin && token) {
-      const { data: userData } = await supabaseAdmin.auth.getUser(token);
-      const user = userData?.user;
-      if (user) {
-        const { data: profile } = await supabaseAdmin
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .maybeSingle();
-          
-        if (profile) {
-          let isUnlimited = false;
-          if (profile.unlimited_expiry) {
-            const expiry = new Date(profile.unlimited_expiry);
-            if (expiry > new Date()) {
-              isUnlimited = true;
-            }
-          }
-          let creditCost = 1;
-          if (service === 'telegram') {
-            creditCost = 8;
-          } else if (service === 'adhr') {
-            creditCost = 12;
-          } else if (service === 'bnk') {
-            creditCost = 18;
-          } else if (service === 'vehicle') {
-            creditCost = 10;
-          } else if (service === 'pancard') {
-            creditCost = 20;
-          } else if (service === 'aadhaar_to_pan') {
-            creditCost = 150;
-          }
-          const currentCredits = Number(profile.credits || 0);
-          
-          if (!isUnlimited && currentCredits >= creditCost) {
-            // Deduct credits if possible, using the user's token to pass RLS
-            const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-              global: { headers: { Authorization: `Bearer ${token}` } }
-            });
-            await userClient.rpc("deduct_credits", {
-                user_id: user.id,
-                amount: creditCost
-            });
-          }
-        }
+    if (!token) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: "Authentication required. Please sign in to perform a search." }
+      });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: "Database offline. Unable to process lookup." }
+      });
+    }
+
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (authErr || !user) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: "Invalid or expired session. Please sign in again." }
+      });
+    }
+
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+      
+    if (profileErr || !profile) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: "User profile not found. Please log in again." }
+      });
+    }
+
+    let isUnlimited = false;
+    if (profile.unlimited_expiry) {
+      const expiry = new Date(profile.unlimited_expiry);
+      if (expiry > new Date()) {
+        isUnlimited = true;
+      }
+    }
+
+    let creditCost = 1;
+    if (service === 'telegram') {
+      creditCost = 8;
+    } else if (service === 'adhr') {
+      creditCost = 12;
+    } else if (service === 'bnk') {
+      creditCost = 18;
+    } else if (service === 'vehicle') {
+      creditCost = 10;
+    } else if (service === 'pancard') {
+      creditCost = 20;
+    } else if (service === 'aadhaar_to_pan') {
+      creditCost = 150;
+    }
+    const currentCredits = Number(profile.credits || 0);
+    
+    if (!isUnlimited && currentCredits < creditCost) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
+      });
+    }
+
+    if (!isUnlimited) {
+      // Deduct credits atomically
+      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
+          user_id: user.id,
+          amount: creditCost
+      });
+      if (rpcError || rpcSuccess === false) {
+        return res.status(200).json({
+          status: "success",
+          results: { error: "Failed to deduct credits atomically. Please try again." }
+        });
       }
     }
   } catch (err) {
-    console.warn("[Soft Auth/Credit warning]:", err);
+    console.error("[Auth/Credit Enforcement Error]:", err);
+    return res.status(200).json({
+      status: "success",
+      results: { error: "Authentication or credit deduction failure." }
+    });
   }
 
   const cleanedQuery = String(query).trim();
@@ -2781,23 +2818,29 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
   }
 
   let user: any = null;
-  let isGuest = true;
+  const isGuest = false;
 
-  if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    if (token && token !== "null" && token !== "undefined") {
-      try {
-        if (supabaseAdmin) {
-          const { data: userData } = await supabaseAdmin.auth.getUser(token);
-          if (userData?.user) {
-            user = userData.user;
-            isGuest = false;
-          }
-        }
-      } catch (err) {
-        console.warn("Aadhaar to PAN soft authentication ignored:", err);
-      }
+  if (!authHeader) {
+    return res.status(401).json({ error: "Authentication required. Please sign in to perform a search." });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  if (!token || token === "null" || token === "undefined") {
+    return res.status(401).json({ error: "Authentication required. Please sign in to perform a search." });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline. Unable to process lookup." });
     }
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !userData?.user) {
+      return res.status(401).json({ error: "Invalid or expired session. Please sign in again." });
+    }
+    user = userData.user;
+  } catch (err) {
+    console.error("Aadhaar to PAN auth error:", err);
+    return res.status(401).json({ error: "Authentication failure." });
   }
 
   try {
@@ -2832,8 +2875,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       });
     }
 
-    // Only verify and deduct credits if user is NOT a guest
-    if (!isGuest && user && supabaseAdmin) {
+    // Verify and deduct credits
+    if (user && supabaseAdmin) {
       const { data: profile, error: profileErr } = await supabaseAdmin
         .from("profiles")
         .select("*")
@@ -2852,10 +2895,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
 
       // Deduct 150 credits atomically
-      const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        global: { headers: { Authorization: `Bearer ${token}` } }
-      });
-      const { data: rpcSuccess, error: rpcError } = await userClient.rpc("deduct_credits", {
+      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
           user_id: user.id,
           amount: cost
       });
