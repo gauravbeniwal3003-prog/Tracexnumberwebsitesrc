@@ -706,7 +706,7 @@ app.get("/api/user-lookup", async (req, res) => {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
       
-      const newApiUrl = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
+      const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
       const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
@@ -1099,12 +1099,12 @@ app.get("/api/lookup", async (req, res) => {
 
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
-      const newApiUrl = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
       const searchParams = new URLSearchParams();
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `https://exploitsindia.site/osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const target = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 

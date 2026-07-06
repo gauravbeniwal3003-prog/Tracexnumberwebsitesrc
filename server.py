@@ -729,7 +729,7 @@ async def user_lookup(
     try:
         if service_clean == 'phone':
             # Query the primary phone API
-            new_api_url = f"https://exploitsindia.site/osint-api/number.php?exploits={urllib.parse.quote(cleaned_query)}"
+            new_api_url = f"https://exploitsindia.site//osint-api/number.php?exploits={urllib.parse.quote(cleaned_query)}"
             try:
                 print(f"[user-lookup] Fetching phone API: {new_api_url}")
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
@@ -1261,7 +1261,7 @@ async def saas_lookup(
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
         # Hardcoded primary engine source as requested to avoid environment variable dependency
-        target_template = "https://exploitsindia.site/osint-api/number.php?exploits="
+        target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
         
         try:
             settings_query = db.table("api_settings").select("real_api_url").limit(1).execute()
@@ -1273,14 +1273,14 @@ async def saas_lookup(
             pass
         
         if not target_template:
-            target_template = "https://exploitsindia.site/osint-api/number.php?exploits="
+            target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
 
         # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
         target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
 
         # Execution
         if "exploitsindia.site" in target_template or "numberimfo.vishalboss.sbs" in target_template:
-            final_url = f"https://exploitsindia.site/osint-api/number.php?exploits={num}"
+            final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
         elif "ENTER_TARGET_HERE" not in target_template:
             key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
             service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
