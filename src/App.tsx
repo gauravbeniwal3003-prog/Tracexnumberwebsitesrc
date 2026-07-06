@@ -253,13 +253,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
     // Clean brandings and watermarks properly
     str = str
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|exploitsindia)/gi, "")
-      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
-      .replace(/buy_url/gi, "api_url")
-      .replace(/https:\/\/tracexdata-api\.onrender\.com\/buy-api/gi, "")
-      .replace(/https:\/\/exploitsindia\.site\S*/gi, "")
-      .replace(/https:\/\/techvishalboss\.com\S*/gi, "");
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier)/gi, "")
+      .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
+      .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
+      .replace(/Powered_by/gi, "")
+      .replace(/Contact/gi, "")
+      .replace(/Buy_API/gi, "")
+      .replace(/buy_url/gi, "api_url");
 
     return str;
   };

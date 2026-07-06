@@ -616,15 +616,58 @@ app.get("/api/user-lookup", async (req, res) => {
     }
 
     if (!isUnlimited) {
-      // Deduct credits atomically
-      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
-          user_id: user.id,
-          amount: creditCost
-      });
-      if (rpcError || rpcSuccess === false) {
+      // Deduct credits atomically with safety fallback
+      let rpcSuccess = false;
+      let rpcError: any = null;
+      try {
+        const rpcResult = await supabaseAdmin.rpc("deduct_credits", {
+            user_id: user.id,
+            amount: creditCost
+        });
+        rpcSuccess = rpcResult.data;
+        rpcError = rpcResult.error;
+      } catch (e: any) {
+        rpcError = e;
+      }
+
+      if (rpcError) {
+        console.warn("[DEDUCT_CREDITS_RPC_FAIL] RPC failed or missing, falling back to manual update:", rpcError);
+        const { data: currentProfile, error: getErr } = await supabaseAdmin
+          .from("profiles")
+          .select("credits")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (getErr || !currentProfile) {
+          return res.status(200).json({
+            status: "success",
+            results: { error: "Could not retrieve user profile to deduct credits." }
+          });
+        }
+
+        const currentVal = Number(currentProfile.credits || 0);
+        if (currentVal < creditCost) {
+          return res.status(200).json({
+            status: "success",
+            results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentVal} CTR.` }
+          });
+        }
+
+        const { error: updateErr } = await supabaseAdmin
+          .from("profiles")
+          .update({ credits: currentVal - creditCost })
+          .eq("id", user.id);
+
+        if (updateErr) {
+          return res.status(200).json({
+            status: "success",
+            results: { error: "Failed to deduct credits. Please try again." }
+          });
+        }
+      } else if (rpcSuccess === false) {
         return res.status(200).json({
           status: "success",
-          results: { error: "Failed to deduct credits atomically. Please try again." }
+          results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
         });
       }
     }
@@ -2756,9 +2799,9 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support)/gi, "")
-      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier)/gi, "")
+      .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
+      .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
       .replace(/Powered_by/gi, "")
       .replace(/Contact/gi, "")
       .replace(/Buy_API/gi, "")
@@ -2774,7 +2817,7 @@ function scrubAllBranding(obj: any): any {
       if ([
         "branding", "success", "status", "found", "message", "api_info", "powered_by", 
         "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
-        "provider", "api_buy_link", "website_link", "buy"
+        "provider", "api_buy_link", "website_link", "buy", "website", "telegram"
       ].includes(lowerKey)) {
         continue;
       }
@@ -2894,14 +2937,32 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
       }
 
-      // Deduct 150 credits atomically
-      const { data: rpcSuccess, error: rpcError } = await supabaseAdmin.rpc("deduct_credits", {
-          user_id: user.id,
-          amount: cost
-      });
+      // Deduct 150 credits atomically with safety fallback
+      let rpcSuccess = false;
+      let rpcError: any = null;
+      try {
+        const rpcResult = await supabaseAdmin.rpc("deduct_credits", {
+            user_id: user.id,
+            amount: cost
+        });
+        rpcSuccess = rpcResult.data;
+        rpcError = rpcResult.error;
+      } catch (e: any) {
+        rpcError = e;
+      }
 
-      if (rpcError || rpcSuccess === false) {
-          return res.status(500).json({ error: "Failed to deduct credits atomically. Please try again or check your balance." });
+      if (rpcError) {
+        console.warn("[DEDUCT_CREDITS_RPC_FAIL] Aadhaar-to-PAN RPC failed or missing, falling back to manual update:", rpcError);
+        const { error: updateErr } = await supabaseAdmin
+          .from("profiles")
+          .update({ credits: currentCredits - cost })
+          .eq("id", user.id);
+
+        if (updateErr) {
+          return res.status(500).json({ error: "Failed to deduct credits. Please try again." });
+        }
+      } else if (rpcSuccess === false) {
+          return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits." });
       }
     }
 
@@ -3016,12 +3077,22 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     (req as any).adminUser = user;
-    (req as any).adminClient = SUPABASE_SERVICE_ROLE_KEY
-      ? supabaseAdmin
-      : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: { persistSession: false, autoRefreshToken: false },
-          global: { headers: { Authorization: `Bearer ${token}` } }
-        });
+    if (SUPABASE_SERVICE_ROLE_KEY) {
+      (req as any).adminClient = supabaseAdmin;
+    } else {
+      const clientInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      });
+      await clientInstance.auth.setSession({
+        access_token: token,
+        refresh_token: ""
+      });
+      (req as any).adminClient = clientInstance;
+    }
     next();
   } catch (err) {
     console.error("[ADMIN_MIDDLEWARE_FAIL]", err);

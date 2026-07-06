@@ -502,9 +502,9 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss)/gi, "")
-      .replace(/💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier/gi, "")
-      .replace(/🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier/gi, "")
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier)/gi, "")
+      .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
+      .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
       .replace(/Powered_by/gi, "")
       .replace(/Contact/gi, "")
       .replace(/Buy_API/gi, "")
@@ -517,7 +517,7 @@ const scrubBranding = (obj: any): any => {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'success', 'status', 'found', 'message', 'api_info', 'powered_by', 'buy_api', 'support', 'owner_telegram'].includes(lowerKey)) {
+      if (['branding', 'success', 'status', 'found', 'message', 'api_info', 'powered_by', 'owner', 'contact', 'buy_api', 'support', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy', 'website', 'telegram'].includes(lowerKey)) {
         continue;
       }
       cleaned[key] = scrubBranding(val);
