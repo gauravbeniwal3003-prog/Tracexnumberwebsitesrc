@@ -53,69 +53,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     if (IS_TESTING_MODE) return;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
 
-    if (!data) {
-      // Profile doesn't exist, create it (Fallback if trigger fails)
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (currentUser) {
-        const storageKey = `tracexdata_free_credit_${userId}`;
-        const hasClaimed = localStorage.getItem(storageKey);
-        const freeCredits = hasClaimed ? 0 : 10;
-
-        if (!hasClaimed) {
-          localStorage.setItem(storageKey, 'claimed');
+      const response = await fetch('/api/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
-
-        const newProfile = {
-          id: userId,
-          email: currentUser.email,
-          credits: freeCredits,
-          unlimited_expiry: null,
-          full_name: currentUser.user_metadata.full_name || currentUser.email?.split('@')[0],
-          avatar_url: currentUser.user_metadata.avatar_url,
-          is_free_credit_claimed: freeCredits > 0,
-          last_weekly_credit_at: new Date().toISOString(),
-        };
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert(newProfile);
-        
-        if (!insertError) setProfile(newProfile as UserProfile);
+      });
+      if (response.ok) {
+        const profileData = await response.json();
+        setProfile(profileData);
+      } else {
+        console.error('Failed to fetch secure profile:', await response.text());
       }
-    } else if (data) {
-      // Check for weekly credits (5 credits every 7 days)
-      // Safely check if the column exists in the returned data to avoid 400 errors on update
-      const hasWeeklyColumn = 'last_weekly_credit_at' in data;
-      const lastWeekly = hasWeeklyColumn && (data as any).last_weekly_credit_at ? new Date((data as any).last_weekly_credit_at) : null;
-      const now = new Date();
-      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-
-      if (hasWeeklyColumn && (!lastWeekly || (now.getTime() - lastWeekly.getTime() >= sevenDaysInMs))) {
-        try {
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              credits: (data.credits || 0) + 5,
-              last_weekly_credit_at: now.toISOString(),
-            } as any)
-            .eq('id', userId);
-          
-          if (!updateError) {
-            await fetchProfile(userId);
-            return;
-          } else {
-            console.warn('Profile update skipped: Likely missing columns in database.');
-          }
-        } catch (e) {
-          console.warn('Silent skip: Profile update failed.');
-        }
-      }
-      setProfile(data);
+    } catch (err) {
+      console.error('Error fetching secure profile:', err);
     }
   };
 

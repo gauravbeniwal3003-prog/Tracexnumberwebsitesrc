@@ -80,17 +80,23 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
         const isApiOrder = !isProtectOrder && (initialPayment?.type === 'api' || data.order_id.includes('api') || (data.plan_id && data.plan_id.startsWith('api_')) || (data.order_id.includes('order_') && !data.plan_id));
         
         if (isApiOrder && user) {
-          // Fetch the key for the user
-          const { data: keys } = await supabase
-            .from('api_keys')
-            .select('api_key, plan_name')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          
-          if (keys && keys.length > 0) {
-            setPurchasedApiKey(keys[0].api_key);
-            setPurchasedPlanName(keys[0].plan_name);
+          try {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token || '';
+            const keysResponse = await fetch('/api/user-keys', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (keysResponse.ok) {
+              const keys = await keysResponse.json();
+              if (keys && keys.length > 0) {
+                setPurchasedApiKey(keys[0].api_key);
+                setPurchasedPlanName(keys[0].plan_name);
+              }
+            }
+          } catch (keysErr) {
+            console.error("Failed to fetch generated key from backend:", keysErr);
           }
         }
 

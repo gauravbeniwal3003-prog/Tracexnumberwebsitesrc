@@ -28,9 +28,9 @@ const isKeyValid = (key: any): boolean => {
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
-const SUPABASE_URL = 'https://nooplqxbfskgwjlpuutr.supabase.co';
-const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
+const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
 
 const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = isKeyValid(rawServiceKey) ? rawServiceKey : undefined;
@@ -526,6 +526,200 @@ function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'r
 
 // Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
 
+// GET /api/profile - Highly secure backend profile retrieval and creation
+app.get("/api/profile", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
+    }
+
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      return res.status(500).json({ error: profileErr.message });
+    }
+
+    const now = new Date();
+
+    if (!profile) {
+      const freeCredits = 10;
+      const newProfile = {
+        id: user.id,
+        email: user.email,
+        credits: freeCredits,
+        unlimited_expiry: null,
+        full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+        avatar_url: user.user_metadata?.avatar_url || null,
+        is_free_credit_claimed: true,
+        last_weekly_credit_at: now.toISOString(),
+      };
+      const { data: inserted, error: insertError } = await supabaseAdmin
+        .from("profiles")
+        .insert(newProfile)
+        .select()
+        .single();
+
+      if (insertError) {
+        return res.status(500).json({ error: insertError.message });
+      }
+      return res.json(inserted);
+    } else {
+      const lastWeekly = profile.last_weekly_credit_at ? new Date(profile.last_weekly_credit_at) : null;
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+
+      if (!lastWeekly || (now.getTime() - lastWeekly.getTime() >= sevenDaysInMs)) {
+        const updatedCredits = (profile.credits || 0) + 5;
+        const { data: updated, error: updateErr } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            credits: updatedCredits,
+            last_weekly_credit_at: now.toISOString(),
+          })
+          .eq("id", user.id)
+          .select()
+          .single();
+
+        if (!updateErr && updated) {
+          return res.json(updated);
+        }
+      }
+      return res.json(profile);
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// POST /api/profile/update - Update profile securely without direct DB interaction
+app.post("/api/profile/update", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+
+    const { full_name, avatar_url } = req.body;
+    const updateData: any = {};
+    if (typeof full_name === 'string') updateData.full_name = full_name;
+    if (typeof avatar_url === 'string') updateData.avatar_url = avatar_url;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    const { data: updated, error: updateErr } = await supabaseAdmin
+      .from("profiles")
+      .update(updateData)
+      .eq("id", user.id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      return res.status(500).json({ error: updateErr.message });
+    }
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// GET /api/user-keys - Fetch API keys securely on behalf of user
+app.get("/api/user-keys", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("api_keys")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// POST /api/check-protected - Check safe/privacy protection status securely without client leaks
+app.post("/api/check-protected", async (req, res) => {
+  const { type, query } = req.body;
+  if (!type || !query) {
+    return res.status(400).json({ error: "Missing type or query" });
+  }
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    let isProtected = false;
+    if (type === 'phone') {
+      const cleanPhone = String(query).replace(/\D/g, '');
+      const { data } = await supabaseAdmin
+        .from('protected_numbers')
+        .select('phone_number')
+        .eq('phone_number', cleanPhone)
+        .maybeSingle();
+      if (data) isProtected = true;
+    } else if (type === 'telegram') {
+      const cleanTelegram = String(query).replace(/^@/, '').trim();
+      const withAt = `@${cleanTelegram}`;
+      const { data: data1 } = await supabaseAdmin
+        .from('protected_telegrams')
+        .select('telegram_id')
+        .eq('telegram_id', cleanTelegram)
+        .maybeSingle();
+      const { data: data2 } = await supabaseAdmin
+        .from('protected_telegrams')
+        .select('telegram_id')
+        .eq('telegram_id', withAt)
+        .maybeSingle();
+      if (data1 || data2) isProtected = true;
+    }
+
+    return res.json({ isProtected });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "") : "";
@@ -547,6 +741,8 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 
   // Strict auth and credit deduction
+  let user: any = null;
+  let profile: any = null;
   try {
     if (!token) {
       return res.status(200).json({
@@ -563,7 +759,7 @@ app.get("/api/user-lookup", async (req, res) => {
     }
 
     const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    const user = userData?.user;
+    user = userData?.user;
     if (authErr || !user) {
       return res.status(200).json({
         status: "success",
@@ -571,105 +767,18 @@ app.get("/api/user-lookup", async (req, res) => {
       });
     }
 
-    const { data: profile, error: profileErr } = await supabaseAdmin
+    const { data: profileData, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
       
+    profile = profileData;
     if (profileErr || !profile) {
       return res.status(200).json({
         status: "success",
         results: { error: "User profile not found. Please log in again." }
       });
-    }
-
-    let isUnlimited = false;
-    if (profile.unlimited_expiry) {
-      const expiry = new Date(profile.unlimited_expiry);
-      if (expiry > new Date()) {
-        isUnlimited = true;
-      }
-    }
-
-    let creditCost = 1;
-    if (service === 'telegram') {
-      creditCost = 8;
-    } else if (service === 'adhr') {
-      creditCost = 12;
-    } else if (service === 'bnk') {
-      creditCost = 18;
-    } else if (service === 'vehicle') {
-      creditCost = 10;
-    } else if (service === 'pancard') {
-      creditCost = 20;
-    } else if (service === 'aadhaar_to_pan') {
-      creditCost = 150;
-    }
-    const currentCredits = Number(profile.credits || 0);
-    
-    if (!isUnlimited && currentCredits < creditCost) {
-      return res.status(200).json({
-        status: "success",
-        results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
-      });
-    }
-
-    if (!isUnlimited) {
-      // Deduct credits atomically with safety fallback
-      let rpcSuccess = false;
-      let rpcError: any = null;
-      try {
-        const rpcResult = await supabaseAdmin.rpc("deduct_credits", {
-            user_id: user.id,
-            amount: creditCost
-        });
-        rpcSuccess = rpcResult.data;
-        rpcError = rpcResult.error;
-      } catch (e: any) {
-        rpcError = e;
-      }
-
-      if (rpcError) {
-        console.warn("[DEDUCT_CREDITS_RPC_FAIL] RPC failed or missing, falling back to manual update:", rpcError);
-        const { data: currentProfile, error: getErr } = await supabaseAdmin
-          .from("profiles")
-          .select("credits")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (getErr || !currentProfile) {
-          return res.status(200).json({
-            status: "success",
-            results: { error: "Could not retrieve user profile to deduct credits." }
-          });
-        }
-
-        const currentVal = Number(currentProfile.credits || 0);
-        if (currentVal < creditCost) {
-          return res.status(200).json({
-            status: "success",
-            results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentVal} CTR.` }
-          });
-        }
-
-        const { error: updateErr } = await supabaseAdmin
-          .from("profiles")
-          .update({ credits: currentVal - creditCost })
-          .eq("id", user.id);
-
-        if (updateErr) {
-          return res.status(200).json({
-            status: "success",
-            results: { error: "Failed to deduct credits. Please try again." }
-          });
-        }
-      } else if (rpcSuccess === false) {
-        return res.status(200).json({
-          status: "success",
-          results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
-        });
-      }
     }
   } catch (err) {
     console.error("[Auth/Credit Enforcement Error]:", err);
@@ -680,6 +789,177 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 
   const cleanedQuery = String(query).trim();
+
+  // SECURE PRIVACY PROTECTION CHECK
+  let isProtected = false;
+  if (service === 'phone') {
+    const cleanPhone = cleanedQuery.replace(/\D/g, '');
+    const { data } = await supabaseAdmin
+      .from('protected_numbers')
+      .select('phone_number')
+      .eq('phone_number', cleanPhone)
+      .maybeSingle();
+    if (data) isProtected = true;
+  } else if (service === 'telegram') {
+    const cleanTelegram = cleanedQuery.replace(/^@/, '').trim();
+    const withAt = `@${cleanTelegram}`;
+    const { data: data1 } = await supabaseAdmin
+      .from('protected_telegrams')
+      .select('telegram_id')
+      .eq('telegram_id', cleanTelegram)
+      .maybeSingle();
+    const { data: data2 } = await supabaseAdmin
+      .from('protected_telegrams')
+      .select('telegram_id')
+      .eq('telegram_id', withAt)
+      .maybeSingle();
+    if (data1 || data2) isProtected = true;
+  }
+
+  if (isProtected) {
+    await logSearchHistory(req, service, cleanedQuery, 'protected');
+    return res.status(200).json({
+      status: "success",
+      results: { 
+        error: `This ${service === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.` 
+      }
+    });
+  }
+
+  // SECURE BACKEND CACHE CHECKS
+  if (service === 'phone') {
+    try {
+      const { data: cachedData, error: cacheError } = await supabaseAdmin
+        .from('search_results')
+        .select('raw_data')
+        .eq('mobile_number', cleanedQuery)
+        .maybeSingle();
+
+      if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
+        console.log('Serving from backend cache...');
+        const cleanedData = scrubAllBranding(cachedData.raw_data);
+        await logSearchHistory(req, service, cleanedQuery, 'success');
+        return res.status(200).json({
+          status: "success",
+          results: cleanedData,
+          cached: true
+        });
+      }
+    } catch (e) {
+      console.error("Cache read error:", e);
+    }
+  } else if (service === 'vehicle') {
+    try {
+      const { data: cachedData, error: cacheError } = await supabaseAdmin
+        .from('vehicle_search_results')
+        .select('raw_data')
+        .eq('vehicle_number', cleanedQuery)
+        .maybeSingle();
+
+      if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
+        console.log('Serving from backend vehicle cache...');
+        const cleanedData = scrubAllBranding(cachedData.raw_data);
+        await logSearchHistory(req, service, cleanedQuery, 'success');
+        return res.status(200).json({
+          status: "success",
+          results: cleanedData,
+          cached: true
+        });
+      }
+    } catch (e) {
+      console.error("Vehicle cache read error:", e);
+    }
+  }
+
+  // Check credits before executing fresh external search
+  let isUnlimited = false;
+  if (profile.unlimited_expiry) {
+    const expiry = new Date(profile.unlimited_expiry);
+    if (expiry > new Date()) {
+      isUnlimited = true;
+    }
+  }
+
+  let creditCost = 1;
+  if (service === 'telegram') {
+    creditCost = 8;
+  } else if (service === 'adhr') {
+    creditCost = 12;
+  } else if (service === 'bnk') {
+    creditCost = 18;
+  } else if (service === 'vehicle') {
+    creditCost = 10;
+  } else if (service === 'pancard') {
+    creditCost = 20;
+  } else if (service === 'aadhaar_to_pan') {
+    creditCost = 150;
+  }
+  const currentCredits = Number(profile.credits || 0);
+  
+  if (!isUnlimited && currentCredits < creditCost) {
+    return res.status(200).json({
+      status: "success",
+      results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
+    });
+  }
+
+  // Deduct credits atomically with safety fallback
+  if (!isUnlimited) {
+    let rpcSuccess = false;
+    let rpcError: any = null;
+    try {
+      const rpcResult = await supabaseAdmin.rpc("deduct_credits", {
+          user_id: user.id,
+          amount: creditCost
+      });
+      rpcSuccess = rpcResult.data;
+      rpcError = rpcResult.error;
+    } catch (e: any) {
+      rpcError = e;
+    }
+
+    if (rpcError) {
+      console.warn("[DEDUCT_CREDITS_RPC_FAIL] RPC failed or missing, falling back to manual update:", rpcError);
+      const { data: currentProfile, error: getErr } = await supabaseAdmin
+        .from("profiles")
+        .select("credits")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (getErr || !currentProfile) {
+        return res.status(200).json({
+          status: "success",
+          results: { error: "Could not retrieve user profile to deduct credits." }
+        });
+      }
+
+      const currentVal = Number(currentProfile.credits || 0);
+      if (currentVal < creditCost) {
+        return res.status(200).json({
+          status: "success",
+          results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentVal} CTR.` }
+        });
+      }
+
+      const { error: updateErr } = await supabaseAdmin
+        .from("profiles")
+        .update({ credits: currentVal - creditCost })
+        .eq("id", user.id);
+
+      if (updateErr) {
+        return res.status(200).json({
+          status: "success",
+          results: { error: "Failed to deduct credits. Please try again." }
+        });
+      }
+    } else if (rpcSuccess === false) {
+      return res.status(200).json({
+        status: "success",
+        results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
+      });
+    }
+  }
+
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -687,19 +967,22 @@ app.get("/api/user-lookup", async (req, res) => {
   };
 
   try {
-    const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
     let responseData: any = null;
 
     if (service === 'phone') {
       let activeKey = "";
       if (supabaseAdmin) {
-        const { data: keys } = await supabaseAdmin
-          .from("api_keys")
-          .select("api_key")
-          .eq("status", "active")
-          .limit(1);
-        if (keys && keys.length > 0) {
-          activeKey = keys[0].api_key;
+        try {
+          const { data: keys } = await supabaseAdmin
+            .from("api_keys")
+            .select("api_key")
+            .eq("status", "active")
+            .limit(1);
+          if (keys && keys.length > 0) {
+            activeKey = keys[0].api_key;
+          }
+        } catch (dbErr) {
+          console.warn("[DB WARNING] Failed to select active api_key, using master key fallback:", dbErr);
         }
       }
       if (!activeKey) {
@@ -809,6 +1092,7 @@ app.get("/api/user-lookup", async (req, res) => {
     }
 
     if (!responseData) {
+      await logSearchHistory(req, service, cleanedQuery, 'not_found');
       return res.status(200).json({
         status: "success",
         results: { error: `No records found for query: ${cleanedQuery}` }
@@ -818,6 +1102,35 @@ app.get("/api/user-lookup", async (req, res) => {
     // Clean brandings and watermarks
     const cleanedData = scrubAllBranding(responseData);
 
+    // SECURE BACKEND CACHE SAVE
+    const keys = Object.keys(cleanedData);
+    const hasRealData = keys.some(k => !['error', 'message', 'status'].includes(k.toLowerCase()));
+    if (hasRealData && !cleanedData.error) {
+      if (service === 'phone') {
+        try {
+          await supabaseAdmin.from('search_results').upsert({
+            mobile_number: cleanedQuery,
+            raw_data: cleanedData
+          }, { onConflict: 'mobile_number' });
+        } catch (e) {
+          console.error("Failed to save to phone cache:", e);
+        }
+      } else if (service === 'vehicle') {
+        try {
+          await supabaseAdmin.from('vehicle_search_results').upsert({
+            vehicle_number: cleanedQuery,
+            raw_data: cleanedData
+          }, { onConflict: 'vehicle_number' });
+        } catch (e) {
+          console.error("Failed to save to vehicle cache:", e);
+        }
+      }
+    }
+
+    // Log history
+    const finalStatus = cleanedData.error ? 'not_found' : 'success';
+    await logSearchHistory(req, service, cleanedQuery, finalStatus);
+
     return res.status(200).json({
       status: "success",
       results: cleanedData
@@ -825,6 +1138,7 @@ app.get("/api/user-lookup", async (req, res) => {
 
   } catch (err: any) {
     console.error("Direct User Lookup Error:", err);
+    await logSearchHistory(req, service, cleanedQuery, 'failed');
     return res.status(200).json({
       status: "success",
       results: { error: `Search gateway is currently unavailable. Please try again later.` }
@@ -3105,10 +3419,14 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     const db = (req as any).adminClient || supabaseAdmin;
     let authData: any = null;
     try {
-      const response = await supabaseAdmin.auth.admin.listUsers();
-      authData = response.data;
-      if (response.error) {
-        console.warn("Supabase listUsers error:", response.error);
+      if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
+        const response = await supabaseAdmin.auth.admin.listUsers();
+        authData = response.data;
+        if (response.error) {
+          console.warn("Supabase listUsers error:", response.error);
+        }
+      } else {
+        console.warn("supabaseAdmin.auth.admin is not available (service role key may be missing).");
       }
     } catch (authErr: any) {
       console.warn("Failed to list users from auth admin API:", authErr.message);
@@ -3242,7 +3560,11 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   try {
     const db = (req as any).adminClient || supabaseAdmin;
     try {
-      await supabaseAdmin.auth.admin.deleteUser(id);
+      if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
+        await supabaseAdmin.auth.admin.deleteUser(id);
+      } else {
+        console.warn("supabaseAdmin.auth.admin is not available to delete user.");
+      }
     } catch (e) {
       console.warn("Could not delete user from auth admin API:", e);
     }

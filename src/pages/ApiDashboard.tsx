@@ -36,16 +36,25 @@ export default function ApiDashboard() {
 
   const fetchKeys = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('api_keys')
-      .select('*')
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setKeys(data);
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || '';
+      const response = await fetch('/api/user-keys', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setKeys(data);
+      } else {
+        console.error("Failed to fetch secure user keys:", await response.text());
+      }
+    } catch (err) {
+      console.error("Error fetching keys:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const copyToClipboard = (text: string, id: string) => {

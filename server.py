@@ -57,6 +57,8 @@ CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID")
 CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
 CASHFREE_BASE_URL = os.getenv("CASHFREE_BASE_URL", "https://api.cashfree.com/pg")
 
+INTERNAL_MASTER_KEY = os.getenv("INTERNAL_MASTER_KEY") or str(uuid.uuid4())
+
 # --- ENGINE STATE (Lazy-loading for Render Stability) ---
 _db: Optional[Client] = None
 
@@ -771,7 +773,7 @@ async def user_lookup(
                 # Fallback to saas_lookup internally
                 print(f"[user-lookup] Falling back to old phone target...")
                 try:
-                    res = await saas_lookup(request=request, key="TX-SYSTEM-INTERNAL-ADMIN", number=cleaned_query)
+                    res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, number=cleaned_query)
                     if res and isinstance(res, dict):
                         response_data = res.get("results")
                 except Exception as fb_err:
@@ -916,7 +918,7 @@ async def saas_lookup(
             return make_api_response({"status": "error", "message": "ServerDown: Database connection failure"})
 
         # Determine if master key is used
-        is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+        is_master = key == INTERNAL_MASTER_KEY
 
         # 3. Authentication & Plan Validity (Must pass prior to checking target safety status to avoid enumeration attacks)
         license = None
@@ -1379,7 +1381,7 @@ async def telegram_lookup(
         if not db:
             return make_api_response({"status": "error", "message": "ServerDown: Database connection failure"})
 
-        is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+        is_master = key == INTERNAL_MASTER_KEY
         keyRecord = None
 
         if is_master:
@@ -1621,7 +1623,7 @@ async def identity_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+    is_master = key == INTERNAL_MASTER_KEY
     key_record = None
     
     if is_master:
@@ -1793,7 +1795,7 @@ async def bank_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+    is_master = key == INTERNAL_MASTER_KEY
     key_record = None
     
     if is_master:
@@ -1968,7 +1970,7 @@ async def vehicle_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+    is_master = key == INTERNAL_MASTER_KEY
     key_record = None
     
     try:
@@ -2226,7 +2228,7 @@ async def pancard_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == "TX-SYSTEM-INTERNAL-ADMIN"
+    is_master = key == INTERNAL_MASTER_KEY
     key_record = None
     
     try:

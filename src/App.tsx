@@ -18,7 +18,6 @@ import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
-import { REDIRECT_URL } from './redirectConfig.ts';
 import PromoDealModal from './components/PromoDealModal.tsx';
 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
@@ -58,36 +57,9 @@ export default function App() {
       setIsProtectOpen(true);
     };
 
-    // First-click redirect handler
-    const handleFirstClickRedirect = () => {
-      const hasRedirected = sessionStorage.getItem('first_click_redirected');
-      if (!hasRedirected) {
-        sessionStorage.setItem('first_click_redirected', 'true');
-        // Remove listeners immediately to prevent multiple triggers
-        window.removeEventListener('click', handleFirstClickRedirect, true);
-        window.removeEventListener('touchend', handleFirstClickRedirect, true);
-        
-        try {
-          if (window.top && window.top !== window) {
-            window.top.location.href = REDIRECT_URL;
-          } else {
-            window.location.href = REDIRECT_URL;
-          }
-        } catch (e) {
-          try {
-            window.location.href = REDIRECT_URL;
-          } catch (e2) {
-            window.open(REDIRECT_URL, '_blank');
-          }
-        }
-      }
-    };
-    
     window.addEventListener('open-login', handleLoginEvent);
     window.addEventListener('launch-payment', handleLaunchPayment);
     window.addEventListener('open-protect', handleProtectEvent as EventListener);
-    window.addEventListener('click', handleFirstClickRedirect, true);
-    window.addEventListener('touchend', handleFirstClickRedirect, true);
 
     // Auto-open subscription modal to process returned payments
     const searchParams = new URLSearchParams(window.location.search);
@@ -99,8 +71,6 @@ export default function App() {
       window.removeEventListener('open-login', handleLoginEvent);
       window.removeEventListener('launch-payment', handleLaunchPayment);
       window.removeEventListener('open-protect', handleProtectEvent as EventListener);
-      window.removeEventListener('click', handleFirstClickRedirect, true);
-      window.removeEventListener('touchend', handleFirstClickRedirect, true);
     };
   }, []);
 
@@ -434,27 +404,18 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     try {
       // CHECK PROTECTION
       let isProtected = false;
-      if (service === 'phone') {
-        const { data: protectedData } = await supabase
-          .from('protected_numbers')
-          .select('phone_number')
-          .eq('phone_number', targetVal)
-          .maybeSingle();
-        if (protectedData) isProtected = true;
-      } else if (service === 'telegram') {
-        const cleanVal = targetVal.replace(/^@/, '');
-        const withAt = `@${cleanVal}`;
-        const { data: protectedData1 } = await supabase
-          .from('protected_telegrams')
-          .select('telegram_id')
-          .eq('telegram_id', cleanVal)
-          .maybeSingle();
-        const { data: protectedData2 } = await supabase
-          .from('protected_telegrams')
-          .select('telegram_id')
-          .eq('telegram_id', withAt)
-          .maybeSingle();
-        if (protectedData1 || protectedData2) isProtected = true;
+      if (service === 'phone' || service === 'telegram') {
+        const checkProtectedResponse = await fetch('/api/check-protected', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ type: service, query: targetVal })
+        });
+        if (checkProtectedResponse.ok) {
+          const { isProtected: protectedResult } = await checkProtectedResponse.json();
+          if (protectedResult) isProtected = true;
+        }
       }
 
       if (isProtected) {
@@ -549,65 +510,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setResult(data);
         saveToHistory(targetVal, data);
         setSearchHistory(getHistory());
-
-        // Insert into search_history
-        if (user?.id) {
-          (async () => {
-            try {
-              await supabase.from('search_history').insert({
-                user_id: user.id,
-                user_email: user.email || 'Guest User',
-                search_type: service,
-                query: targetVal,
-                status: 'success'
-              });
-            } catch (e) {
-              console.error('Failed to log search history:', e);
-            }
-          })();
-        }
-
         setCooldown(5);
       } else {
         setError(data.error || 'No records found or service temporarily unavailable.');
-        
-        // Insert into search_history (failed/not_found)
-        if (user?.id) {
-          (async () => {
-            try {
-              await supabase.from('search_history').insert({
-                user_id: user.id,
-                user_email: user.email || 'Guest User',
-                search_type: service,
-                query: targetVal,
-                status: 'not_found'
-              });
-            } catch (e) {
-              console.error('Failed to log search history:', e);
-            }
-          })();
-        }
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
       setError(err.message || 'The TRACEXDATA engine encountered a connection fault. Please retry.');
-      
-      // Insert into search_history (failed)
-      if (user?.id) {
-        (async () => {
-          try {
-            await supabase.from('search_history').insert({
-              user_id: user.id,
-              user_email: user.email || 'Guest User',
-              search_type: service,
-              query: targetVal,
-              status: 'failed'
-            });
-          } catch (e) {
-            console.error('Failed to log search history:', e);
-          }
-        })();
-      }
     } finally {
       setIsLoading(false);
       // Always refresh user profile state to sync latest credit balance with database after lookup attempt

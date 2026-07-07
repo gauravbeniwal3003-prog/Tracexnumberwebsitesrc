@@ -242,12 +242,10 @@ export const parseLookupResults = (data: any, number: string = ''): ApiResponse 
 };
 
 export const fetchLookupWithRetry = async (number: string): Promise<any> => {
-  const maxAttempts = 5;
-  const delays = [1000, 2000, 3000, 4000, 5000];
+  const maxAttempts = 3;
+  const delays = [1000, 2000, 3000];
   
   const backendEndpoint = `${getApiBaseUrl()}/api/user-lookup?service=phone&query=${number}`;
-  const targetUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${number}`;
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   let lastError: any = null;
 
@@ -262,16 +260,14 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // Use backend primarily. Fall back to proxyUrl only after 3 failed attempts as an absolute backup layer.
-      const useFallback = attempt > 3;
-      const url = useFallback ? proxyUrl : backendEndpoint;
+      const url = backendEndpoint;
       
       const headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
         'Accept': 'application/json,text/plain,*/*'
       };
       
-      if (!useFallback && token) {
+      if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
@@ -303,15 +299,6 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       }
 
       let data = parsed;
-      if (parsed && 'contents' in parsed && url.includes('allorigins')) {
-        const contentsText = typeof parsed.contents === 'string' ? parsed.contents.trim() : '';
-        try {
-          data = JSON.parse(contentsText);
-        } catch (e) {
-          console.log("AllOrigins content is not JSON, parsing as phone plain text...");
-          data = parsePhonePlainText(contentsText);
-        }
-      }
 
       if (data?.status === "error" || (typeof data?.message === 'string' && data.message.toLowerCase().includes('serverdown'))) {
         throw new Error(`Backend Engine Error: ${data?.message || 'ServerDown'}`);
@@ -334,7 +321,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       }
 
     } catch (err: any) {
-      console.warn(`API attempt ${attempt} error on URL ${attempt > 3 ? 'fallback' : 'backend'}:`, err.message || err);
+      console.warn(`API attempt ${attempt} error on backend:`, err.message || err);
       lastError = err;
       
       if (attempt < maxAttempts) {
@@ -348,64 +335,25 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
 };
 
 export const lookupNumber = async (number: string): Promise<ApiResponse> => {
-  const { data: cachedData, error: cacheError } = await supabase
-    .from('search_results')
-    .select('raw_data')
-    .eq('mobile_number', number)
-    .maybeSingle();
-
-  if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
-    console.log('Serving from TRACEXDATA Cache...');
-    return {
-      status: true,
-      results: cachedData.raw_data
-    };
-  }
-
   console.log('Searching TRACEXDATA Intelligence Engine...');
-  
   try {
     const rawData = await fetchLookupWithRetry(number);
-    
     const isValid = validateLookupResponse(rawData);
     if (rawData && isValid) {
       const parsed = parseLookupResults(rawData, number);
-      
-      if (parsed.status && Object.keys(parsed.results).length > 0) {
-        const keys = Object.keys(parsed.results);
-        const hasRealData = keys.some(k => !['error', 'message', 'status'].includes(k.toLowerCase()));
-        
-        if (hasRealData) {
-          (async () => {
-            try {
-              await supabase.from('search_results').upsert({ 
-                mobile_number: number, 
-                raw_data: parsed.results 
-              }, { onConflict: 'mobile_number' });
-            } catch (e) {}
-          })();
-          return parsed;
-        }
-      }
-
-      return {
-        status: false,
-        results: {},
-        error: rawData?.message || 'No Record Found for this number.'
-      };
+      return parsed;
     }
-
     return {
       status: false,
       results: {},
-      error: rawData?.message || 'No Record Found for this number.'
+      error: rawData?.results?.error || rawData?.message || "No records found"
     };
-  } catch (error: any) {
-    console.error('TRACEXDATA Engine Critical Error:', error);
+  } catch (err: any) {
+    console.error("Lookup number error:", err);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'ServerDown: Data source unresponsive'
+      error: err.message || "Failed to search record"
     };
   }
 };
@@ -463,16 +411,6 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
       }
 
       if (Object.keys(normalizedResults).length > 0) {
-        // Background cache update
-        (async () => {
-          try {
-            await supabase.from('search_results').upsert({ 
-              mobile_number: number, 
-              raw_data: normalizedResults 
-            }, { onConflict: 'mobile_number' });
-          } catch (e) {}
-        })();
-
         return { status: true, results: normalizedResults };
       }
     }
@@ -625,124 +563,32 @@ export const fetchWithFallback = async (
   query: string,
   token: string
 ): Promise<any> => {
-  // 1. Try primary backend first
+  const headers: Record<string, string> = {
+    'Accept': 'application/json'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Primary backend returned status ${response.status}`);
+  }
+
+  const rawText = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+    throw new Error("Backend responded with HTML page instead of JSON.");
+  }
+
   try {
-    const headers: Record<string, string> = {
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers
-    });
-    
-    if (response.ok) {
-      const rawText = await response.text();
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.toLowerCase().includes('text/html') && !rawText.trim().startsWith('<!DOCTYPE') && !rawText.trim().startsWith('<html')) {
-        try {
-          return JSON.parse(rawText);
-        } catch (e) {
-          console.warn("Primary endpoint responded with non-JSON text, checking content...");
-        }
-      } else {
-        console.warn("Primary endpoint responded with HTML page. Triggering provider fallback.");
-      }
-    } else {
-      console.warn(`Primary endpoint returned status ${response.status}. Triggering provider fallback.`);
-    }
-  } catch (err: any) {
-    console.warn(`Primary endpoint failed: ${err.message || err}. Triggering provider fallback.`);
+    return JSON.parse(rawText);
+  } catch (e) {
+    throw new Error("Failed to parse backend JSON response.");
   }
-
-  // 2. Fallback: Query direct API via AllOrigins CORS proxy
-  let directUrl = '';
-  if (serviceType === 'adhr') {
-    directUrl = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(query)}`;
-  } else if (serviceType === 'bnk') {
-    directUrl = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(query)}`;
-  } else if (serviceType === 'pancard') {
-    directUrl = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(query)}`;
-  } else if (serviceType === 'vehicle') {
-    const key = import.meta.env.VITE_LOOKUP_API_KEY || "TVB_SGL_BCFC1E32";
-    directUrl = `https://techvishalboss.com/api/v1/lookup.php?key=${key}&service=vehicle&rc=${encodeURIComponent(query)}`;
-  }
-
-  if (!directUrl) {
-    throw new Error("No direct lookup URL configured for fallback.");
-  }
-
-  console.log(`Fallback proxy routing: ${directUrl}`);
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
-  const proxyResponse = await fetch(proxyUrl);
-  if (!proxyResponse.ok) {
-    throw new Error(`Direct gateway proxy returned status ${proxyResponse.status}`);
-  }
-
-  const parsedProxy = await proxyResponse.json();
-  const contentsText = typeof parsedProxy.contents === 'string' ? parsedProxy.contents.trim() : '';
-
-  if (!contentsText) {
-    throw new Error("Empty response returned from direct provider API.");
-  }
-
-  // Proper no data and error response handling
-  const lowerContents = contentsText.toLowerCase();
-  if (
-    lowerContents.includes("no data found") || 
-    lowerContents.includes("no record") || 
-    lowerContents.includes("not found") || 
-    lowerContents.includes("no result") ||
-    lowerContents.includes("invalid key") ||
-    lowerContents.includes("invalid query") ||
-    lowerContents.includes("under maintenance") ||
-    lowerContents.trim() === "null" ||
-    lowerContents.trim() === "[]" ||
-    lowerContents.trim() === "{}"
-  ) {
-    return {
-      status: 'error',
-      message: contentsText.length < 100 ? contentsText : "No records found for this query."
-    };
-  }
-
-  // Parse direct payload
-  let parsedPayload: any;
-  try {
-    parsedPayload = JSON.parse(contentsText);
-    
-    // Check if provider returned an error message in JSON
-    const lowerMsg = String(parsedPayload.message || parsedPayload.error || "").toLowerCase();
-    if (lowerMsg.includes("no result") || lowerMsg.includes("not found") || lowerMsg.includes("no records")) {
-      return {
-        status: 'error',
-        message: parsedPayload.message || parsedPayload.error || "No records found"
-      };
-    }
-  } catch (jsonErr) {
-    console.log(`Direct provider response for ${serviceType} is plain text, parsing...`);
-    if (serviceType === 'adhr') {
-      parsedPayload = parsePlainTextLookup(contentsText, 'aadhar');
-    } else if (serviceType === 'bnk') {
-      parsedPayload = parsePlainTextLookup(contentsText, 'bank');
-    } else if (serviceType === 'pancard') {
-      parsedPayload = parsePlainTextLookup(contentsText, 'pan');
-    } else {
-      parsedPayload = { raw_data: contentsText };
-    }
-  }
-
-  if (parsedPayload) {
-    return {
-      status: 'success',
-      results: parsedPayload,
-      raw_results: contentsText
-    };
-  }
-
-  throw new Error("Failed to process fallback provider response.");
 };
 
 export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
@@ -813,27 +659,6 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
 
 export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => {
   const cleanVehicleNo = vehicleNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  
-  // 1. Check Cache first
-  try {
-    const { data: cachedData, error: cacheError } = await supabase
-      .from('vehicle_search_results')
-      .select('raw_data')
-      .eq('vehicle_number', cleanVehicleNo)
-      .maybeSingle();
-
-    if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
-      console.log('Serving Vehicle from TRACEXDATA Cache...');
-      return {
-        status: true,
-        results: scrubBranding(cachedData.raw_data)
-      };
-    }
-  } catch (e) {
-    console.error('Vehicle cache read failure:', e);
-  }
-
-  // 2. Query SaaS proxy with fallback
   console.log('Searching TRACEXDATA Vehicle Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
@@ -847,20 +672,6 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
       const cleanResults = scrubBranding(apiData.results || {});
       const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
 
-      // Save cache in background if cleanResults has entries
-      if (cleanResults && Object.keys(cleanResults).length > 0) {
-        (async () => {
-          try {
-            await supabase.from('vehicle_search_results').upsert({
-              vehicle_number: cleanVehicleNo,
-              raw_data: cleanResults
-            }, { onConflict: 'vehicle_number' });
-          } catch (e) {
-            console.error('Failed to cache Vehicle result:', e);
-          }
-        })();
-      }
-
       return { 
         status: true, 
         results: cleanResults, 
@@ -870,7 +681,7 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this Vehicle Number.'
+        error: apiData?.message || apiData?.error || apiData?.results?.error || 'No records found for this Vehicle Number.'
       };
     }
   } catch (error: any) {
@@ -928,51 +739,19 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     
     const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify({ aadhaar_number: aadhaarNo })
-      });
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body: JSON.stringify({ aadhaar_number: aadhaarNo })
+    });
 
-      if (response.ok) {
-        return await safeFetchJson(response);
-      }
-      throw new Error(`Engine returned status ${response.status}`);
-    } catch (primaryErr) {
-      console.warn("Primary Aadhaar-to-PAN endpoint failed, attempting fallback directly...", primaryErr);
-      // Fallback!
-      const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-      const directUrl = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(aadhaarNo)}`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
-      
-      const fallbackResponse = await fetch(proxyUrl);
-      if (!fallbackResponse.ok) {
-        throw new Error("Direct Aadhaar-to-PAN provider is also offline.");
-      }
-      
-      const proxyData = await fallbackResponse.json();
-      const contentsText = typeof proxyData.contents === 'string' ? proxyData.contents.trim() : '';
-      if (!contentsText) {
-        throw new Error("Empty response received from direct Aadhaar-to-PAN provider.");
-      }
-      
-      const apiData = JSON.parse(contentsText);
-      const retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
-      const panFound = retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found");
-      
-      return {
-        status: "success",
-        pan_found: !!panFound,
-        pan: retrievedPan,
-        credits_deducted: 0,
-        results: apiData,
-        cached: false
-      };
+    if (response.ok) {
+      return await safeFetchJson(response);
     }
+    throw new Error(`Engine returned status ${response.status}`);
   } catch (error: any) {
     console.error('Aadhaar to PAN lookup error:', error);
     return {
