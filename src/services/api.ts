@@ -10,8 +10,19 @@ export const getApiBaseUrl = (): string => {
     return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
   if (typeof window !== 'undefined') {
-    return window.location.origin;
+    const hostname = window.location.hostname;
+    // If it's local development or AI Studio preview workspace, use window.location.origin
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.includes('ais-dev-') ||
+      hostname.includes('ais-pre-') ||
+      hostname.includes('gitpod.io')
+    ) {
+      return window.location.origin;
+    }
   }
+  // Default to the correct Render backend API URL for production
   return 'https://tracexdata-api.onrender.com';
 };
 

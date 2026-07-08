@@ -42,11 +42,24 @@ def is_valid_uuid(val):
 # --- PRODUCTION CONFIGURATION ---
 app = FastAPI(title="TraceXData Intelligence PRO")
 
-# Global CORS for Public SaaS API
+# Global CORS Configuration for Public SaaS API
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+origins = [
+    "https://tracexnumber.vercel.app",
+    "https://tracexnumber.web.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+if allowed_origins_env:
+    for o in allowed_origins_env.split(","):
+        o_clean = o.strip()
+        if o_clean and o_clean not in origins:
+            origins.append(o_clean)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, set to specific domains
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
@@ -278,6 +291,645 @@ async def fulfill_order(order_id: str, user_id: str):
             
     except Exception as e:
         print(f"Fulfillment error: {e}")
+
+# --- SECURITY & PROFILE HELPERS ---
+
+def get_user_from_token(request: Request) -> Optional[Any]:
+    db = get_supabase()
+    if not db:
+        return None
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+    token = auth_header.replace("Bearer ", "") if auth_header else ""
+    if not token:
+        return None
+    try:
+        user_response = db.auth.get_user(token)
+        return user_response.user if user_response else None
+    except Exception as e:
+        print(f"[get_user_from_token] error: {e}")
+        return None
+
+def get_user_id(user) -> str:
+    if hasattr(user, "id"):
+        return str(user.id)
+    if isinstance(user, dict):
+        return str(user.get("id", ""))
+    return ""
+
+def get_user_email(user) -> str:
+    if hasattr(user, "email"):
+        return str(user.email or "")
+    if isinstance(user, dict):
+        return str(user.get("email", ""))
+    return ""
+
+def get_user_metadata(user) -> dict:
+    if hasattr(user, "user_metadata"):
+        return user.user_metadata or {}
+    if isinstance(user, dict):
+        return user.get("user_metadata") or {}
+    return {}
+
+def get_admin_user_or_raise(request: Request):
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid session key. Please login again.")
+        
+    admin_emails = [
+        "yashwinderbeniwaldm@gmail.com",
+        "gaurav_beniwal_0001@example.com",
+        "gauravbeniwal30003@gmail.com",
+        "gauravbeniwal3003@gmail.com"
+    ]
+    email = get_user_email(user)
+    if not email or email.lower().strip() not in admin_emails:
+        raise HTTPException(status_code=403, detail="Access Denied: You are not authorized as an Administrator.")
+    return user
+
+# --- SECURITY & AUTH ROUTING ---
+
+@app.get("/api/profile")
+async def get_profile(request: Request):
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+    
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized: Token missing or invalid")
+    
+    try:
+        user_id_val = get_user_id(user)
+        user_email_val = get_user_email(user)
+        profile_response = db.table("profiles").select("*").eq("id", user_id_val).execute()
+        profile_data = profile_response.data
+        
+        now_str = datetime.utcnow().isoformat() + "Z"
+        
+        if not profile_data:
+            full_name = "User"
+            avatar_url = None
+            metadata = get_user_metadata(user)
+            if metadata:
+                full_name = metadata.get("full_name") or user_email_val.split("@")[0] or "User"
+                avatar_url = metadata.get("avatar_url")
+            elif user_email_val:
+                full_name = user_email_val.split("@")[0]
+                
+            new_profile = {
+                "id": user_id_val,
+                "email": user_email_val,
+                "credits": 10,
+                "unlimited_expiry": None,
+                "full_name": full_name,
+                "avatar_url": avatar_url,
+                "is_free_credit_claimed": True,
+                "last_weekly_credit_at": now_str,
+                "last_daily_credit_at": now_str
+            }
+            insert_response = db.table("profiles").insert(new_profile).execute()
+            if insert_response.data:
+                return insert_response.data[0]
+            return new_profile
+        else:
+            profile = profile_data[0]
+            last_daily_str = profile.get("last_daily_credit_at")
+            should_give_daily = False
+            
+            if not last_daily_str:
+                should_give_daily = True
+            else:
+                try:
+                    clean_last_daily = last_daily_str.replace("Z", "")
+                    if "+" in clean_last_daily:
+                        clean_last_daily = clean_last_daily.split("+")[0]
+                    last_daily_dt = datetime.fromisoformat(clean_last_daily)
+                    if datetime.utcnow() - last_daily_dt >= timedelta(hours=24):
+                        should_give_daily = True
+                except Exception as ex:
+                    print(f"Error parsing last_daily_credit_at: {ex}")
+                    should_give_daily = True
+                    
+            if should_give_daily:
+                updated_credits = profile.get("credits") or 0
+                update_payload = {
+                    "last_daily_credit_at": now_str
+                }
+                if updated_credits < 10:
+                    update_payload["credits"] = 10
+                    profile["credits"] = 10
+                
+                try:
+                    update_response = db.table("profiles").update(update_payload).eq("id", user_id_val).execute()
+                    if update_response.data:
+                        return update_response.data[0]
+                except Exception as ex:
+                    print(f"Error updating daily credits: {ex}")
+            
+            return profile
+            
+    except Exception as e:
+        print(f"Error in /api/profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/profile/update")
+async def update_profile(payload: dict = Body(...), request: Request = None):
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    full_name = payload.get("full_name")
+    avatar_url = payload.get("avatar_url")
+    
+    update_data = {}
+    if full_name is not None:
+        update_data["full_name"] = full_name
+    if avatar_url is not None:
+        update_data["avatar_url"] = avatar_url
+        
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+        
+    try:
+        user_id_val = get_user_id(user)
+        update_response = db.table("profiles").update(update_data).eq("id", user_id_val).execute()
+        if update_response.data:
+            return update_response.data[0]
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user-keys")
+async def get_user_keys(request: Request):
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    try:
+        user_id_val = get_user_id(user)
+        response = db.table("api_keys").select("*").eq("user_id", user_id_val).execute()
+        sorted_keys = sorted(response.data or [], key=lambda k: k.get("created_at", ""), reverse=True)
+        return sorted_keys
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/check-protected")
+async def check_protected_number(payload: dict = Body(...)):
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    type_val = payload.get("type")
+    query_val = payload.get("query")
+    
+    if not type_val or not query_val:
+        raise HTTPException(status_code=400, detail="Missing type or query")
+        
+    try:
+        is_protected = False
+        if type_val == 'phone':
+            import re
+            clean_phone = re.sub(r'\D', '', str(query_val))
+            exist = db.table('protected_numbers').select('phone_number').eq('phone_number', clean_phone).execute()
+            if exist.data:
+                is_protected = True
+        elif type_val == 'telegram':
+            clean_tg = str(query_val).replace('@', '').strip()
+            with_at = f"@{clean_tg}"
+            exist1 = db.table('protected_telegrams').select('telegram_id').eq('telegram_id', clean_tg).execute()
+            exist2 = db.table('protected_telegrams').select('telegram_id').eq('telegram_id', with_at).execute()
+            if exist1.data or exist2.data:
+                is_protected = True
+                
+        return {"isProtected": is_protected}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- ADMIN ENDPOINTS ---
+
+@app.get("/api/admin/system")
+async def admin_system(request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        api_keys_res = db.table('api_keys').select('*').execute()
+        api_keys_data = api_keys_res.data or []
+        api_keys_data = sorted(api_keys_data, key=lambda k: k.get("created_at", ""), reverse=True)
+        
+        try:
+            api_logs_res = db.table('api_logs').select('*').execute()
+            api_logs_data = api_logs_res.data or []
+            api_logs_data = sorted(api_logs_data, key=lambda l: l.get("created_at", ""), reverse=True)[:50]
+        except Exception:
+            api_logs_data = []
+            
+        try:
+            settings_res = db.table('api_settings').select('*').limit(1).execute()
+            settings_data = settings_res.data[0] if settings_res.data else None
+        except Exception:
+            settings_data = None
+            
+        try:
+            total_keys_res = db.table('api_keys').select('id', count='exact').execute()
+            total_keys = total_keys_res.count if total_keys_res.count is not None else len(api_keys_data)
+        except Exception:
+            total_keys = len(api_keys_data)
+            
+        try:
+            active_keys_res = db.table('api_keys').select('id', count='exact').eq('status', 'active').execute()
+            active_keys = active_keys_res.count if active_keys_res.count is not None else len([k for k in api_keys_data if k.get("status") == "active"])
+        except Exception:
+            active_keys = len([k for k in api_keys_data if k.get("status") == "active"])
+            
+        try:
+            total_logs_res = db.table('api_logs').select('id', count='exact').execute()
+            total_requests = total_logs_res.count if total_logs_res.count is not None else len(api_logs_data)
+        except Exception:
+            total_requests = len(api_logs_data)
+            
+        try:
+            user_count_res = db.table('profiles').select('id', count='exact').execute()
+            total_users = user_count_res.count if user_count_res.count is not None else 0
+        except Exception:
+            total_users = 0
+            
+        pricing = {
+            'Unified Pro API (15 Days)': 299,
+            'Unified Pro API (30 Days)': 599,
+            'Identity Lookup (1 Month)': 499,
+            'Bank/IFSC Lookup (1 Month)': 499,
+            'Vehicle Lookup (1 Month)': 499,
+            'PN Card Lookup (1 Month)': 999,
+            'PAN Card Lookup (1 Month)': 999,
+            'All Combo Special (1 Month)': 1499
+        }
+        
+        revenue = 0
+        for key_item in api_keys_data:
+            plan_name = key_item.get('plan_name')
+            revenue += pricing.get(plan_name, 0)
+            
+        keys_map = {k.get('id'): k.get('user_email', 'N/A') for k in api_keys_data if k.get('id')}
+        for log in api_logs_data:
+            log['api_keys'] = {
+                'user_email': keys_map.get(log.get('api_key_id'), 'N/A')
+            }
+        
+        return {
+            "status": "success",
+            "data": {
+                "isServiceRoleActive": True,
+                "apiKeys": api_keys_data[:100],
+                "apiLogs": api_logs_data,
+                "settings": settings_data,
+                "stats": {
+                    "totalKeys": total_keys,
+                    "totalRequests": total_requests,
+                    "activeKeys": active_keys,
+                    "revenue": revenue,
+                    "totalUsers": total_users
+                }
+            }
+        }
+    except Exception as e:
+        print(f"Error in admin system: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/profiles")
+async def get_admin_profiles(request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        profile_res = db.table("profiles").select("*").execute()
+        profiles = profile_res.data or []
+        profiles = sorted(profiles, key=lambda p: (p.get("email") or "").lower())
+        return {"status": "success", "data": profiles}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/profiles")
+async def create_admin_profile(payload: dict = Body(...), request: Request = None):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    email = payload.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+        
+    id_val = payload.get("id") or str(uuid.uuid4())
+    full_name = payload.get("full_name") or email.split("@")[0]
+    credits_val = int(payload.get("credits") or 0)
+    unlimited_expiry = payload.get("unlimited_expiry")
+    
+    if unlimited_expiry:
+        try:
+            unlimited_expiry = datetime.fromisoformat(unlimited_expiry.replace("Z", "")).isoformat() + "Z"
+        except Exception:
+            pass
+            
+    try:
+        new_profile = {
+            "id": id_val,
+            "email": email.strip().lower(),
+            "full_name": full_name.strip(),
+            "credits": credits_val,
+            "unlimited_expiry": unlimited_expiry,
+            "is_free_credit_claimed": True,
+            "last_weekly_credit_at": datetime.utcnow().isoformat() + "Z"
+        }
+        insert_res = db.table("profiles").insert(new_profile).execute()
+        return {"status": "success", "data": insert_res.data[0] if insert_res.data else new_profile}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/admin/profiles/{id}")
+async def update_admin_profile(id: str, payload: dict = Body(...), request: Request = None):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    email = payload.get("email")
+    full_name = payload.get("full_name")
+    credits_val = int(payload.get("credits") or 0)
+    unlimited_expiry = payload.get("unlimited_expiry")
+    
+    if unlimited_expiry:
+        try:
+            unlimited_expiry = datetime.fromisoformat(unlimited_expiry.replace("Z", "")).isoformat() + "Z"
+        except Exception:
+            pass
+            
+    update_payload = {
+        "id": id,
+        "email": email,
+        "full_name": full_name or "",
+        "credits": credits_val,
+        "unlimited_expiry": unlimited_expiry
+    }
+    
+    try:
+        update_res = db.table("profiles").upsert(update_payload, on_conflict="id").execute()
+        return {"status": "success", "data": update_res.data[0] if update_res.data else update_payload}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/admin/profiles/{id}")
+async def delete_admin_profile(id: str, request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        db.table("profiles").delete().eq("id", id).execute()
+        return {"status": "success", "message": "User profile deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/earnings")
+async def get_admin_earnings(request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        claims_res = db.table("payment_claims").select("*").execute()
+        claims = claims_res.data or []
+        claims = sorted(claims, key=lambda c: c.get("created_at", ""), reverse=True)
+        
+        now_dt = datetime.utcnow()
+        def get_ist_date_string(dt: datetime) -> str:
+            ist_time = dt + timedelta(hours=5, minutes=30)
+            return ist_time.strftime("%Y-%m-%d")
+            
+        today_str = get_ist_date_string(now_dt)
+        yesterday_dt = now_dt - timedelta(days=1)
+        yesterday_str = get_ist_date_string(yesterday_dt)
+        seven_days_ago = now_dt - timedelta(days=7)
+        
+        today_earning = 0
+        yesterday_earning = 0
+        week_earning = 0
+        total_earning = 0
+        
+        all_transactions = []
+        user_ids = []
+        
+        for claim in claims:
+            amount = float(claim.get("amount") or 0)
+            status = claim.get("status")
+            claim_created = claim.get("created_at")
+            
+            try:
+                clean_created = claim_created.replace("Z", "")
+                if "+" in clean_created:
+                    clean_created = clean_created.split("+")[0]
+                claim_dt = datetime.fromisoformat(clean_created)
+            except Exception:
+                claim_dt = now_dt
+                
+            claim_date_str = get_ist_date_string(claim_dt)
+            
+            if status == "success":
+                total_earning += amount
+                if claim_date_str == today_str:
+                    today_earning += amount
+                elif claim_date_str == yesterday_str:
+                    yesterday_earning += amount
+                if claim_dt >= seven_days_ago:
+                    week_earning += amount
+                    
+            user_id = claim.get("user_id")
+            if user_id:
+                user_ids.append(user_id)
+                
+            all_transactions.append({
+                "id": claim.get("id"),
+                "payment_id": claim.get("payment_id"),
+                "user_id": user_id,
+                "plan_id": claim.get("plan_id"),
+                "amount": amount,
+                "status": status,
+                "created_at": claim_created
+            })
+            
+        profiles_by_user_id = {}
+        unique_user_ids = list(set(user_ids))
+        if unique_user_ids:
+            try:
+                profiles_res = db.table("profiles").select("id, email, full_name").execute()
+                for p in (profiles_res.data or []):
+                    profiles_by_user_id[p.get("id")] = p
+            except Exception:
+                pass
+                
+        enriched_transactions = []
+        for t in all_transactions:
+            user_id = t["user_id"]
+            profile = profiles_by_user_id.get(user_id, {}) if user_id else {}
+            enriched_transactions.append({
+                **t,
+                "user_email": profile.get("email", "N/A") if user_id else "Guest User",
+                "user_name": profile.get("full_name", "") if user_id else ""
+            })
+            
+        return {
+            "status": "success",
+            "summary": {
+                "today": today_earning,
+                "yesterday": yesterday_earning,
+                "week": week_earning,
+                "total": total_earning
+            },
+            "transactions": enriched_transactions[:100]
+        }
+    except Exception as e:
+        print(f"Error in admin earnings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/history")
+async def get_admin_history(request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        history_res = db.table("search_history").select("*").execute()
+        sorted_history = sorted(history_res.data or [], key=lambda h: h.get("created_at", ""), reverse=True)[:150]
+        return {"status": "success", "data": sorted_history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/api-keys")
+async def get_admin_api_keys(request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        keys_res = db.table("api_keys").select("*").execute()
+        sorted_keys = sorted(keys_res.data or [], key=lambda k: k.get("created_at", ""), reverse=True)
+        return {"data": sorted_keys}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/api-keys")
+async def create_admin_api_key(payload: dict = Body(...), request: Request = None):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    user_email = payload.get("user_email")
+    plan_name = payload.get("plan_name")
+    days = int(payload.get("days") or 30)
+    custom_key = payload.get("custom_key")
+    
+    api_key = custom_key or f"tx_{secrets.token_hex(16)}"
+    expires_at = (datetime.utcnow() + timedelta(days=days)).isoformat() + "Z"
+    
+    new_key = {
+        "user_email": user_email,
+        "api_key": api_key,
+        "plan_name": plan_name,
+        "requests_used": 0,
+        "request_limit": None,
+        "expires_at": expires_at,
+        "status": "active"
+    }
+    
+    try:
+        insert_res = db.table("api_keys").insert(new_key).execute()
+        return {"data": insert_res.data[0] if insert_res.data else new_key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/admin/api-keys/{id}")
+async def update_admin_api_key(id: str, payload: dict = Body(...), request: Request = None):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    plan_name = payload.get("plan_name")
+    status = payload.get("status")
+    expires_at = payload.get("expires_at")
+    user_email = payload.get("user_email")
+    
+    update_payload = {
+        "plan_name": plan_name,
+        "request_limit": None,
+        "status": status,
+        "expires_at": expires_at,
+        "user_email": user_email
+    }
+    
+    try:
+        db.table("api_keys").update(update_payload).eq("id", id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/admin/api-keys/{id}")
+async def delete_admin_api_key(id: str, request: Request):
+    get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    try:
+        db.table("api_keys").delete().eq("id", id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/api-settings")
+async def create_admin_api_settings(payload: dict = Body(...), request: Request = None):
+    admin_user = get_admin_user_or_raise(request)
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    id_val = payload.get("id")
+    real_api_url = payload.get("real_api_url")
+    
+    upsert_payload = {
+        "real_api_url": real_api_url,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_by": get_user_id(admin_user)
+    }
+    if id_val:
+        upsert_payload["id"] = id_val
+        
+    try:
+        db.table("api_settings").upsert(upsert_payload).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- END SECURITY & AUTH ROUTING ---
 
 @app.post("/api/cashfree/create-order")
 async def create_order(payload: dict = Body(...), request: Request = None):
@@ -675,55 +1327,146 @@ async def user_lookup(
         "Accept-Language": "en-US,en;q=0.9"
     }
     
-    # Soft auth and credit deduction (non-blocking)
+    # Strict auth and credit deduction
     db = get_supabase()
+    if not db:
+        return make_api_response({
+            "status": "error",
+            "message": "Engine Offline: Database connection failure"
+        })
+        
     auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return make_api_response({
+            "status": "error",
+            "message": "Authentication required. Please log in first."
+        })
+        
     token = auth_header.replace("Bearer ", "") if auth_header else ""
-    
-    if db and token:
+    if not token:
+        return make_api_response({
+            "status": "error",
+            "message": "Authentication required. Please log in first."
+        })
+        
+    try:
+        user_response = db.auth.get_user(token)
+        user = user_response.user if user_response else None
+    except Exception as auth_err:
+        print(f"[Auth error]: {auth_err}")
+        return make_api_response({
+            "status": "error",
+            "message": "Invalid or expired session. Please log in again."
+        })
+        
+    if not user:
+        return make_api_response({
+            "status": "error",
+            "message": "Invalid or expired session. Please log in again."
+        })
+        
+    try:
+        profile_query = db.table("profiles").select("*").eq("id", user.id).execute()
+        profile_data = profile_query.data
+        
+        if not profile_data:
+            # Create profile on-the-fly to be completely fail-proof
+            now_str = datetime.utcnow().isoformat() + "Z"
+            user_email_val = get_user_email(user)
+            full_name = "User"
+            avatar_url = None
+            metadata = get_user_metadata(user)
+            if metadata:
+                full_name = metadata.get("full_name") or user_email_val.split("@")[0] or "User"
+                avatar_url = metadata.get("avatar_url")
+            elif user_email_val:
+                full_name = user_email_val.split("@")[0]
+                
+            new_profile = {
+                "id": user.id,
+                "email": user_email_val,
+                "credits": 10,
+                "unlimited_expiry": None,
+                "full_name": full_name,
+                "avatar_url": avatar_url,
+                "is_free_credit_claimed": True,
+                "last_weekly_credit_at": now_str,
+                "last_daily_credit_at": now_str
+            }
+            try:
+                db.table("profiles").insert(new_profile).execute()
+                profile = new_profile
+            except Exception as ins_err:
+                print(f"[Auth profile insert err]: {ins_err}")
+                profile = new_profile
+        else:
+            profile = profile_data[0]
+            
+    except Exception as profile_err:
+        print(f"[Profile retrieve error]: {profile_err}")
+        return make_api_response({
+            "status": "error",
+            "message": "Failed to retrieve your profile. Please try again later."
+        })
+        
+    # Check unlimited plans
+    is_unlimited = False
+    if profile.get('unlimited_expiry'):
         try:
-            user_response = db.auth.get_user(token)
-            user = user_response.user if user_response else None
-            if user:
-                profile_query = db.table("profiles").select("*").eq("id", user.id).maybe_single().execute()
-                profile = profile_query.data if profile_query and profile_query.data else None
-                if profile:
-                    is_unlimited = False
-                    if profile.get('unlimited_expiry'):
-                        try:
-                            clean_exp = profile['unlimited_expiry'].replace('Z', '')
-                            if '+' in clean_exp:
-                                clean_exp = clean_exp.split('+')[0]
-                            expiry_dt = datetime.fromisoformat(clean_exp)
-                            if expiry_dt > datetime.utcnow():
-                                is_unlimited = True
-                        except: pass
-                        
-                    credit_cost = 1
-                    if service_clean == 'telegram':
-                        credit_cost = 8
-                    elif service_clean == 'adhr':
-                        credit_cost = 12
-                    elif service_clean == 'bnk':
-                        credit_cost = 18
-                    elif service_clean == 'vehicle':
-                        credit_cost = 10
-                    elif service_clean == 'pancard':
-                        credit_cost = 20
-                    elif service_clean == 'aadhaar_to_pan':
-                        credit_cost = 150
-                        
-                    current_credits = int(profile.get('credits') or 0)
-                    if not is_unlimited and current_credits >= credit_cost:
-                        try:
-                            db.rpc("deduct_credits", {
-                                "user_id": user.id,
-                                "amount": credit_cost
-                            }).execute()
-                        except Exception as rpc_err:
-                            print(f"[Soft Auth RPC err]: {rpc_err}")
-        except Exception as auth_err:
-            print(f"[Soft Auth error]: {auth_err}")
+            clean_exp = profile['unlimited_expiry'].replace('Z', '')
+            if '+' in clean_exp:
+                clean_exp = clean_exp.split('+')[0]
+            expiry_dt = datetime.fromisoformat(clean_exp)
+            if expiry_dt > datetime.utcnow():
+                is_unlimited = True
+        except:
+            pass
+            
+    credit_cost = 1
+    if service_clean == 'telegram':
+        credit_cost = 8
+    elif service_clean == 'adhr':
+        credit_cost = 12
+    elif service_clean == 'bnk':
+        credit_cost = 18
+    elif service_clean == 'vehicle':
+        credit_cost = 10
+    elif service_clean == 'pancard':
+        credit_cost = 20
+    elif service_clean == 'aadhaar_to_pan':
+        credit_cost = 150
+        
+    current_credits = int(profile.get('credits') or 0)
+    
+    if not is_unlimited:
+        if current_credits < credit_cost:
+            return make_api_response({
+                "status": "error",
+                "message": f"Insufficient credits. This search requires {credit_cost} credits, but you only have {current_credits} credits."
+            })
+            
+        # Deduct credits (Try RPC first, fallback to direct table update)
+        deduction_success = False
+        try:
+            rpc_res = db.rpc("deduct_credits", {
+                "user_id": user.id,
+                "amount": credit_cost
+            }).execute()
+            if rpc_res and rpc_res.data:
+                deduction_success = True
+        except Exception as rpc_err:
+            print(f"[user_lookup RPC err, falling back to direct update]: {rpc_err}")
+            
+        if not deduction_success:
+            try:
+                new_credits = max(0, current_credits - credit_cost)
+                db.table("profiles").update({"credits": new_credits}).eq("id", user.id).execute()
+            except Exception as update_err:
+                print(f"[user_lookup direct update err]: {update_err}")
+                return make_api_response({
+                    "status": "error",
+                    "message": "Failed to deduct credits. Please try again later."
+                })
             
     response_data = None
     raw_results = None
