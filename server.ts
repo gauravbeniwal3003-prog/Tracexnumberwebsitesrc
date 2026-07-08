@@ -52,6 +52,24 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   console.error("[CRITICAL SECURITY ERROR] SUPABASE_SERVICE_ROLE_KEY and ANON_KEY are both missing.");
 }
 
+const getRequestClient = async (token: string) => {
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    return supabaseAdmin;
+  }
+  const clientInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
+  await clientInstance.auth.setSession({
+    access_token: token,
+    refresh_token: ""
+  });
+  return clientInstance;
+};
+
 // Cashfree Configuration
 const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID;
 const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY;
@@ -217,8 +235,9 @@ async function logApiRequest(apiKeyId: string | null, maskedNumber: string, stat
   }
 }
 
-async function logSearchHistory(req: express.Request, searchType: string, query: string, status: string) {
-  if (!supabaseAdmin) return;
+async function logSearchHistory(req: express.Request, searchType: string, query: string, status: string, passedClient?: any) {
+  const db = passedClient || supabaseAdmin;
+  if (!db) return;
   try {
     let userId: string | null = null;
     let userEmail: string | null = null;
@@ -229,7 +248,8 @@ async function logSearchHistory(req: express.Request, searchType: string, query:
       const token = authHeader.replace("Bearer ", "");
       if (token) {
         try {
-          const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+          const client = passedClient || await getRequestClient(token);
+          const { data: { user } } = await client.auth.getUser(token);
           if (user) {
             userId = user.id;
             userEmail = user.email || null;
@@ -244,7 +264,7 @@ async function logSearchHistory(req: express.Request, searchType: string, query:
     if (!userId) {
       const key = String(req.query.key || req.body.key || "").trim();
       if (key && key !== INTERNAL_MASTER_KEY) {
-        const { data: keyRecords } = await supabaseAdmin
+        const { data: keyRecords } = await db
           .from("api_keys")
           .select("user_id, user_email")
           .eq("api_key", key)
@@ -257,7 +277,7 @@ async function logSearchHistory(req: express.Request, searchType: string, query:
     }
 
     // Insert into search_history
-    await supabaseAdmin.from("search_history").insert({
+    await db.from("search_history").insert({
       user_id: userId,
       user_email: userEmail || "Guest User",
       search_type: searchType,
@@ -534,16 +554,14 @@ app.get("/api/profile", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized: Token missing" });
   }
   try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: "Database offline" });
-    }
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const client = await getRequestClient(token);
+    const { data: userData, error: authErr } = await client.auth.getUser(token);
     const user = userData?.user;
     if (authErr || !user) {
       return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
     }
 
-    const { data: profile, error: profileErr } = await supabaseAdmin
+    const { data: profile, error: profileErr } = await client
       .from("profiles")
       .select("*")
       .eq("id", user.id)
@@ -567,7 +585,7 @@ app.get("/api/profile", async (req, res) => {
         is_free_credit_claimed: true,
         last_weekly_credit_at: now.toISOString(),
       };
-      const { data: inserted, error: insertError } = await supabaseAdmin
+      const { data: inserted, error: insertError } = await client
         .from("profiles")
         .insert(newProfile)
         .select()
@@ -583,7 +601,7 @@ app.get("/api/profile", async (req, res) => {
 
       if (!lastWeekly || (now.getTime() - lastWeekly.getTime() >= sevenDaysInMs)) {
         const updatedCredits = (profile.credits || 0) + 5;
-        const { data: updated, error: updateErr } = await supabaseAdmin
+        const { data: updated, error: updateErr } = await client
           .from("profiles")
           .update({
             credits: updatedCredits,
@@ -612,10 +630,8 @@ app.post("/api/profile/update", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized: Token missing" });
   }
   try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: "Database offline" });
-    }
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const client = await getRequestClient(token);
+    const { data: userData, error: authErr } = await client.auth.getUser(token);
     const user = userData?.user;
     if (authErr || !user) {
       return res.status(401).json({ error: "Unauthorized: Invalid token" });
@@ -630,7 +646,7 @@ app.post("/api/profile/update", async (req, res) => {
       return res.status(400).json({ error: "No fields to update" });
     }
 
-    const { data: updated, error: updateErr } = await supabaseAdmin
+    const { data: updated, error: updateErr } = await client
       .from("profiles")
       .update(updateData)
       .eq("id", user.id)
@@ -743,6 +759,7 @@ app.get("/api/user-lookup", async (req, res) => {
   // Strict auth and credit deduction
   let user: any = null;
   let profile: any = null;
+  let client: any = null;
   try {
     if (!token) {
       return res.status(200).json({
@@ -751,14 +768,15 @@ app.get("/api/user-lookup", async (req, res) => {
       });
     }
 
-    if (!supabaseAdmin) {
+    client = await getRequestClient(token);
+    if (!client) {
       return res.status(200).json({
         status: "success",
         results: { error: "Database offline. Unable to process lookup." }
       });
     }
 
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    const { data: userData, error: authErr } = await client.auth.getUser(token);
     user = userData?.user;
     if (authErr || !user) {
       return res.status(200).json({
@@ -767,7 +785,7 @@ app.get("/api/user-lookup", async (req, res) => {
       });
     }
 
-    const { data: profileData, error: profileErr } = await supabaseAdmin
+    const { data: profileData, error: profileErr } = await client
       .from("profiles")
       .select("*")
       .eq("id", user.id)
@@ -794,7 +812,7 @@ app.get("/api/user-lookup", async (req, res) => {
   let isProtected = false;
   if (service === 'phone') {
     const cleanPhone = cleanedQuery.replace(/\D/g, '');
-    const { data } = await supabaseAdmin
+    const { data } = await client
       .from('protected_numbers')
       .select('phone_number')
       .eq('phone_number', cleanPhone)
@@ -803,12 +821,12 @@ app.get("/api/user-lookup", async (req, res) => {
   } else if (service === 'telegram') {
     const cleanTelegram = cleanedQuery.replace(/^@/, '').trim();
     const withAt = `@${cleanTelegram}`;
-    const { data: data1 } = await supabaseAdmin
+    const { data: data1 } = await client
       .from('protected_telegrams')
       .select('telegram_id')
       .eq('telegram_id', cleanTelegram)
       .maybeSingle();
-    const { data: data2 } = await supabaseAdmin
+    const { data: data2 } = await client
       .from('protected_telegrams')
       .select('telegram_id')
       .eq('telegram_id', withAt)
@@ -817,7 +835,7 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 
   if (isProtected) {
-    await logSearchHistory(req, service, cleanedQuery, 'protected');
+    await logSearchHistory(req, service, cleanedQuery, 'protected', client);
     return res.status(200).json({
       status: "success",
       results: { 
@@ -829,7 +847,7 @@ app.get("/api/user-lookup", async (req, res) => {
   // SECURE BACKEND CACHE CHECKS
   if (service === 'phone') {
     try {
-      const { data: cachedData, error: cacheError } = await supabaseAdmin
+      const { data: cachedData, error: cacheError } = await client
         .from('search_results')
         .select('raw_data')
         .eq('mobile_number', cleanedQuery)
@@ -838,7 +856,7 @@ app.get("/api/user-lookup", async (req, res) => {
       if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
         console.log('Serving from backend cache...');
         const cleanedData = scrubAllBranding(cachedData.raw_data);
-        await logSearchHistory(req, service, cleanedQuery, 'success');
+        await logSearchHistory(req, service, cleanedQuery, 'success', client);
         return res.status(200).json({
           status: "success",
           results: cleanedData,
@@ -850,7 +868,7 @@ app.get("/api/user-lookup", async (req, res) => {
     }
   } else if (service === 'vehicle') {
     try {
-      const { data: cachedData, error: cacheError } = await supabaseAdmin
+      const { data: cachedData, error: cacheError } = await client
         .from('vehicle_search_results')
         .select('raw_data')
         .eq('vehicle_number', cleanedQuery)
@@ -859,7 +877,7 @@ app.get("/api/user-lookup", async (req, res) => {
       if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
         console.log('Serving from backend vehicle cache...');
         const cleanedData = scrubAllBranding(cachedData.raw_data);
-        await logSearchHistory(req, service, cleanedQuery, 'success');
+        await logSearchHistory(req, service, cleanedQuery, 'success', client);
         return res.status(200).json({
           status: "success",
           results: cleanedData,
@@ -908,7 +926,7 @@ app.get("/api/user-lookup", async (req, res) => {
     let rpcSuccess = false;
     let rpcError: any = null;
     try {
-      const rpcResult = await supabaseAdmin.rpc("deduct_credits", {
+      const rpcResult = await client.rpc("deduct_credits", {
           user_id: user.id,
           amount: creditCost
       });
@@ -920,7 +938,7 @@ app.get("/api/user-lookup", async (req, res) => {
 
     if (rpcError) {
       console.warn("[DEDUCT_CREDITS_RPC_FAIL] RPC failed or missing, falling back to manual update:", rpcError);
-      const { data: currentProfile, error: getErr } = await supabaseAdmin
+      const { data: currentProfile, error: getErr } = await client
         .from("profiles")
         .select("credits")
         .eq("id", user.id)
@@ -941,7 +959,7 @@ app.get("/api/user-lookup", async (req, res) => {
         });
       }
 
-      const { error: updateErr } = await supabaseAdmin
+      const { error: updateErr } = await client
         .from("profiles")
         .update({ credits: currentVal - creditCost })
         .eq("id", user.id);
@@ -1108,7 +1126,7 @@ app.get("/api/user-lookup", async (req, res) => {
     if (hasRealData && !cleanedData.error) {
       if (service === 'phone') {
         try {
-          await supabaseAdmin.from('search_results').upsert({
+          await client.from('search_results').upsert({
             mobile_number: cleanedQuery,
             raw_data: cleanedData
           }, { onConflict: 'mobile_number' });
@@ -1117,7 +1135,7 @@ app.get("/api/user-lookup", async (req, res) => {
         }
       } else if (service === 'vehicle') {
         try {
-          await supabaseAdmin.from('vehicle_search_results').upsert({
+          await client.from('vehicle_search_results').upsert({
             vehicle_number: cleanedQuery,
             raw_data: cleanedData
           }, { onConflict: 'vehicle_number' });
@@ -1129,7 +1147,7 @@ app.get("/api/user-lookup", async (req, res) => {
 
     // Log history
     const finalStatus = cleanedData.error ? 'not_found' : 'success';
-    await logSearchHistory(req, service, cleanedQuery, finalStatus);
+    await logSearchHistory(req, service, cleanedQuery, finalStatus, client);
 
     return res.status(200).json({
       status: "success",
@@ -1138,7 +1156,7 @@ app.get("/api/user-lookup", async (req, res) => {
 
   } catch (err: any) {
     console.error("Direct User Lookup Error:", err);
-    await logSearchHistory(req, service, cleanedQuery, 'failed');
+    await logSearchHistory(req, service, cleanedQuery, 'failed', client);
     return res.status(200).json({
       status: "success",
       results: { error: `Search gateway is currently unavailable. Please try again later.` }
