@@ -7,6 +7,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from './supabase.ts';
 import { UserProfile } from '../types.ts';
+import { getApiBaseUrl } from './api.ts';
 
 interface AuthContextType {
   user: User | null;
@@ -58,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const token = session?.access_token;
       if (!token) return;
 
-      const response = await fetch('/api/profile', {
+      const response = await fetch(`${getApiBaseUrl()}/api/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

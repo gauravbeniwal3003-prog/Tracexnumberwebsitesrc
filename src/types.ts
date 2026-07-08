@@ -12,6 +12,7 @@ export interface UserProfile {
   avatar_url?: string;
   is_free_credit_claimed?: boolean;
   last_weekly_credit_at?: string | null; // ISO timestamp
+  last_daily_credit_at?: string | null; // ISO timestamp
 }
 
 export interface PricingPlan {

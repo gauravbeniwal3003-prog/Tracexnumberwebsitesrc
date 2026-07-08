@@ -13,7 +13,7 @@ import SubscriptionBadge from './components/SubscriptionBadge.tsx';
 import SubscriptionModal from './components/SubscriptionModal.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
 import ProtectNumberModal from './components/ProtectNumberModal.tsx';
-import { lookupNumber, ApiResponse } from './services/api.ts';
+import { lookupNumber, ApiResponse, getApiBaseUrl } from './services/api.ts';
 import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
@@ -405,7 +405,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       // CHECK PROTECTION
       let isProtected = false;
       if (service === 'phone' || service === 'telegram') {
-        const checkProtectedResponse = await fetch('/api/check-protected', {
+        const checkProtectedResponse = await fetch(`${getApiBaseUrl()}/api/check-protected`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

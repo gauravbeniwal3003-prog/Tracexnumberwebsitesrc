@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     unlimited_expiry TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     is_free_credit_claimed BOOLEAN DEFAULT FALSE,
     last_weekly_credit_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_daily_credit_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -34,6 +35,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='last_weekly_credit_at') THEN
         ALTER TABLE public.profiles ADD COLUMN last_weekly_credit_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='last_daily_credit_at') THEN
+        ALTER TABLE public.profiles ADD COLUMN last_daily_credit_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
     END IF;
 END $$;
 

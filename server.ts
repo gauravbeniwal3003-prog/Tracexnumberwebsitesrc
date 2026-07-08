@@ -584,6 +584,7 @@ app.get("/api/profile", async (req, res) => {
         avatar_url: user.user_metadata?.avatar_url || null,
         is_free_credit_claimed: true,
         last_weekly_credit_at: now.toISOString(),
+        last_daily_credit_at: now.toISOString(),
       };
       const { data: inserted, error: insertError } = await client
         .from("profiles")
@@ -596,23 +597,43 @@ app.get("/api/profile", async (req, res) => {
       }
       return res.json(inserted);
     } else {
-      const lastWeekly = profile.last_weekly_credit_at ? new Date(profile.last_weekly_credit_at) : null;
-      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      const lastDaily = profile.last_daily_credit_at ? new Date(profile.last_daily_credit_at) : null;
+      const twentyFourHoursInMs = 24 * 60 * 60 * 1000;
+      const shouldGiveDaily = !lastDaily || (now.getTime() - lastDaily.getTime() >= twentyFourHoursInMs);
 
-      if (!lastWeekly || (now.getTime() - lastWeekly.getTime() >= sevenDaysInMs)) {
-        const updatedCredits = (profile.credits || 0) + 5;
-        const { data: updated, error: updateErr } = await client
-          .from("profiles")
-          .update({
-            credits: updatedCredits,
-            last_weekly_credit_at: now.toISOString(),
-          })
-          .eq("id", user.id)
-          .select()
-          .single();
+      if (shouldGiveDaily) {
+        let updatedCredits = profile.credits || 0;
+        let creditsChanged = false;
 
-        if (!updateErr && updated) {
-          return res.json(updated);
+        // "Daily Credits - 10"
+        // "If previous day Free Credit not spend means if account Balance is More than 10 or equal to 10 then No free Credit"
+        if (updatedCredits < 10) {
+          updatedCredits = 10;
+          creditsChanged = true;
+        }
+
+        const updatePayload: any = {
+          last_daily_credit_at: now.toISOString(),
+        };
+        if (creditsChanged) {
+          updatePayload.credits = updatedCredits;
+        }
+
+        try {
+          const { data: updated, error: updateErr } = await client
+            .from("profiles")
+            .update(updatePayload)
+            .eq("id", user.id)
+            .select()
+            .single();
+
+          if (!updateErr && updated) {
+            return res.json(updated);
+          } else {
+            console.warn("Could not update daily profile credits, returning current:", updateErr);
+          }
+        } catch (dbErr) {
+          console.warn("Exception during daily credit update, database schema might need update. Returning current profile:", dbErr);
         }
       }
       return res.json(profile);
@@ -4184,3 +4205,5 @@ setupVite().then(() => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 });
+
+export default app;

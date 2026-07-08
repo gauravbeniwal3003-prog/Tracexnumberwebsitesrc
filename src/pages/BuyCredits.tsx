@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare, CreditCard, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare, CreditCard, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, Coins } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
@@ -269,6 +269,15 @@ export default function BuyCredits() {
           >
             Select from our fast, high-performance lookup credits or grab an unlimited premium package to bypass all search queue thresholds.
           </motion.p>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="inline-flex items-center gap-2 mt-4 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono text-xs text-center"
+          >
+            <Coins size={12} className="shrink-0" />
+            <span>Daily Free Credits - 10 (Topped up daily if balance is less than 10. If previous day's credits are unspent, i.e., balance ≥ 10, no extra free credits are added)</span>
+          </motion.div>
         </header>
 
         {/* Status Messages */}
