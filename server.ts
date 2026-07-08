@@ -561,7 +561,7 @@ app.get("/api/profile", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
     }
 
-    const { data: profile, error: profileErr } = await client
+    const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("*")
       .eq("id", user.id)
@@ -586,7 +586,7 @@ app.get("/api/profile", async (req, res) => {
         last_weekly_credit_at: now.toISOString(),
         last_daily_credit_at: now.toISOString(),
       };
-      const { data: inserted, error: insertError } = await client
+      const { data: inserted, error: insertError } = await supabaseAdmin
         .from("profiles")
         .insert(newProfile)
         .select()
@@ -620,7 +620,7 @@ app.get("/api/profile", async (req, res) => {
         }
 
         try {
-          const { data: updated, error: updateErr } = await client
+          const { data: updated, error: updateErr } = await supabaseAdmin
             .from("profiles")
             .update(updatePayload)
             .eq("id", user.id)
@@ -667,7 +667,7 @@ app.post("/api/profile/update", async (req, res) => {
       return res.status(400).json({ error: "No fields to update" });
     }
 
-    const { data: updated, error: updateErr } = await client
+    const { data: updated, error: updateErr } = await supabaseAdmin
       .from("profiles")
       .update(updateData)
       .eq("id", user.id)
@@ -3410,7 +3410,8 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
       return res.status(500).json({ error: "Engine Offline: Database driver missing" });
     }
 
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    const client = await getRequestClient(token);
+    const { data: { user }, error } = await client.auth.getUser(token);
     if (error || !user) {
       console.error("[ADMIN_AUTH_ERROR]", error);
       return res.status(401).json({ error: "Invalid session key. Please login again." });
@@ -3430,22 +3431,7 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     (req as any).adminUser = user;
-    if (SUPABASE_SERVICE_ROLE_KEY) {
-      (req as any).adminClient = supabaseAdmin;
-    } else {
-      const clientInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false
-        }
-      });
-      await clientInstance.auth.setSession({
-        access_token: token,
-        refresh_token: ""
-      });
-      (req as any).adminClient = clientInstance;
-    }
+    (req as any).adminClient = client;
     next();
   } catch (err) {
     console.error("[ADMIN_MIDDLEWARE_FAIL]", err);

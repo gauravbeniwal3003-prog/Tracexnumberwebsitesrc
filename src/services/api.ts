@@ -6,11 +6,11 @@
 import { supabase } from './supabase.ts';
 
 export const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_RENDER_BACKEND_URL) {
-    return import.meta.env.VITE_RENDER_BACKEND_URL;
-  }
   if (typeof window !== 'undefined') {
     return window.location.origin;
+  }
+  if (import.meta.env.VITE_RENDER_BACKEND_URL) {
+    return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
   return 'https://tracexdata-api.onrender.com';
 };
