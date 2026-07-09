@@ -352,6 +352,39 @@ def get_admin_user_or_raise(request: Request):
 
 # --- SECURITY & AUTH ROUTING ---
 
+def get_client_ip(request: Request) -> str:
+    # Check common proxy headers
+    for header in ["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]:
+        val = request.headers.get(header)
+        if val:
+            # x-forwarded-for can be a list of IPs, return the first one
+            if "," in val:
+                return val.split(",")[0].strip()
+            return val.strip()
+    # Fallback to direct client host
+    if request.client:
+        return request.client.host
+    return "0.0.0.0"
+
+@app.post("/api/visitor/log")
+async def log_visitor(request: Request):
+    db = get_supabase()
+    if not db:
+        return {"status": "error", "message": "Database offline"}
+    
+    ip = get_client_ip(request)
+    ua = request.headers.get("user-agent") or ""
+    
+    try:
+        db.table("visitor_logs").insert({
+            "ip_address": ip,
+            "user_agent": ua
+        }).execute()
+        return {"status": "success", "ip": ip}
+    except Exception as e:
+        print(f"Error logging visitor: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/api/profile")
 async def get_profile(request: Request):
     db = get_supabase()
@@ -369,6 +402,13 @@ async def get_profile(request: Request):
         profile_data = profile_response.data
         
         now_str = datetime.utcnow().isoformat() + "Z"
+        client_ip = get_client_ip(request)
+        
+        # Update last login IP address
+        try:
+            db.table("profiles").update({"last_login_ip": client_ip}).eq("id", user_id_val).execute()
+        except Exception as ip_err:
+            print(f"Error updating last_login_ip: {ip_err}")
         
         if not profile_data:
             full_name = "User"
@@ -389,7 +429,8 @@ async def get_profile(request: Request):
                 "avatar_url": avatar_url,
                 "is_free_credit_claimed": True,
                 "last_weekly_credit_at": now_str,
-                "last_daily_credit_at": now_str
+                "last_daily_credit_at": now_str,
+                "last_login_ip": client_ip
             }
             insert_response = db.table("profiles").insert(new_profile).execute()
             if insert_response.data:
@@ -397,6 +438,7 @@ async def get_profile(request: Request):
             return new_profile
         else:
             profile = profile_data[0]
+            profile["last_login_ip"] = client_ip
             last_daily_str = profile.get("last_daily_credit_at")
             should_give_daily = False
             
@@ -568,6 +610,17 @@ async def admin_system(request: Request):
         except Exception:
             total_users = 0
             
+        try:
+            # Calculate 24h unique visitors
+            from datetime import timedelta
+            time_24h_ago = (datetime.utcnow() - timedelta(hours=24)).isoformat() + "Z"
+            visitor_res = db.table("visitor_logs").select("ip_address").gte("created_at", time_24h_ago).execute()
+            visitor_ips = [item.get("ip_address") for item in (visitor_res.data or []) if item.get("ip_address")]
+            unique_visitors = len(set(visitor_ips))
+        except Exception as e:
+            print(f"Error calculating 24h visitors: {e}")
+            unique_visitors = 0
+            
         pricing = {
             'Unified Pro API (15 Days)': 299,
             'Unified Pro API (30 Days)': 599,
@@ -602,7 +655,8 @@ async def admin_system(request: Request):
                     "totalRequests": total_requests,
                     "activeKeys": active_keys,
                     "revenue": revenue,
-                    "totalUsers": total_users
+                    "totalUsers": total_users,
+                    "uniqueVisitors": unique_visitors
                 }
             }
         }
@@ -618,10 +672,19 @@ async def get_admin_profiles(request: Request):
         raise HTTPException(status_code=500, detail="Database offline")
         
     try:
-        profile_res = db.table("profiles").select("*").execute()
-        profiles = profile_res.data or []
-        profiles = sorted(profiles, key=lambda p: (p.get("email") or "").lower())
-        return {"status": "success", "data": profiles}
+        all_profiles = []
+        limit = 1000
+        offset = 0
+        while True:
+            profile_res = db.table("profiles").select("*").range(offset, offset + limit - 1).execute()
+            data = profile_res.data or []
+            all_profiles.extend(data)
+            if len(data) < limit:
+                break
+            offset += limit
+            
+        all_profiles = sorted(all_profiles, key=lambda p: (p.get("email") or "").lower())
+        return {"status": "success", "data": all_profiles}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1424,8 +1487,10 @@ async def user_lookup(
         except:
             pass
             
-    credit_cost = 1
-    if service_clean == 'telegram':
+    credit_cost = 5
+    if service_clean == 'phone':
+        credit_cost = 5
+    elif service_clean == 'telegram':
         credit_cost = 8
     elif service_clean == 'adhr':
         credit_cost = 12

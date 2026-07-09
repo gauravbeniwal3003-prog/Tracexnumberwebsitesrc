@@ -5,7 +5,7 @@ import {
   Search, RefreshCcw, Save, Trash2, 
   TrendingUp, DollarSign, Clock, Hash,
   ChevronRight, AlertTriangle, ShieldCheck,
-  PlusCircle, Edit2, X, Calendar, UserPlus, CreditCard
+  PlusCircle, Edit2, X, Calendar, UserPlus, CreditCard, Eye
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
@@ -148,7 +148,8 @@ export default function AdminDashboard() {
               totalRequests: 0,
               activeKeys: 0,
               revenue: 0,
-              totalUsers: 0
+              totalUsers: 0,
+              uniqueVisitors: 0
             });
             setKeys(sysData.apiKeys || []);
             setLogs(sysData.apiLogs || []);
@@ -672,12 +673,13 @@ export default function AdminDashboard() {
             </div>
 
             {/* Core Platform Counters */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {[
                 { label: 'Cumulative Cashflow', value: `₹${earnings.total || stats.revenue || 0}`, icon: DollarSign, color: 'text-emerald-400' },
                 { label: 'Platform Keys', value: stats.totalKeys, icon: Key, color: 'text-cyan-400' },
                 { label: 'Live Traces', value: stats.totalRequests, icon: Activity, color: 'text-orange-400' },
-                { label: 'Cloud Users', value: stats.totalUsers, icon: Users, color: 'text-purple-400' }
+                { label: 'Cloud Users', value: stats.totalUsers, icon: Users, color: 'text-purple-400' },
+                { label: '24h Visitors', value: stats.uniqueVisitors ?? 0, icon: Eye, color: 'text-pink-400' }
               ].map(card => (
                 <div key={card.label} className="p-6 rounded-[24px] bg-[#090909] border border-white/5">
                   <div className={`p-2 w-fit rounded-lg bg-white/2 mb-4 ${card.color}`}>
@@ -873,6 +875,13 @@ export default function AdminDashboard() {
                                 {p.id}
                               </span>
                             </div>
+
+                            <div className="flex items-center justify-between pt-0.5">
+                              <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Last IP</span>
+                              <span className="text-[10px] font-mono text-cyan-500 truncate" title={p.last_login_ip || 'No IP recorded'}>
+                                {p.last_login_ip || 'N/A'}
+                              </span>
+                            </div>
                           </div>
                         );
                       })
@@ -887,6 +896,7 @@ export default function AdminDashboard() {
                           <tr className="bg-white/2 border-b border-white/5">
                             <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">User Context</th>
                             <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">User ID</th>
+                            <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Last Login IP</th>
                             <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Credits Remaining</th>
                             <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Unlimited Tier</th>
                             <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Actions</th>
@@ -895,7 +905,7 @@ export default function AdminDashboard() {
                         <tbody className="divide-y divide-white/5">
                           {filteredProfiles.length === 0 ? (
                             <tr>
-                              <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 text-xs uppercase font-bold tracking-widest">
+                              <td colSpan={6} className="px-6 py-12 text-center text-zinc-500 text-xs uppercase font-bold tracking-widest">
                                 No registered users found
                               </td>
                             </tr>
@@ -918,6 +928,11 @@ export default function AdminDashboard() {
                                   <td className="px-6 py-4">
                                     <div className="text-[10px] font-mono text-zinc-500 select-all" title={p.id}>
                                       {p.id}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="text-[11px] font-mono text-cyan-500 font-bold" title={p.last_login_ip || 'No login IP recorded yet'}>
+                                      {p.last_login_ip || 'N/A'}
                                     </div>
                                   </td>
                                   <td className="px-6 py-4">

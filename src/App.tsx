@@ -66,6 +66,12 @@ export default function App() {
     if (searchParams.get('order_id')) {
       setIsPricingOpen(true);
     }
+
+    // Track visitor session via their IP address
+    fetch(`${getApiBaseUrl()}/api/visitor/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(err => console.error("Error logging visitor:", err));
     
     return () => {
       window.removeEventListener('open-login', handleLoginEvent);
