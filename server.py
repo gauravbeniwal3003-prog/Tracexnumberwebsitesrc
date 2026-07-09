@@ -47,6 +47,8 @@ allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 origins = [
     "https://tracexnumber.vercel.app",
     "https://tracexnumber.web.app",
+    "https://tracexdata.online",
+    "https://www.tracexdata.online",
     "http://localhost:3000",
     "http://localhost:5173",
 ]
