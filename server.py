@@ -236,15 +236,15 @@ async def fulfill_order(order_id: str, user_id: str):
 
         # Use more flexible ID checking with dynamic numeric credits support
         credits_to_add = 0
-        if plan_id in ['c10', 'credit_10']: credits_to_add = 10
-        elif plan_id in ['c20', 'credit_20']: credits_to_add = 20
-        elif plan_id in ['c40', 'credit_40']: credits_to_add = 40
-        elif plan_id in ['c50', 'credit_50']: credits_to_add = 50
-        elif plan_id in ['c100', 'credit_100']: credits_to_add = 100
-        elif plan_id in ['c150', 'credit_150']: credits_to_add = 150
-        elif plan_id in ['c250', 'credit_250']: credits_to_add = 275
-        elif plan_id in ['c500', 'credit_500']: credits_to_add = 600
-        elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1300
+        if plan_id in ['c10', 'credit_10']: credits_to_add = 15
+        elif plan_id in ['c20', 'credit_20']: credits_to_add = 30
+        elif plan_id in ['c40', 'credit_40']: credits_to_add = 60
+        elif plan_id in ['c50', 'credit_50']: credits_to_add = 75
+        elif plan_id in ['c100', 'credit_100']: credits_to_add = 150
+        elif plan_id in ['c150', 'credit_150']: credits_to_add = 225
+        elif plan_id in ['c250', 'credit_250']: credits_to_add = 412
+        elif plan_id in ['c500', 'credit_500']: credits_to_add = 900
+        elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1950
         else:
             # Dynamic fallback: if plan_id is of form cXX or credit_XX
             import re
@@ -1486,19 +1486,19 @@ async def user_lookup(
         except:
             pass
             
-    credit_cost = 5
+    credit_cost = 2
     if service_clean == 'phone':
-        credit_cost = 5
+        credit_cost = 2
     elif service_clean == 'telegram':
         credit_cost = 8
     elif service_clean == 'adhr':
-        credit_cost = 12
-    elif service_clean == 'bnk':
-        credit_cost = 18
-    elif service_clean == 'vehicle':
         credit_cost = 10
+    elif service_clean == 'bnk':
+        credit_cost = 10
+    elif service_clean == 'vehicle':
+        credit_cost = 5
     elif service_clean == 'pancard':
-        credit_cost = 20
+        credit_cost = 10
     elif service_clean == 'aadhaar_to_pan':
         credit_cost = 150
         

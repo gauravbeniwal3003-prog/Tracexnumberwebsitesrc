@@ -29,12 +29,12 @@ export const PROTECTION_PRICES = {
 };
 
 export const CREDIT_PLANS: PricingPlan[] = [
-  { id: 'c20', name: '20 Lookups', price: 20, type: 'credits', value: 20 },
-  { id: 'c50', name: '50 Lookups', price: 50, type: 'credits', value: 50 },
-  { id: 'c100', name: '100 Lookups', price: 100, type: 'credits', value: 100 },
-  { id: 'c250', name: '275 Lookups', price: 250, type: 'credits', value: 275 },
-  { id: 'c500', name: '600 Lookups', price: 500, type: 'credits', value: 600 },
-  { id: 'c1000', name: '1300 Lookups', price: 1000, type: 'credits', value: 1300 },
+  { id: 'c20', name: '30 Lookups (1.5X Offer!)', price: 20, type: 'credits', value: 30 },
+  { id: 'c50', name: '75 Lookups (1.5X Offer!)', price: 50, type: 'credits', value: 75 },
+  { id: 'c100', name: '150 Lookups (1.5X Offer!)', price: 100, type: 'credits', value: 150 },
+  { id: 'c250', name: '412 Lookups (1.5X Offer!)', price: 250, type: 'credits', value: 412 },
+  { id: 'c500', name: '900 Lookups (1.5X Offer!)', price: 500, type: 'credits', value: 900 },
+  { id: 'c1000', name: '1950 Lookups (1.5X Offer!)', price: 1000, type: 'credits', value: 1950 },
 ];
 
 export const UNLIMITED_PLANS: PricingPlan[] = [
@@ -45,13 +45,46 @@ export const UNLIMITED_PLANS: PricingPlan[] = [
 ];
 
 export const API_PLANS: PricingPlan[] = [
-  { id: 'api_number', name: 'Number Lookup Plan', price: 400, type: 'unlimited', value: 720 },
-  { id: 'api_telegram', name: 'Telegram Lookup Plan', price: 550, type: 'unlimited', value: 720 },
-  { id: 'api_identity', name: 'Identity Card Lookup Plan', price: 500, type: 'unlimited', value: 720 },
-  { id: 'api_bank', name: 'BA&NK Lookup Plan', price: 600, type: 'unlimited', value: 720 },
-  { id: 'api_vehicle', name: 'Vehicle Lookup Plan', price: 499, type: 'unlimited', value: 720 },
-  { id: 'api_pancard', name: 'PN Card Lookup Plan', price: 999, type: 'unlimited', value: 720 },
-  { id: 'api_combo', name: 'All Combo Special', price: 1499, type: 'unlimited', value: 720 },
+  // Number lookup
+  { id: 'api_number_20', name: 'Number Lookup (40 Lookups)', price: 20, type: 'credits', value: 40 },
+  { id: 'api_number_50', name: 'Number Lookup (200 Lookups)', price: 50, type: 'credits', value: 200 },
+  { id: 'api_number_150', name: 'Number Lookup (1 Week)', price: 150, type: 'unlimited', value: 168 },
+  { id: 'api_number_400', name: 'Number Lookup (1 Month)', price: 400, type: 'unlimited', value: 720 },
+  { id: 'api_number_1000', name: 'Number Lookup (3 Months)', price: 1000, type: 'unlimited', value: 2160 },
+  { id: 'api_number_1600', name: 'Number Lookup (6 Months)', price: 1600, type: 'unlimited', value: 4320 },
+  { id: 'api_number_3000', name: 'Number Lookup (1 Year)', price: 3000, type: 'unlimited', value: 8640 },
+
+  // Telegram
+  { id: 'api_telegram_20', name: 'Telegram Lookup (5 Lookups)', price: 20, type: 'credits', value: 5 },
+  { id: 'api_telegram_50', name: 'Telegram Lookup (20 Lookups)', price: 50, type: 'credits', value: 20 },
+  { id: 'api_telegram_200', name: 'Telegram Lookup (1 Week)', price: 200, type: 'unlimited', value: 168 },
+  { id: 'api_telegram_650', name: 'Telegram Lookup (1 Month)', price: 650, type: 'unlimited', value: 720 },
+  { id: 'api_telegram_1800', name: 'Telegram Lookup (3 Months)', price: 1800, type: 'unlimited', value: 2160 },
+
+  // Identity
+  { id: 'api_identity_20', name: 'Identity Card (5 Lookups)', price: 20, type: 'credits', value: 5 },
+  { id: 'api_identity_50', name: 'Identity Card (30 Lookups)', price: 50, type: 'credits', value: 30 },
+  { id: 'api_identity_150', name: 'Identity Card (1 Week)', price: 150, type: 'unlimited', value: 168 },
+  { id: 'api_identity_450', name: 'Identity Card (1 Month)', price: 450, type: 'unlimited', value: 720 },
+  { id: 'api_identity_1100', name: 'Identity Card (3 Months)', price: 1100, type: 'unlimited', value: 2160 },
+
+  // Vehicle
+  { id: 'api_vehicle_20', name: 'Vehicle Lookup (10 Lookups)', price: 20, type: 'credits', value: 10 },
+  { id: 'api_vehicle_400', name: 'Vehicle Lookup (15 Days)', price: 400, type: 'unlimited', value: 360 },
+  { id: 'api_vehicle_700', name: 'Vehicle Lookup (1 Month)', price: 700, type: 'unlimited', value: 720 },
+  { id: 'api_vehicle_1800', name: 'Vehicle Lookup (3 Months)', price: 1800, type: 'unlimited', value: 2160 },
+
+  // Bank
+  { id: 'api_bank_20', name: 'BA&NK Lookup (20 Lookups)', price: 20, type: 'credits', value: 20 },
+  { id: 'api_bank_70', name: 'BA&NK Lookup (1 Week)', price: 70, type: 'unlimited', value: 168 },
+  { id: 'api_bank_250', name: 'BA&NK Lookup (1 Month)', price: 250, type: 'unlimited', value: 720 },
+  { id: 'api_bank_600', name: 'BA&NK Lookup (3 Months)', price: 600, type: 'unlimited', value: 2160 },
+
+  // Aadhaar to PAN
+  { id: 'api_aadhaar_to_pan_1000', name: 'Aadhaar To PAN (10 Lookups)', price: 1000, type: 'credits', value: 10 },
+  { id: 'api_aadhaar_to_pan_2000', name: 'Aadhaar To PAN (22 Lookups)', price: 2000, type: 'credits', value: 22 },
+  { id: 'api_aadhaar_to_pan_5000', name: 'Aadhaar To PAN (60 Lookups)', price: 5000, type: 'credits', value: 60 },
+  { id: 'api_aadhaar_to_pan_10000', name: 'Aadhaar To PAN (15 Days)', price: 10000, type: 'unlimited', value: 360 },
 ];
 
 export const SPECIAL_DEAL_PLAN: PricingPlan = {

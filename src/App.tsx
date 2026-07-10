@@ -413,17 +413,17 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
     }
 
-    let creditCost = 5;
+    let creditCost = 2;
     if (service === 'telegram') {
       creditCost = 8;
     } else if (service === 'adhr') {
-      creditCost = 12;
-    } else if (service === 'bnk') {
-      creditCost = 18;
-    } else if (service === 'vehicle') {
       creditCost = 10;
+    } else if (service === 'bnk') {
+      creditCost = 10;
+    } else if (service === 'vehicle') {
+      creditCost = 5;
     } else if (service === 'pancard') {
-      creditCost = 20;
+      creditCost = 10;
     } else if (service === 'aadhaar_to_pan') {
       creditCost = 150;
     }
@@ -737,7 +737,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            📱 Mobile ID (5 CTR)
+            📱 Mobile ID (2 CTR)
           </Link>
           <Link
             to="/telegram"
@@ -757,7 +757,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            🪪 Identity Card (12 CTR)
+            🪪 Identity Card (10 CTR)
           </Link>
           <Link
             to="/bank"
@@ -767,7 +767,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            🏦 BA&NK (18 CTR)
+            🏦 BA&NK (10 CTR)
           </Link>
           <Link
             to="/vehicle"
@@ -777,7 +777,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            🚗 VEHICLE (10 CTR)
+            🚗 VEHICLE (5 CTR)
           </Link>
           <Link
             to="/pancard"
@@ -787,7 +787,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            💳 PN CARD (20 CTR)
+            💳 PN CARD (10 CTR)
           </Link>
           <Link
             to="/panfind"
@@ -799,6 +799,14 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           >
             💳 Aadhaar to PAN (150 CTR)*
           </Link>
+        </div>
+
+        {/* VPS & Data Maintenance Cost Notice */}
+        <div className="text-center mb-6 md:mb-8 text-[9px] md:text-xs text-zinc-400 bg-white/[0.02] border border-white/5 px-4 py-3 rounded-2xl max-w-xl mx-auto flex items-center justify-center gap-2 backdrop-blur-sm shadow-md">
+          <Info size={14} className="text-cyan-400 shrink-0" />
+          <span className="leading-relaxed">
+            Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.
+          </span>
         </div>
 
         {/* Testing Mode Banner removed for Production Mode */}

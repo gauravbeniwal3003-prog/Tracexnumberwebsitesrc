@@ -919,17 +919,17 @@ app.get("/api/user-lookup", async (req, res) => {
     }
   }
 
-  let creditCost = 1;
+  let creditCost = 2;
   if (service === 'telegram') {
     creditCost = 8;
   } else if (service === 'adhr') {
-    creditCost = 12;
-  } else if (service === 'bnk') {
-    creditCost = 18;
-  } else if (service === 'vehicle') {
     creditCost = 10;
+  } else if (service === 'bnk') {
+    creditCost = 10;
+  } else if (service === 'vehicle') {
+    creditCost = 5;
   } else if (service === 'pancard') {
-    creditCost = 20;
+    creditCost = 10;
   } else if (service === 'aadhaar_to_pan') {
     creditCost = 150;
   }
@@ -1221,7 +1221,7 @@ app.get("/api/lookup", async (req, res) => {
 
   let keyRecord: any = null;
   let targetQuery = "";
-  let lookupType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' = 'phone';
+  let lookupType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' | 'aadhaar_to_pan' = 'phone';
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
@@ -1288,11 +1288,17 @@ app.get("/api/lookup", async (req, res) => {
     } else if (req.query.vehiclequery !== undefined) {
       lookupType = 'vehicle';
       targetQuery = String(req.query.vehiclequery).trim();
+    } else if (req.query.aadhaar_to_pan_query !== undefined || req.query.adhr_to_pan_query !== undefined) {
+      lookupType = 'aadhaar_to_pan';
+      targetQuery = String(req.query.aadhaar_to_pan_query || req.query.adhr_to_pan_query).trim();
     }
     // Priority 2: Legacy or explicit service select
     else if (telegram || tg || service === 'telegram') {
       lookupType = 'telegram';
       targetQuery = String(telegram || tg || query || "").trim();
+    } else if (service === 'aadhaar_to_pan') {
+      lookupType = 'aadhaar_to_pan';
+      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
     } else if (service === 'adhr' || service === 'identity') {
       lookupType = 'adhr';
       targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
@@ -1314,6 +1320,8 @@ app.get("/api/lookup", async (req, res) => {
       const planUpper = String(keyRecord.plan_name || "").toUpperCase();
       if (planUpper.includes("TELEGRAM")) {
         lookupType = 'telegram';
+      } else if (planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN")) {
+        lookupType = 'aadhaar_to_pan';
       } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY")) {
         lookupType = 'adhr';
       } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
@@ -1336,7 +1344,7 @@ app.get("/api/lookup", async (req, res) => {
     // Normalize and clean queries depending on lookup service
     if (lookupType === 'bnk') {
       targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    } else if (lookupType === 'adhr' || lookupType === 'rasion') {
+    } else if (lookupType === 'adhr' || lookupType === 'rasion' || lookupType === 'aadhaar_to_pan') {
       targetQuery = targetQuery.replace(/[^0-9]/g, '');
     }
 
@@ -1372,6 +1380,8 @@ app.get("/api/lookup", async (req, res) => {
         isAuthorized = planUpper.includes("RASION") || planUpper.includes("RATION");
       } else if (lookupType === 'vehicle') {
         isAuthorized = planUpper.includes("VEHICLE");
+      } else if (lookupType === 'aadhaar_to_pan') {
+        isAuthorized = planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN");
       }
 
       if (!isAuthorized) {
@@ -1385,6 +1395,9 @@ app.get("/api/lookup", async (req, res) => {
     // 4. Schema checks
     if (lookupType === 'phone' && !/^\d{10}$/.test(targetQuery)) {
       return res.status(400).json({ status: "error", message: `Invalid Query: '${targetQuery}' is not a 10-digit mobile number` });
+    }
+    if (lookupType === 'aadhaar_to_pan' && !/^\d{12}$/.test(targetQuery)) {
+      return res.status(400).json({ status: "error", message: `Invalid Query: '${targetQuery}' is not a 12-digit Aadhaar number` });
     }
     if (lookupType === 'vehicle') {
       targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
@@ -1620,13 +1633,17 @@ app.get("/api/lookup", async (req, res) => {
       });
 
       return res.json(filtered);
-    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle') {
+    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'aadhaar_to_pan') {
       let api_url = "";
       let logPrefix = "";
       
       if (lookupType === 'adhr') {
         api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "ADHR";
+      } else if (lookupType === 'aadhaar_to_pan') {
+        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "AADHAAR_TO_PAN";
       } else if (lookupType === 'bnk') {
         api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "BNK";
@@ -1702,6 +1719,8 @@ app.get("/api/lookup", async (req, res) => {
         } catch (err) {
           if (lookupType === 'adhr') {
             parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
+          } else if (lookupType === 'aadhaar_to_pan') {
+            parsedData = parsePlainTextLookup(cleanedText, 'pan');
           } else if (lookupType === 'bnk') {
             parsedData = parsePlainTextLookup(cleanedText, 'bank');
           } else if (lookupType === 'rasion') {
@@ -1760,7 +1779,7 @@ app.get("/api/lookup", async (req, res) => {
       await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
 
       const filtered = formatUnifiedSaaSResponse({
-        type: lookupType,
+        type: lookupType as any,
         query: targetQuery,
         expiresAt: keyRecord.expires_at,
         planName: keyRecord.plan_name,
@@ -1837,26 +1856,80 @@ async function fulfillOrder(orderId: string, userId: string) {
       // API Key Logic
       const apiKey = `tx_${crypto.randomBytes(16).toString('hex')}`;
       let days = 30;
-      let limit: number | null = null; // All only 1 Month Unlimited plans
+      let limit: number | null = null;
       let planName = "Number Lookup (1 Month)";
 
       // Full ID Mapping
-      if (plan_id === 'api_number') {
-        planName = "Number Lookup (1 Month)";
-      } else if (plan_id === 'api_telegram') {
-        planName = "Telegram Lookup (1 Month)";
-      } else if (plan_id === 'api_identity') {
-        planName = "Identity Card Lookup (1 Month)";
-      } else if (plan_id === 'api_bank') {
-        planName = "BA&NK Lookup (1 Month)";
-      } else if (plan_id === 'api_rasion') {
-        planName = "Rasion Card Lookup (1 Month)";
-      } else if (plan_id === 'api_vehicle') {
-        planName = "Vehicle Lookup (1 Month)";
+      if (plan_id === 'api_number_20') {
+        planName = "Number Lookup API (40 Lookups)"; days = 30; limit = 40;
+      } else if (plan_id === 'api_number_50') {
+        planName = "Number Lookup API (200 Lookups)"; days = 30; limit = 200;
+      } else if (plan_id === 'api_number_150') {
+        planName = "Number Lookup API (1 Week Unlimited)"; days = 7; limit = null;
+      } else if (plan_id === 'api_number_400' || plan_id === 'api_number') {
+        planName = "Number Lookup API (1 Month Unlimited)"; days = 30; limit = null;
+      } else if (plan_id === 'api_number_1000') {
+        planName = "Number Lookup API (3 Months Unlimited)"; days = 90; limit = null;
+      } else if (plan_id === 'api_number_1600') {
+        planName = "Number Lookup API (6 Months Unlimited)"; days = 180; limit = null;
+      } else if (plan_id === 'api_number_3000') {
+        planName = "Number Lookup API (1 Year Unlimited)"; days = 365; limit = null;
+
+      } else if (plan_id === 'api_telegram_20') {
+        planName = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5;
+      } else if (plan_id === 'api_telegram_50') {
+        planName = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20;
+      } else if (plan_id === 'api_telegram_200') {
+        planName = "Telegram Lookup API (1 Week Unlimited)"; days = 7; limit = null;
+      } else if (plan_id === 'api_telegram_650' || plan_id === 'api_telegram') {
+        planName = "Telegram Lookup API (1 Month Unlimited)"; days = 30; limit = null;
+      } else if (plan_id === 'api_telegram_1800') {
+        planName = "Telegram Lookup API (3 Months Unlimited)"; days = 90; limit = null;
+
+      } else if (plan_id === 'api_identity_20') {
+        planName = "Identity Card API (5 Lookups)"; days = 30; limit = 5;
+      } else if (plan_id === 'api_identity_50') {
+        planName = "Identity Card API (30 Lookups)"; days = 30; limit = 30;
+      } else if (plan_id === 'api_identity_150') {
+        planName = "Identity Card API (1 Week Unlimited)"; days = 7; limit = null;
+      } else if (plan_id === 'api_identity_450' || plan_id === 'api_identity') {
+        planName = "Identity Card API (1 Month Unlimited)"; days = 30; limit = null;
+      } else if (plan_id === 'api_identity_1100') {
+        planName = "Identity Card API (3 Months Unlimited)"; days = 90; limit = null;
+
+      } else if (plan_id === 'api_vehicle_20') {
+        planName = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10;
+      } else if (plan_id === 'api_vehicle_400') {
+        planName = "Vehicle Lookup API (15 Days Unlimited)"; days = 15; limit = null;
+      } else if (plan_id === 'api_vehicle_700' || plan_id === 'api_vehicle') {
+        planName = "Vehicle Lookup API (1 Month Unlimited)"; days = 30; limit = null;
+      } else if (plan_id === 'api_vehicle_1800') {
+        planName = "Vehicle Lookup API (3 Months Unlimited)"; days = 90; limit = null;
+
+      } else if (plan_id === 'api_bank_20') {
+        planName = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20;
+      } else if (plan_id === 'api_bank_70') {
+        planName = "BA&NK Lookup API (1 Week Unlimited)"; days = 7; limit = null;
+      } else if (plan_id === 'api_bank_250' || plan_id === 'api_bank') {
+        planName = "BA&NK Lookup API (1 Month Unlimited)"; days = 30; limit = null;
+      } else if (plan_id === 'api_bank_600') {
+        planName = "BA&NK Lookup API (3 Months Unlimited)"; days = 90; limit = null;
+
+      } else if (plan_id === 'api_aadhaar_to_pan_1000') {
+        planName = "Aadhaar To PAN API (10 Lookups)"; days = 30; limit = 10;
+      } else if (plan_id === 'api_aadhaar_to_pan_2000') {
+        planName = "Aadhaar To PAN API (22 Lookups)"; days = 30; limit = 22;
+      } else if (plan_id === 'api_aadhaar_to_pan_5000') {
+        planName = "Aadhaar To PAN API (60 Lookups)"; days = 30; limit = 60;
+      } else if (plan_id === 'api_aadhaar_to_pan_10000') {
+        planName = "Aadhaar To PAN API (15 Days Unlimited)"; days = 15; limit = null;
+
       } else if (plan_id === 'api_pancard') {
-        planName = "PN Card Lookup (1 Month)";
+        planName = "PN Card Lookup (1 Month)"; days = 30; limit = null;
       } else if (plan_id === 'api_combo') {
-        planName = "All Combo Special (1 Month)";
+        planName = "All Combo Special (1 Month)"; days = 30; limit = null;
+      } else if (plan_id === 'api_rasion') {
+        planName = "Rasion Card Lookup (1 Month)"; days = 30; limit = null;
       } else {
         // Fallback for any other custom/older api plan
         if (plan_id.includes('15')) days = 15;
@@ -1888,15 +1961,15 @@ async function fulfillOrder(orderId: string, userId: string) {
     const updateData: any = {};
     let creditsToAdd = 0;
     
-    if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 10;
-    else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 20;
-    else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 40;
-    else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 50;
-    else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 100;
-    else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 150;
-    else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 275;
-    else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 600;
-    else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1300;
+    if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
+    else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
+    else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
+    else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 75;
+    else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 150;
+    else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 225;
+    else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 412;
+    else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 900;
+    else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
     else {
       // Dynamic fallback extraction
       const match = strPlanId().match(/^(?:c|credit_?)(\d+)$/i);

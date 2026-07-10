@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CreditCard, Zap, CheckCircle2, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { X, CreditCard, Zap, CheckCircle2, ShieldCheck, Loader2, AlertCircle, Server } from 'lucide-react';
 import { CREDIT_PLANS, UNLIMITED_PLANS, API_PLANS, PricingPlan, SPECIAL_DEAL_PLAN } from '../types.ts';
 import { useAuth } from '../services/AuthContext.tsx';
 import { supabase } from '../services/supabase.ts';
@@ -373,6 +373,13 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
               </div>
               <div className="h-px flex-1 bg-white/5 ml-4" />
             </div>
+
+            <div className="p-3 mb-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-[10px] md:text-xs font-mono flex items-center gap-2.5">
+              <Server size={14} className="shrink-0 animate-pulse" />
+              <span>
+                <strong>VPS &amp; MAINTENANCE COST NOTICE:</strong> These credit costs purely cover our high performance website hosting, VPS, and API data maintenance costs, not for earning profit.
+              </span>
+            </div>
             
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-5">
               {CREDIT_PLANS.map((plan) => {
@@ -384,6 +391,10 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                   >
                     <div className="absolute top-0 right-0 p-2 md:p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                       <CreditCard size={32} className="md:w-16 md:h-16 text-cyan-500" />
+                    </div>
+
+                    <div className="absolute top-1.5 right-1.5 bg-emerald-500/20 text-[6px] md:text-[8px] font-extrabold uppercase text-emerald-400 px-1 py-0.5 rounded border border-emerald-500/30 tracking-widest animate-pulse">
+                      OFFER
                     </div>
                     
                     <div className="mb-3 md:mb-6">

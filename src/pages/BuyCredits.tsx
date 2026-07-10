@@ -273,10 +273,16 @@ export default function BuyCredits() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25 }}
-            className="inline-flex items-center gap-2 mt-4 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono text-xs text-center"
+            className="flex flex-col gap-3 mt-6 max-w-2xl mx-auto"
           >
-            <Coins size={12} className="shrink-0" />
-            <span>Daily Free Credits - 10 (Topped up daily if balance is less than 10. If previous day's credits are unspent, i.e., balance ≥ 10, no extra free credits are added)</span>
+            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono text-xs text-center">
+              <Coins size={12} className="shrink-0" />
+              <span>Daily Free Credits - 10 (Topped up daily if balance is less than 10. If previous day's credits are unspent, i.e., balance ≥ 10, no extra free credits are added)</span>
+            </div>
+            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-xs text-center animate-pulse">
+              <Server size={12} className="shrink-0" />
+              <span>Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.</span>
+            </div>
           </motion.div>
         </header>
 
@@ -408,6 +414,9 @@ export default function BuyCredits() {
                       <div className="flex items-center gap-2 flex-wrap mb-4">
                         <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
                           QUICK RECHARGE
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-extrabold text-emerald-400 uppercase tracking-widest animate-pulse">
+                          1.5X MORE CREDITS OFFER
                         </span>
                       </div>
 
