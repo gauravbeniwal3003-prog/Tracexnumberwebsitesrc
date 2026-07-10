@@ -463,7 +463,6 @@ async def get_profile(request: Request):
                 }
                 if updated_credits < 10:
                     update_payload["credits"] = 10
-                    profile["credits"] = 10
                 
                 try:
                     update_response = db.table("profiles").update(update_payload).eq("id", user_id_val).execute()
@@ -1503,6 +1502,41 @@ async def user_lookup(
     elif service_clean == 'aadhaar_to_pan':
         credit_cost = 150
         
+    # Check if daily free credit top-up is due before evaluating current credits
+    from datetime import timedelta
+    last_daily_str = profile.get("last_daily_credit_at")
+    should_give_daily = False
+    now_str = datetime.utcnow().isoformat() + "Z"
+    
+    if not last_daily_str:
+        should_give_daily = True
+    else:
+        try:
+            clean_last_daily = last_daily_str.replace("Z", "")
+            if "+" in clean_last_daily:
+                clean_last_daily = clean_last_daily.split("+")[0]
+            last_daily_dt = datetime.fromisoformat(clean_last_daily)
+            if datetime.utcnow() - last_daily_dt >= timedelta(hours=24):
+                should_give_daily = True
+        except Exception as ex:
+            print(f"Error parsing last_daily_credit_at in user_lookup: {ex}")
+            should_give_daily = True
+            
+    if should_give_daily:
+        updated_credits = profile.get("credits") or 0
+        update_payload = {
+            "last_daily_credit_at": now_str
+        }
+        if updated_credits < 10:
+            update_payload["credits"] = 10
+            
+        try:
+            update_response = db.table("profiles").update(update_payload).eq("id", user.id).execute()
+            if update_response.data:
+                profile = update_response.data[0]
+        except Exception as ex:
+            print(f"Error updating daily credits in user_lookup: {ex}")
+            
     current_credits = int(profile.get('credits') or 0)
     
     if not is_unlimited:

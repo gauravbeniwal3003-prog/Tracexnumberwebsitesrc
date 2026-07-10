@@ -72,11 +72,45 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     }).catch(err => console.error("Error logging visitor:", err));
+
+    // YouTube deep-link redirection logic on 3rd click of session
+    const handleGlobalClick = () => {
+      const redirected = sessionStorage.getItem('yt_redirected');
+      if (redirected === 'true') return;
+
+      const currentClicksStr = sessionStorage.getItem('yt_clicks') || '0';
+      const currentClicks = parseInt(currentClicksStr, 10) + 1;
+      sessionStorage.setItem('yt_clicks', currentClicks.toString());
+
+      if (currentClicks >= 3) {
+        sessionStorage.setItem('yt_redirected', 'true');
+        const videoId = 'fZX_3s95N3o';
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        const isAndroid = /Android/.test(navigator.userAgent);
+
+        if (isAndroid) {
+          // Direct Intent to launch YouTube app on Android
+          window.location.href = `intent://www.youtube.com/watch?v=${videoId}#Intent;package=com.google.android.youtube;scheme=https;end;`;
+        } else if (isIOS) {
+          // Deep link protocol for iOS
+          window.location.href = `youtube://www.youtube.com/watch?v=${videoId}`;
+          setTimeout(() => {
+            window.location.href = `https://youtu.be/${videoId}`;
+          }, 1500);
+        } else {
+          // Default browser redirection
+          window.location.href = `https://youtu.be/${videoId}`;
+        }
+      }
+    };
+
+    window.addEventListener('click', handleGlobalClick);
     
     return () => {
       window.removeEventListener('open-login', handleLoginEvent);
       window.removeEventListener('launch-payment', handleLaunchPayment);
       window.removeEventListener('open-protect', handleProtectEvent as EventListener);
+      window.removeEventListener('click', handleGlobalClick);
     };
   }, []);
 
@@ -380,7 +414,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     }
 
     let creditCost = 5;
-    if (service === 'adhr') {
+    if (service === 'telegram') {
+      creditCost = 8;
+    } else if (service === 'adhr') {
       creditCost = 12;
     } else if (service === 'bnk') {
       creditCost = 18;
