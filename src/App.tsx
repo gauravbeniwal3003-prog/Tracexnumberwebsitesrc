@@ -18,7 +18,6 @@ import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
-import PromoDealModal from './components/PromoDealModal.tsx';
 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import ScrollToTop from './components/ScrollToTop.tsx';
@@ -34,6 +33,7 @@ import AdminDashboard from './pages/AdminDashboard.tsx';
 import ApiDocs from './pages/ApiDocs.tsx';
 import PgPaymentPage from './pages/PgPaymentPage.tsx';
 import PanFind from './pages/PanFind.tsx';
+import ScriptPurchase from './pages/ScriptPurchase.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -84,7 +84,7 @@ export default function App() {
 
       if (currentClicks >= 3) {
         sessionStorage.setItem('yt_redirected', 'true');
-        const videoId = 'fZX_3s95N3o';
+        const videoId = 'BaCQZo4xB74';
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
         const isAndroid = /Android/.test(navigator.userAgent);
 
@@ -140,6 +140,7 @@ export default function App() {
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
         {/* Separate Secure Payment Receiving Pages */}
+        <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
         <Route path="/pgpay/:urlAmt" element={<PgPaymentPage fallbackFixed />} />
         <Route path="/:pgpayCustom" element={<PgPaymentPage customSegment />} />
@@ -162,9 +163,6 @@ export default function App() {
           <LoginModal onClose={() => setIsLoginOpen(false)} />
         )}
       </AnimatePresence>
-
-      {/* Exclusive Personal Deal Popup */}
-      <PromoDealModal />
     </Router>
   );
 }

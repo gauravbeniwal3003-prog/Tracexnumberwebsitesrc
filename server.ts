@@ -53,9 +53,6 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const getRequestClient = async (token: string) => {
-  if (SUPABASE_SERVICE_ROLE_KEY) {
-    return supabaseAdmin;
-  }
   const clientInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: false,
@@ -1836,6 +1833,14 @@ async function fulfillOrder(orderId: string, userId: string) {
       console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
       return;
     }
+
+    // Handle Gaurav PVT Python Script purchase fulfillment
+    if (plan_id === "gaurav_pvt_script") {
+      const activatedStatus = `success_activated:${Date.now()}`;
+      await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
+      console.log(`[SaaS] Gaurav PVT Script purchase verified & fulfilled securely: ${orderId}`);
+      return;
+    }
     
     // Flexible check for ID variants with automatic UUID resolution fallback
     let finalUserId = userId;
@@ -2192,6 +2197,160 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   } catch (error) {
     console.error("Status Check Error:", error);
     res.status(500).json({ error: "Failed to verify status" });
+  }
+});
+
+// --- SECURE GAURAV BENIWAL PVT PYTHON SCRIPT PURCHASE & DOWNLOAD SYSTEM ---
+
+app.get("/api/script/status", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Unauthorized. Authentication token is required." });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  if (!supabaseAdmin) {
+    return res.status(500).json({ error: "Backend database not configured." });
+  }
+
+  try {
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Unauthorized. Invalid token." });
+    }
+
+    // Query payment claims for the user for the specific script plan
+    const { data: claims, error: claimsErr } = await supabaseAdmin
+      .from("payment_claims")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("plan_id", "gaurav_pvt_script")
+      .order("created_at", { ascending: false });
+
+    if (claimsErr) {
+      console.error("Error fetching script claims:", claimsErr);
+      return res.status(500).json({ error: "Failed to fetch purchase history." });
+    }
+
+    const processedClaims = await Promise.all((claims || []).map(async (claim: any) => {
+      let status = "pending";
+      let activatedAt = null;
+      let expiresAt = null;
+      let timeLeftMs = 0;
+
+      if (claim.status === "success") {
+        // If status is just "success" without timestamp, we activate it now
+        const now = Date.now();
+        const activatedStatus = `success_activated:${now}`;
+        await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("id", claim.id);
+        claim.status = activatedStatus;
+      }
+
+      if (claim.status && claim.status.startsWith("success_activated:")) {
+        status = "active";
+        activatedAt = parseInt(claim.status.split(":")[1], 10);
+        expiresAt = activatedAt + 10 * 60 * 1000; // 10 minutes
+        timeLeftMs = expiresAt - Date.now();
+
+        if (timeLeftMs <= 0) {
+          status = "expired";
+          timeLeftMs = 0;
+          // Clean/Update database to mark permanently expired
+          await supabaseAdmin.from("payment_claims").update({ status: "success_expired" }).eq("id", claim.id);
+        }
+      } else if (claim.status === "success_expired" || claim.status === "expired") {
+        status = "expired";
+      } else if (claim.status === "pending") {
+        status = "pending";
+      }
+
+      return {
+        order_id: claim.payment_id,
+        amount: claim.amount,
+        status: status,
+        created_at: claim.created_at,
+        activated_at: activatedAt ? new Date(activatedAt).toISOString() : null,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        time_left_ms: timeLeftMs
+      };
+    }));
+
+    res.json({
+      purchases: processedClaims,
+      latest_active_purchase: processedClaims.find((p: any) => p.status === "active") || null
+    });
+
+  } catch (err: any) {
+    console.error("Script status endpoint error:", err);
+    res.status(500).json({ error: "Server error checking status." });
+  }
+});
+
+app.get("/api/script/download-file", async (req, res) => {
+  const { order_id } = req.query;
+  const authHeader = req.headers.authorization;
+
+  if (!order_id || typeof order_id !== "string") {
+    return res.status(400).json({ error: "Bad Request. Order ID is required." });
+  }
+
+  if (!authHeader) {
+    return res.status(401).json({ error: "Unauthorized. Authentication token is required." });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  if (!supabaseAdmin) {
+    return res.status(500).json({ error: "Backend database not configured." });
+  }
+
+  try {
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Unauthorized. Invalid token." });
+    }
+
+    // Verify ownership and success status of the claim
+    const { data: claim, error: claimErr } = await supabaseAdmin
+      .from("payment_claims")
+      .select("*")
+      .eq("payment_id", order_id)
+      .eq("user_id", user.id)
+      .eq("plan_id", "gaurav_pvt_script")
+      .maybeSingle();
+
+    if (claimErr || !claim) {
+      return res.status(404).json({ error: "Purchase not found or access denied." });
+    }
+
+    let status = claim.status;
+    if (status === "success") {
+      const now = Date.now();
+      status = `success_activated:${now}`;
+      await supabaseAdmin.from("payment_claims").update({ status }).eq("id", claim.id);
+    }
+
+    if (!status || !status.startsWith("success_activated:")) {
+      return res.status(403).json({ error: "Script has not been purchased, or payment is pending." });
+    }
+
+    const activatedAt = parseInt(status.split(":")[1], 10);
+    const expiresAt = activatedAt + 10 * 60 * 1000;
+
+    if (Date.now() > expiresAt) {
+      // Mark permanently expired in DB
+      await supabaseAdmin.from("payment_claims").update({ status: "success_expired" }).eq("id", claim.id);
+      return res.status(410).json({ error: "Download link has expired. The 10-minute download window has ended." });
+    }
+
+    // Secure direct download link
+    const secureDownloadLink = "https://download943.mediafire.com/654o31hm969gLYWkGEV9jpea1xvulIEe-Ha_hxgtP-zZKFoGlDEMixTAfA25kO-N3EHCKQxqA0Ova5XgRBayo-FcvPWv9-TKAH6nSjQXst9e4iuBzSsy9_3jr_vEGIWLu84AjEnLh2_uTeGTuiWEfyNAfVTM0V4b2TE6YribrAW0LA/31wlz4fnga6nkus/Gaurav_pvt_scri%27%2B%27pt.py";
+    
+    // Send a JSON with the URL or redirect
+    res.json({ download_url: secureDownloadLink });
+
+  } catch (err: any) {
+    console.error("Secure download endpoint error:", err);
+    res.status(500).json({ error: "Server error generating secure download." });
   }
 });
 
@@ -3478,6 +3637,13 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     return res.status(401).json({ error: "Access token is empty" });
   }
 
+  // Dual-factor: Admin passcode check
+  const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || "TraceXAdminSecure2026!";
+  const providedPasscode = req.headers['x-admin-passcode'] || req.query.admin_passcode;
+  if (!providedPasscode || providedPasscode !== ADMIN_PASSCODE) {
+    return res.status(403).json({ error: "Access Denied: Invalid or missing Admin Security Passcode/PIN." });
+  }
+
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: "Engine Offline: Database driver missing" });
@@ -3504,7 +3670,7 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     (req as any).adminUser = user;
-    (req as any).adminClient = client;
+    (req as any).adminClient = supabaseAdmin; // Secure service-role client for authorized administrative procedures
     next();
   } catch (err) {
     console.error("[ADMIN_MIDDLEWARE_FAIL]", err);

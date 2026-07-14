@@ -177,7 +177,23 @@ async def fulfill_order(order_id: str, user_id: str):
             limit = None
             plan_name = "Number Lookup (1 Month)"
 
-            if plan_id == 'api_number':
+            if plan_id == 'api_number_20':
+                plan_name = "Number Lookup API (40 Lookups)"; days = 30; limit = 40
+            elif plan_id == 'api_number_50':
+                plan_name = "Number Lookup API (200 Lookups)"; days = 30; limit = 200
+            elif plan_id == 'api_telegram_20':
+                plan_name = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5
+            elif plan_id == 'api_telegram_50':
+                plan_name = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20
+            elif plan_id == 'api_identity_20':
+                plan_name = "Identity Card API (5 Lookups)"; days = 30; limit = 5
+            elif plan_id == 'api_identity_50':
+                plan_name = "Identity Card API (30 Lookups)"; days = 30; limit = 30
+            elif plan_id == 'api_vehicle_20':
+                plan_name = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10
+            elif plan_id == 'api_bank_20':
+                plan_name = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20
+            elif plan_id == 'api_number':
                 plan_name = "Number Lookup (1 Month)"
             elif plan_id == 'api_telegram':
                 plan_name = "Telegram Lookup (1 Month)"

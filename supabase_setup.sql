@@ -55,14 +55,14 @@ CREATE TABLE IF NOT EXISTS public.search_results (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Payment Claims Table (Tracking Razorpay Payments)
+-- 4. Payment Claims Table (Tracking Razorpay & Cashfree Payments, including digital scripts)
 CREATE TABLE IF NOT EXISTS public.payment_claims (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    payment_id TEXT UNIQUE NOT NULL,
+    payment_id TEXT UNIQUE NOT NULL, -- Razorpay payment_id or Cashfree order_id
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    plan_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL, -- e.g. "gaurav_pvt_script" for premium Python script
     amount DECIMAL NOT NULL,
-    status TEXT DEFAULT 'pending',
+    status TEXT DEFAULT 'pending', -- 'pending', 'success', or 'success_activated:<timestamp>'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
