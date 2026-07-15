@@ -3637,13 +3637,6 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     return res.status(401).json({ error: "Access token is empty" });
   }
 
-  // Dual-factor: Admin passcode check
-  const ADMIN_PASSCODE = process.env.ADMIN_PASSCODE || "TraceXAdminSecure2026!";
-  const providedPasscode = req.headers['x-admin-passcode'] || req.query.admin_passcode;
-  if (!providedPasscode || providedPasscode !== ADMIN_PASSCODE) {
-    return res.status(403).json({ error: "Access Denied: Invalid or missing Admin Security Passcode/PIN." });
-  }
-
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: "Engine Offline: Database driver missing" });

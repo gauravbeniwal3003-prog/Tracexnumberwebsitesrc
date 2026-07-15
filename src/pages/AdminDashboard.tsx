@@ -34,56 +34,6 @@ export default function AdminDashboard() {
   const [isServiceRoleActive, setIsServiceRoleActive] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Admin Passcode Dual-Factor Security
-  const [passcode, setPasscode] = useState('');
-  const [isPasscodeVerified, setIsPasscodeVerified] = useState(() => {
-    return sessionStorage.getItem('admin_passcode_verified') === 'true';
-  });
-  const [passcodeError, setPasscodeError] = useState('');
-  const [isVerifyingPasscode, setIsVerifyingPasscode] = useState(false);
-
-  const handleVerifyPasscode = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!passcode.trim()) {
-      setPasscodeError("Please enter the admin passcode.");
-      return;
-    }
-    
-    setIsVerifyingPasscode(true);
-    setPasscodeError('');
-    
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
-      if (!token) {
-        setPasscodeError("No active session found. Please login again.");
-        setIsVerifyingPasscode(false);
-        return;
-      }
-      
-      const response = await fetch(`${getApiBaseUrl()}/api/admin/system`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-admin-passcode': passcode.trim()
-        }
-      });
-      
-      if (response.ok) {
-        sessionStorage.setItem('admin_passcode', passcode.trim());
-        sessionStorage.setItem('admin_passcode_verified', 'true');
-        setIsPasscodeVerified(true);
-      } else {
-        const errJson = await response.json();
-        setPasscodeError(errJson.error || "Incorrect admin passcode. Access denied.");
-      }
-    } catch (err: any) {
-      setPasscodeError("Connection error verifying passcode: " + err.message);
-    } finally {
-      setIsVerifyingPasscode(false);
-    }
-  };
-
   // Stats State
   const [keys, setKeys] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
@@ -160,12 +110,12 @@ export default function AdminDashboard() {
     checkAdmin();
   }, [user, authLoading]);
 
-  // Reactive data load once admin status and passcode are verified
+  // Reactive data load
   useEffect(() => {
-    if (isAdmin && isPasscodeVerified) {
+    if (isAdmin) {
       fetchData();
     }
-  }, [isAdmin, isPasscodeVerified]);
+  }, [isAdmin]);
 
   // Real-time subscription
   useEffect(() => {
@@ -194,8 +144,7 @@ export default function AdminDashboard() {
         try {
           const sysResponse = await fetch(`${getApiBaseUrl()}/api/admin/system`, {
             headers: { 
-              'Authorization': `Bearer ${token}`,
-              'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+              'Authorization': `Bearer ${token}`
             }
           });
           const sysJson = await sysResponse.json();
@@ -226,8 +175,7 @@ export default function AdminDashboard() {
         try {
           const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
             headers: {
-              'Authorization': `Bearer ${token}`,
-              'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+              'Authorization': `Bearer ${token}`
             }
           });
           const resJson = await response.json();
@@ -244,8 +192,7 @@ export default function AdminDashboard() {
         try {
           const earningsResponse = await fetch(`${getApiBaseUrl()}/api/admin/earnings`, {
             headers: {
-              'Authorization': `Bearer ${token}`,
-              'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+              'Authorization': `Bearer ${token}`
             }
           });
           const earningsJson = await earningsResponse.json();
@@ -263,8 +210,7 @@ export default function AdminDashboard() {
         try {
           const historyResponse = await fetch(`${getApiBaseUrl()}/api/admin/history`, {
             headers: {
-              'Authorization': `Bearer ${token}`,
-              'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+              'Authorization': `Bearer ${token}`
             }
           });
           const historyJson = await historyResponse.json();
@@ -312,8 +258,7 @@ export default function AdminDashboard() {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${token}`,
-            'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+            'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({ 
             user_email: newKeyData.user_email.trim(), 
@@ -361,8 +306,7 @@ export default function AdminDashboard() {
           method: 'PUT',
           headers: { 
             'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${token}`,
-            'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+            'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
             plan_name: selectedKey.plan_name,
@@ -400,8 +344,7 @@ export default function AdminDashboard() {
         const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys/${id}`, {
           method: 'DELETE',
           headers: { 
-            'Authorization': `Bearer ${token}`,
-            'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+            'Authorization': `Bearer ${token}`
           }
         });
         if (!res.ok) {
@@ -423,8 +366,7 @@ export default function AdminDashboard() {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${token}`,
-            'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+            'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
             id: settings.id || undefined,
@@ -473,8 +415,7 @@ export default function AdminDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           id: randId,
@@ -521,8 +462,7 @@ export default function AdminDashboard() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           email: selectedUser.email,
@@ -560,8 +500,7 @@ export default function AdminDashboard() {
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'x-admin-passcode': sessionStorage.getItem('admin_passcode') || ''
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -590,67 +529,6 @@ export default function AdminDashboard() {
     );
   }
 
-  if (isAdmin && !isPasscodeVerified) {
-    return (
-      <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md p-8 rounded-2xl bg-zinc-900/50 border border-zinc-800/85 backdrop-blur-xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
-          
-          <div className="flex flex-col items-center text-center">
-            <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
-              <Key size={32} className="animate-pulse" />
-            </div>
-            
-            <h1 className="text-2xl font-bold text-white mb-2">Secure Admin Gate</h1>
-            <p className="text-zinc-400 text-sm mb-6 max-w-xs">Double-factor authorization required. Please enter the private TraceX security passcode.</p>
-            
-            <form onSubmit={handleVerifyPasscode} className="w-full space-y-4">
-              <div className="space-y-2 text-left">
-                <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Security PIN / Passcode</label>
-                <input 
-                  type="password" 
-                  value={passcode}
-                  onChange={(e) => {
-                    setPasscode(e.target.value);
-                    setPasscodeError('');
-                  }}
-                  placeholder="••••••••••••••"
-                  className="w-full px-4 py-3 rounded-xl bg-black/40 border border-zinc-800 focus:border-cyan-500 text-white font-mono text-center tracking-widest focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all placeholder:text-zinc-700"
-                  autoFocus
-                />
-              </div>
-              
-              {passcodeError && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-left">
-                  <ShieldAlert size={16} className="shrink-0" />
-                  <span>{passcodeError}</span>
-                </div>
-              )}
-              
-              <button 
-                type="submit" 
-                disabled={isVerifyingPasscode}
-                className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:bg-cyan-800 disabled:text-zinc-500 text-black font-bold flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.25)] transition-all"
-              >
-                {isVerifyingPasscode ? (
-                  <RefreshCcw size={18} className="animate-spin" />
-                ) : (
-                  <span>Verify Credentials</span>
-                )}
-              </button>
-            </form>
-            
-            <button 
-              onClick={() => navigate('/')} 
-              className="mt-6 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              Cancel and Return Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#030303] text-zinc-100 pb-20">
