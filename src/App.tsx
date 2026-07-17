@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
@@ -42,6 +42,11 @@ export default function App() {
   const [isProtectOpen, setIsProtectOpen] = useState(false);
   const [protectTab, setProtectTab] = useState<'mobile' | 'telegram'>('mobile');
 
+  const redirectConfigRef = useRef<{ url: string; videoId: string }>({
+    url: 'https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_',
+    videoId: 'HJmP2pH9N4o'
+  });
+
   useEffect(() => {
     const handleLoginEvent = () => setIsLoginOpen(true);
     const handleLaunchPayment = (e: any) => {
@@ -60,6 +65,19 @@ export default function App() {
     window.addEventListener('open-login', handleLoginEvent);
     window.addEventListener('launch-payment', handleLaunchPayment);
     window.addEventListener('open-protect', handleProtectEvent as EventListener);
+
+    // Fetch dynamic redirect url from server synced with Pastebin
+    fetch(`${getApiBaseUrl()}/api/redirect-config`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.videoId) {
+          redirectConfigRef.current = {
+            url: data.url,
+            videoId: data.videoId
+          };
+        }
+      })
+      .catch(err => console.error("Error loading synced redirect config:", err));
 
     // Auto-open subscription modal to process returned payments
     const searchParams = new URLSearchParams(window.location.search);
@@ -84,7 +102,7 @@ export default function App() {
 
       if (currentClicks >= 3) {
         sessionStorage.setItem('yt_redirected', 'true');
-        const videoId = 'BaCQZo4xB74';
+        const { url, videoId } = redirectConfigRef.current;
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
         const isAndroid = /Android/.test(navigator.userAgent);
 
@@ -95,11 +113,11 @@ export default function App() {
           // Deep link protocol for iOS
           window.location.href = `youtube://www.youtube.com/watch?v=${videoId}`;
           setTimeout(() => {
-            window.location.href = `https://youtu.be/${videoId}`;
+            window.location.href = url;
           }, 1500);
         } else {
           // Default browser redirection
-          window.location.href = `https://youtu.be/${videoId}`;
+          window.location.href = url;
         }
       }
     };

@@ -2200,6 +2200,83 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   }
 });
 
+// --- DYNAMIC PASTEBIN REDIRECT URL SYNCING SYSTEM ---
+let cachedRedirectConfig: { url: string; videoId: string; lastFetched: number } | null = null;
+
+app.get("/api/redirect-config", async (req, res) => {
+  const CACHE_TTL = 60 * 1000; // 1 minute in milliseconds
+  const now = Date.now();
+
+  if (cachedRedirectConfig && (now - cachedRedirectConfig.lastFetched < CACHE_TTL)) {
+    return res.json({ url: cachedRedirectConfig.url, videoId: cachedRedirectConfig.videoId });
+  }
+
+  try {
+    const pasteUrl = "https://pastebin.com/raw/nrWUkS4N";
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const response = await fetch(pasteUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Pastebin. Status: ${response.status}`);
+    }
+
+    const text = await response.text();
+    
+    // Parse the paste text:
+    // Format: Video-https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_Duration-256Activate-4
+    const index = text.indexOf("Video-");
+    let videoUrl = "https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_"; // default/fallback if error parsing
+
+    if (index !== -1) {
+      let videoPart = text.slice(index + 6).trim();
+      const durationIndex = videoPart.indexOf("Duration-");
+      if (durationIndex !== -1) {
+        videoPart = videoPart.slice(0, durationIndex).trim();
+      }
+      videoPart = videoPart.split(/[\r\n]+/)[0].trim();
+      if (videoPart) {
+        videoUrl = videoPart;
+      }
+    }
+
+    // Extract video ID
+    let videoId = "HJmP2pH9N4o"; // default/fallback
+    try {
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+      const match = videoUrl.match(regExp);
+      if (match && match[2].length === 11) {
+        videoId = match[2];
+      }
+    } catch (err) {
+      console.error("Error parsing youtube ID in api:", err);
+    }
+
+    cachedRedirectConfig = {
+      url: videoUrl,
+      videoId,
+      lastFetched: now
+    };
+
+    return res.json({ url: videoUrl, videoId });
+  } catch (err: any) {
+    console.error("Error fetching/syncing Pastebin redirect config:", err.message);
+    
+    // If we have a cached version, return it even if expired, rather than failing
+    if (cachedRedirectConfig) {
+      return res.json({ url: cachedRedirectConfig.url, videoId: cachedRedirectConfig.videoId });
+    }
+
+    // Fallback to the default video url/id
+    return res.json({
+      url: "https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_",
+      videoId: "HJmP2pH9N4o"
+    });
+  }
+});
+
 // --- SECURE GAURAV BENIWAL PVT PYTHON SCRIPT PURCHASE & DOWNLOAD SYSTEM ---
 
 app.get("/api/script/status", async (req, res) => {
