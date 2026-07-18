@@ -1165,7 +1165,7 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
             
         part_lower = part.lower()
         # Avoid section headers/footers with no useful fields
-        if not any(k in part_lower for k in ["name", "mobile", "phone", "address", "branch", "ifsc", "aadhaar", "identity", "family"]):
+        if not any(k in part_lower for k in ["name", "mobile", "phone", "address", "branch", "ifsc", "aadhaar", "identity", "family", "email", "mail", "username", "term", "leak", "password", "database", "platform"]):
             continue
             
         record_data = {}
@@ -1225,6 +1225,12 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
                     mapped_key = "district"
                 elif "state" in key_lower:
                     mapped_key = "state"
+                elif "email" in key_lower or "mail" in key_lower:
+                    mapped_key = "email"
+                elif "password" in key_lower or "leak" in key_lower:
+                    mapped_key = "password"
+                elif "database" in key_lower or "source" in key_lower or "platform" in key_lower:
+                    mapped_key = "platform"
                 elif "family" in key_lower:
                     mapped_key = "family_id"
                 else:
@@ -1253,6 +1259,8 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
                     record_data["name"] = f"Family ID: {record_data['family_id']}"
                 elif "aadhar_number" in record_data:
                     record_data["name"] = f"Aadhaar: {record_data['aadhar_number']}"
+                elif "email" in record_data:
+                    record_data["name"] = record_data["email"]
                 else:
                     record_data["name"] = "REGISTRY ENTRY"
                     
@@ -1517,6 +1525,8 @@ async def user_lookup(
         credit_cost = 10
     elif service_clean == 'aadhaar_to_pan':
         credit_cost = 150
+    elif service_clean == 'email':
+        credit_cost = 20
         
     # Check if daily free credit top-up is due before evaluating current credits
     from datetime import timedelta
@@ -1657,6 +1667,11 @@ async def user_lookup(
                 target_query = re.sub(r'[^0-9]', '', cleaned_query)
                 api_key = "c8117598aafa71238a4bf8377087b0ff"
                 api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={urllib.parse.quote(target_query)}"
+            elif service_clean == 'telegram':
+                target_query = cleaned_query.lstrip('@')
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_query)}"
+            elif service_clean == 'email':
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
                 
             if api_url:
                 print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
@@ -1751,13 +1766,21 @@ async def saas_lookup(
                 key=key,
                 rc=rc_arg
             )
+        elif service_lower in ["email", "mail"]:
+            return await email_lookup(
+                request=request,
+                key=key,
+                query=query or number or numquery
+            )
 
 
     num = (number or query or numquery or "").strip()
 
     import re
     if not service and num:
-        if re.match(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', num):
+        if "@" in num and "." in num:
+            return await email_lookup(request=request, key=key, query=num)
+        elif re.match(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', num):
             return await bank_lookup(request=request, key=key, query=num)
         elif re.match(r'^[A-Za-z0-9]{4,11}$', num) and any(c.isalpha() for c in num) and any(c.isdigit() for c in num) and "_" not in num and not num.startswith("@"):
             return await vehicle_lookup(request=request, key=key, rc=num)
@@ -2231,7 +2254,11 @@ async def telegram_lookup(
     query: Optional[str] = Query(None),
     api: Optional[str] = Query(None)
 ):
-    return make_api_response({"status": "error", "message": "Telegram lookup is currently under maintenance. Please try again later."})
+    import re
+    import time
+    from datetime import datetime, timezone
+    
+    start_time = time.time()
     targetTelegramId = (query or telegram or api or "").strip()
     if not targetTelegramId:
         return make_api_response({"status": "error", "message": "Telegram query parameter is required"})
@@ -2265,8 +2292,10 @@ async def telegram_lookup(
             # Expiry check
             try:
                 if keyRecord.get('expires_at'):
-                    from datetime import datetime
-                    exp_date = datetime.fromisoformat(keyRecord['expires_at'].replace('Z', '+00:00')).replace(tzinfo=None)
+                    clean_expires = keyRecord['expires_at'].replace('Z', '')
+                    if '+' in clean_expires:
+                        clean_expires = clean_expires.split('+')[0]
+                    exp_date = datetime.fromisoformat(clean_expires)
                     if exp_date < datetime.utcnow():
                         return make_api_response({"status": "error", "message": "Key Expired: Please renew subscription"})
             except Exception as e:
@@ -2310,7 +2339,6 @@ async def telegram_lookup(
         if is_protected:
             # Record telemetry for protected search
             if not is_master and keyRecord:
-                from datetime import datetime
                 db.table("api_keys").update({
                     "requests_used": (keyRecord.get('requests_used') or 0) + 1,
                     "last_used_at": datetime.utcnow().isoformat()
@@ -2335,8 +2363,8 @@ async def telegram_lookup(
                 }
             })
 
-        target_username = targetTelegramId if targetTelegramId.startswith('@') else f"@{targetTelegramId}"
-        api_url = f"https://exploitsindia.site//osint-api/telegram.php?exploits={requests.utils.quote(target_username)}"
+        target_username = targetTelegramId.lstrip('@')
+        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
@@ -2354,106 +2382,299 @@ async def telegram_lookup(
         if "no result" in lowerText or "no records found" in lowerText or not cleanedText.strip():
             return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
-        import re
-        usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
-        idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
-        phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
-        countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
-        codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
-
-        username = usernameMatch.group(1).strip() if usernameMatch else target_username
-        telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
-        phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
-        country = countryMatch.group(1).strip() if countryMatch else "N/A"
-        country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
-
-        if telegram_id == "N/A" and phone == "N/A":
-            return make_api_response({
-                "status": "success", 
-                "results": {}, 
-                "message": "no data found"
-            })
-
-        # Post-fetch validation to verify protection status (both for Telegram ID and username)
-        post_protected = False
-        if telegram_id != "N/A":
-            try:
-                p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
-                if p_query_id and p_query_id.data:
-                    post_protected = True
-            except Exception as e_post1:
-                print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
-
-        if not post_protected and username and username != "N/A":
-            clean_un = username.lstrip('@')
-            at_un = f"@{clean_un}"
-            try:
-                p_query_un1 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", clean_un).execute()
-                if p_query_un1 and p_query_un1.data:
-                    post_protected = True
-                else:
-                    p_query_un2 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", at_un).execute()
-                    if p_query_un2 and p_query_un2.data:
-                        post_protected = True
-            except Exception as e_post2:
-                print(f"[API_POST_UN_PROTECT_ERR] {e_post2}")
-
-        if post_protected:
-            # Deduct request and update telemetry since we hit the API and did a lookup
+        # Try to parse JSON first
+        try:
+            parsed = resp.json()
+            cleaned_json = clean_branding_recursive(parsed)
+            
+            # Record telemetry for successful search
             if not is_master and keyRecord:
-                from datetime import datetime
                 db.table("api_keys").update({
                     "requests_used": (keyRecord.get('requests_used') or 0) + 1,
                     "last_used_at": datetime.utcnow().isoformat()
                 }).eq("id", keyRecord['id']).execute()
 
-            return make_api_response({
-                "status": "success",
-                "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
-                "results": {
-                    "Telegram Match": {
-                        "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
-                        "mobile": "PROTECTED @ TRACEX SHIELD",
-                        "father_name": "PROTECTED @ TRACEX SHIELD",
-                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                        "email": "PROTECTED @ TRACEX SHIELD",
-                        "operator": "PROTECTED @ TRACEX SHIELD",
-                        "state_circle": "PROTECTED @ TRACEX SHIELD",
-                        "address": "PROTECTED @ TRACEX SHIELD",
-                        "platform": "Telegram Lookup"
+            return make_api_response({"status": "success", "results": cleaned_json})
+        except:
+            # Fallback to text parse
+            usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
+            idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+            phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+            countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+            codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+
+            username = usernameMatch.group(1).strip() if usernameMatch else targetTelegramId
+            telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
+            phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
+            country = countryMatch.group(1).strip() if countryMatch else "N/A"
+            country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
+
+            if telegram_id == "N/A" and phone == "N/A":
+                return make_api_response({
+                    "status": "success", 
+                    "results": {}, 
+                    "message": "no data found"
+                })
+
+            # Post-fetch validation to verify protection status (both for Telegram ID and username)
+            post_protected = False
+            if telegram_id != "N/A":
+                try:
+                    p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
+                    if p_query_id and p_query_id.data:
+                        post_protected = True
+                except Exception as e_post1:
+                    print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
+
+            if not post_protected and username and username != "N/A":
+                clean_un = username.lstrip('@')
+                at_un = f"@{clean_un}"
+                try:
+                    p_query_un1 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", clean_un).execute()
+                    if p_query_un1 and p_query_un1.data:
+                        post_protected = True
+                    else:
+                        p_query_un2 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", at_un).execute()
+                        if p_query_un2 and p_query_un2.data:
+                            post_protected = True
+                except Exception as e_post2:
+                    print(f"[API_POST_UN_PROTECT_ERR] {e_post2}")
+
+            if post_protected:
+                # Deduct request and update telemetry since we hit the API and did a lookup
+                if not is_master and keyRecord:
+                    db.table("api_keys").update({
+                        "requests_used": (keyRecord.get('requests_used') or 0) + 1,
+                        "last_used_at": datetime.utcnow().isoformat()
+                    }).eq("id", keyRecord['id']).execute()
+
+                return make_api_response({
+                    "status": "success",
+                    "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
+                    "results": {
+                        "Telegram Match": {
+                            "name": "PROTECTED RECORD",
+                            "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                            "mobile": "PROTECTED @ TRACEX SHIELD",
+                            "father_name": "PROTECTED @ TRACEX SHIELD",
+                            "alt_mobile": "PROTECTED @ TRACEX SHIELD",
+                            "email": "PROTECTED @ TRACEX SHIELD",
+                            "operator": "PROTECTED @ TRACEX SHIELD",
+                            "state_circle": "PROTECTED @ TRACEX SHIELD",
+                            "address": "PROTECTED @ TRACEX SHIELD",
+                            "platform": "Telegram Lookup"
+                        }
                     }
+                })
+
+            results = {
+                "Telegram Match": {
+                    "name": username,
+                    "telegram_id": telegram_id,
+                    "mobile": phone,
+                    "father_name": "N/A",
+                    "alt_mobile": country_code,
+                    "email": "N/A",
+                    "operator": country,
+                    "state_circle": "N/A",
+                    "address": "N/A",
+                    "platform": "Telegram Lookup"
                 }
-            })
-
-        results = {
-            "Telegram Match": {
-                "name": username,
-                "telegram_id": telegram_id,
-                "mobile": phone,
-                "father_name": "N/A",
-                "alt_mobile": country_code,
-                "email": "N/A",
-                "operator": country,
-                "state_circle": "N/A",
-                "address": "N/A",
-                "platform": "Telegram Lookup"
             }
-        }
 
-        # Record telemetry for successful search
-        if not is_master and keyRecord:
-            from datetime import datetime
-            db.table("api_keys").update({
-                "requests_used": (keyRecord.get('requests_used') or 0) + 1,
-                "last_used_at": datetime.utcnow().isoformat()
-            }).eq("id", keyRecord['id']).execute()
+            # Record telemetry for successful search
+            if not is_master and keyRecord:
+                db.table("api_keys").update({
+                    "requests_used": (keyRecord.get('requests_used') or 0) + 1,
+                    "last_used_at": datetime.utcnow().isoformat()
+                }).eq("id", keyRecord['id']).execute()
 
-        return make_api_response({"status": "success", "results": results})
+            return make_api_response({"status": "success", "results": results})
 
     except Exception as err:
         print(f"Telegram Proxy error: {err}")
         return make_api_response({"status": "error", "message": "api error"})
+
+
+@app.get("/api/email")
+async def email_lookup(
+    request: Request,
+    key: Optional[str] = Query(None),
+    query: Optional[str] = Query(None),
+    email: Optional[str] = Query(None)
+):
+    import re
+    import time
+    from datetime import datetime, timezone
+    
+    start_time = time.time()
+    target_query = (query or email or "").strip()
+    
+    if not target_query:
+        return make_api_response({"status": "error", "message": "Email query parameter is required"})
+        
+    db = get_supabase()
+    if not db:
+        return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
+        
+    is_master = key == INTERNAL_MASTER_KEY
+    key_record = None
+    
+    if is_master:
+        key_record = {
+            "id": "master",
+            "plan_name": "Internal Master API",
+            "status": "active",
+            "requests_used": 0,
+            "request_limit": None
+        }
+    else:
+        if not key:
+            return make_api_response({"status": "error", "message": "API key is required"})
+            
+        try:
+            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+            if not auth_query.data or len(auth_query.data) == 0:
+                return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
+                
+            key_record = auth_query.data[0]
+            if key_record.get('status') != 'active':
+                return make_api_response({
+                    "status": "error",
+                    "message": "Subscription Blocked: API key expired or suspended"
+                })
+                
+            # Expiry check
+            if key_record.get('expires_at'):
+                try:
+                    clean_expires = key_record['expires_at'].replace('Z', '')
+                    if '+' in clean_expires:
+                        clean_expires = clean_expires.split('+')[0]
+                    exp_date = datetime.fromisoformat(clean_expires)
+                    if exp_date < datetime.utcnow():
+                        return make_api_response({"status": "error", "message": "Key Expired: Please renew subscription"})
+                except Exception as ex_err:
+                    print(f"[EXP_PARSE_ERR] {ex_err}")
+                    
+            # Usage check
+            requests_used = key_record.get('requests_used') or 0
+            limit = key_record.get('request_limit')
+            if limit is not None and int(requests_used) >= int(limit):
+                return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
+                
+            # Permission check
+            plan_name = key_record.get('plan_name') or ""
+            plan_upper = str(plan_name).upper()
+            is_allowed = any(p in plan_upper for p in ["EMAIL", "MAIL", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
+            if not is_allowed:
+                return make_api_response({
+                    "status": "error",
+                    "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated an 'email' query."
+                })
+                
+            # Daily Limit Check for email Lookup (by default 1000 per day limit)
+            try:
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                logs_count_res = db.table("api_logs").select("id", count="exact").eq("api_key_id", key_record['id']).eq("status", "success").gte("created_at", f"{today}T00:00:00").execute()
+                used_today = logs_count_res.count if logs_count_res.count is not None else 0
+                
+                limit_per_day = 1000
+                if used_today >= limit_per_day:
+                    return make_api_response({
+                        "status": "error",
+                        "message": f"RateLimitExceeded: You have exceeded your daily limit of {limit_per_day} searches for this email lookup API key today."
+                    })
+            except Exception as e_limit:
+                print(f"[Email Daily Limit Error]: {e_limit}")
+                
+        except Exception as db_err:
+            print(f"[DB_ERR] {db_err}")
+            return make_api_response({"status": "error", "message": "api error"})
+            
+    # Proxy fetch
+    api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(target_query)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
+        "Accept": "application/json,text/plain,*/*"
+    }
+    
+    try:
+        resp = requests.get(api_url, timeout=15, headers=headers)
+        if resp.status_code != 200:
+            # log failure
+            try:
+                masked_q = f"{target_query[:3]}***@{target_query.split('@')[-1]}" if '@' in target_query else target_query
+                db.table("api_logs").insert({
+                    "api_key_id": key_record.get('id') if not is_master else None,
+                    "masked_number": f"EMAIL: {masked_q}",
+                    "status": "failed",
+                    "response_time_ms": int((time.time() - start_time) * 1000),
+                    "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                }).execute()
+            except: pass
+            return make_api_response({"status": "error", "message": "api error"})
+            
+        text = resp.text or ""
+        cleaned_body = clean_branding_text_line_by_line(text)
+        
+        # Telemetry updates
+        if cleaned_body.strip() and not is_master and key_record:
+            try:
+                db.table("api_keys").update({
+                    "requests_used": (key_record.get('requests_used') or 0) + 1,
+                    "last_used_at": datetime.utcnow().isoformat()
+                }).eq("id", key_record['id']).execute()
+            except Exception as up_err:
+                print(f"[TELEMETRY_ERR] {up_err}")
+                
+        # API Log
+        try:
+            status_str = "success" if cleaned_body.strip() else "failed"
+            masked_q = f"{target_query[:3]}***@{target_query.split('@')[-1]}" if '@' in target_query else target_query
+            db.table("api_logs").insert({
+                "api_key_id": key_record.get('id') if not is_master else None,
+                "masked_number": f"EMAIL: {masked_q}",
+                "status": status_str,
+                "response_time_ms": int((time.time() - start_time) * 1000),
+                "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+            }).execute()
+        except: pass
+        
+        # Parse if JSON
+        try:
+            parsed = resp.json()
+            cleaned_json = clean_branding_recursive(parsed)
+            return make_api_response({
+                "status": "success",
+                "results": cleaned_json
+            })
+        except:
+            parsed_records = parse_raw_text_to_records(text, target_query)
+            if parsed_records:
+                return make_api_response({
+                    "status": "success",
+                    "results": parsed_records,
+                    "raw_results": cleaned_body
+                })
+            return make_api_response({
+                "status": "success",
+                "results": {},
+                "raw_results": cleaned_body
+            })
+            
+    except Exception as fetch_err:
+        print(f"[Email Fetch Error] {fetch_err}")
+        try:
+            masked_q = f"{target_query[:3]}***@{target_query.split('@')[-1]}" if '@' in target_query else target_query
+            db.table("api_logs").insert({
+                "api_key_id": key_record.get('id') if not is_master else None,
+                "masked_number": f"EMAIL: {masked_q}",
+                "status": "failed",
+                "response_time_ms": int((time.time() - start_time) * 1000),
+                "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+            }).execute()
+        except: pass
+        return make_api_response({"status": "error", "message": "Third-party lookup engine is currently unresponsive"})
 
 @app.get("/api/identity")
 async def identity_lookup(

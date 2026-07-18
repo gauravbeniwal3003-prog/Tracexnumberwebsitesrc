@@ -4,7 +4,7 @@
  */
 
 import { motion, AnimatePresence } from 'motion/react';
-import { User, Phone, Mail, Home, Hash, MapPin, Building2, UserCircle2, Copy, Check, ShieldCheck, Share2, Car } from 'lucide-react';
+import { User, Phone, Mail, Home, Hash, MapPin, Building2, UserCircle2, Copy, Check, ShieldCheck, Share2, Car, Lock, Database } from 'lucide-react';
 import { useState } from 'react';
 import { LookupResult } from '../services/api.ts';
 
@@ -170,6 +170,8 @@ ${customLines}${addrLine}
       else if (lowerK.includes('aadhar') || lowerK.includes('card') || lowerK.includes('adhr') || lowerK.includes('uid') || lowerK.includes('pan') || lowerK.includes('pn')) { icon = ShieldCheck; color = "text-cyan-400"; }
       else if (lowerK.includes('bank') || lowerK.includes('ifsc') || lowerK.includes('branch') || lowerK.includes('acc')) { icon = Building2; color = "text-amber-400"; }
       else if (lowerK.includes('mail')) { icon = Mail; color = "text-rose-400"; }
+      else if (lowerK.includes('password') || lowerK.includes('leak')) { icon = Lock; color = "text-red-400"; }
+      else if (lowerK.includes('platform') || lowerK.includes('database') || lowerK.includes('source')) { icon = Database; color = "text-yellow-400"; }
       else if (lowerK.includes('city') || lowerK.includes('state') || lowerK.includes('circle') || lowerK.includes('dist') || lowerK.includes('pin')) { icon = MapPin; color = "text-purple-400"; }
       else if (lowerK.includes('chassis') || lowerK.includes('engine') || lowerK.includes('vehicle') || lowerK.includes('car') || lowerK.includes('fuel') || lowerK.includes('model') || lowerK.includes('insurance') || lowerK.includes('rto') || lowerK.includes('reg') || lowerK.includes('maker') || lowerK.includes('class')) { icon = Car; color = "text-indigo-400"; }
       

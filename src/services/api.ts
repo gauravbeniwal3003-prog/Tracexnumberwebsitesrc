@@ -439,11 +439,41 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
 };
 
 export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> => {
-  return {
-    status: false,
-    results: {},
-    error: "Telegram lookup is currently under maintenance. Please try again later."
-  };
+  const cleanTelegram = telegramId.trim().replace(/^@/, '');
+  
+  console.log('Searching TRACEXDATA Telegram Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=telegram&query=${encodeURIComponent(cleanTelegram)}`;
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+
+    const apiData = await fetchWithFallback(endpoint, 'telegram', cleanTelegram, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || 'No records found for this Telegram ID.'
+      };
+    }
+  } catch (error: any) {
+    console.error(`Telegram lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
+  }
 };
 
 // Deep recursive branding and promotional info scrubber
@@ -570,7 +600,7 @@ export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'ban
 
 export const fetchWithFallback = async (
   endpoint: string,
-  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email',
+  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email' | 'telegram',
   query: string,
   token: string
 ): Promise<any> => {
