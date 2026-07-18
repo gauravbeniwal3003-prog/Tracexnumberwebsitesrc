@@ -1463,65 +1463,29 @@ app.get("/api/lookup", async (req, res) => {
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
       const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
-      const searchParams = new URLSearchParams();
-      searchParams.set("key", String(key)); 
-      searchParams.set("query", targetQuery);
-
-      const target = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 
-      // Try new phone API first
       try {
-        console.log(`SaaS lookup querying new phone API: ${newApiUrl}`);
+        console.log(`SaaS lookup querying phone API: ${newApiUrl}`);
         const response = await fetch(newApiUrl, {
           headers: { 
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json"
+            "Accept": "application/json,text/plain,*/*"
           }
         });
+        responseStatus = response.status;
         if (response.ok) {
           const text = await response.text();
-          let parsed: any = null;
           try {
-            parsed = JSON.parse(text);
+            rawData = JSON.parse(text);
           } catch (e) {
             console.log("SaaS phone lookup text is not JSON, parsing plain text...");
-            parsed = parsePhonePlainText(text);
-          }
-          if (parsed && typeof parsed === 'object') {
-            const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records || parsed.status === true || (parsed.status === undefined && Object.keys(parsed).length > 0) || parsed.message;
-            if (hasData) {
-              rawData = parsed;
-              responseStatus = response.status;
-            }
+            rawData = parsePhonePlainText(text);
           }
         }
       } catch (err) {
-        console.error("SaaS new phone API failed, falling back:", err);
-      }
-
-      // Fallback if new API didn't return data
-      if (!rawData) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        try {
-          console.log(`SaaS lookup falling back to old target: ${target}`);
-          const response = await fetch(target, {
-            headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            rawData = await response.json();
-            responseStatus = response.status;
-          }
-        } catch (fetchErr: any) {
-          clearTimeout(timeoutId);
-          console.error("SaaS old phone fallback failed:", fetchErr);
-        }
+        console.error("SaaS phone API failed:", err);
       }
 
       if (rawData) {
@@ -1537,40 +1501,16 @@ app.get("/api/lookup", async (req, res) => {
           }
         }
 
-        let recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
-        if (!recordsRaw || (typeof recordsRaw === 'object' && Object.keys(recordsRaw).length === 0)) {
-          if (rawData.name || rawData.mobile || rawData.father_name) {
-            recordsRaw = [rawData];
-          }
-        }
-
-        let parsedRecords: any[] = [];
-        if (Array.isArray(recordsRaw)) {
-          parsedRecords = recordsRaw;
-        } else if (recordsRaw && typeof recordsRaw === 'object') {
-          if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
-            parsedRecords = [recordsRaw];
-          } else {
-            parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
-          }
-        }
-
-        const filtered = formatUnifiedSaaSResponse({
-          type: 'phone',
-          query: targetQuery,
-          expiresAt: keyRecord.expires_at,
-          planName: keyRecord.plan_name,
-          requestsUsed: newCount,
-          records: parsedRecords
-        });
-        
         await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
-        return res.status(responseStatus).json(filtered);
+        
+        // Scrub all branding recursively and forward raw response directly
+        const cleanedRaw = scrubAllBranding(rawData);
+        return res.status(responseStatus).json(cleanedRaw);
       } else {
         await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
         return res.status(502).json({ 
           status: "error", 
-          message: "Downstream Provider: Unresponsive or Invalid JSON Response"
+          message: "Downstream Provider: Unresponsive or Invalid Response"
         });
       }
     } else if ((lookupType as string) === 'telegram') {
