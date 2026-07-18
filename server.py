@@ -2140,13 +2140,11 @@ async def saas_lookup(
         # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
         target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
 
-        # Execution
-        if "exploitsindia.site" in target_template or "numberimfo.vishalboss.sbs" in target_template:
+        # Execution - Always map number lookups to the new exploitsindia API to prevent old/broken configs
+        if "exploitsindia.site" in target_template or "numberimfo.vishalboss.sbs" in target_template or "techvishalboss.com" in target_template or "lookup.php" in target_template:
             final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
         elif "ENTER_TARGET_HERE" not in target_template:
-            key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
-            service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
-            final_url = f"{target_template.rstrip('/')}?key={key_param}&service={service_param}&number={num}"
+            final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
         else:
             final_url = target_template.replace("ENTER_TARGET_HERE", num)
         
