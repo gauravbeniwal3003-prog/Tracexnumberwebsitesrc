@@ -2505,6 +2505,7 @@ async def email_lookup(
 ):
     import re
     import time
+    import urllib.parse
     from datetime import datetime, timezone
     
     start_time = time.time()
