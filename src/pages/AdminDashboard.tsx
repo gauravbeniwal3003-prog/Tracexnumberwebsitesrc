@@ -1343,6 +1343,8 @@ export default function AdminDashboard() {
                               targetUrl = `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) {
                               targetUrl = `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325`;
+                            } else if (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) {
+                              targetUrl = `${baseDomain}/api/email?key=${key.api_key}&query=gauravbeniwal303@gmail.com`;
                             } else {
                               targetUrl = `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                             }
@@ -1432,7 +1434,7 @@ export default function AdminDashboard() {
                                  onClick={() => {
                                    const planUpper = String(key.plan_name || "").toUpperCase();
                                    const baseDomain = getApiBaseUrl().replace(/\/$/, "");
-                                    const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) ? `${baseDomain}/api/email?key=${key.api_key}&query=test@gmail.com` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
+                                    const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) ? `${baseDomain}/api/email?key=${key.api_key}&query=gauravbeniwal303@gmail.com` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                                    navigator.clipboard.writeText(targetUrl);
                                    alert('Full API URL Copied!');
                                  }}

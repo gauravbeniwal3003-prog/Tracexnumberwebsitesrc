@@ -323,6 +323,8 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                               return `${getApiBaseUrl().replace(/\/$/, "")}/api/identity?key=${purchasedApiKey}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
                               return `${getApiBaseUrl().replace(/\/$/, "")}/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
+                            } else if (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) {
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/email?key=${purchasedApiKey}&query=gauravbeniwal303@gmail.com`;
                             } else {
                               return `${getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=${purchasedApiKey}&number=9879712345`;
                             }
@@ -342,6 +344,8 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                               targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/identity?key=${purchasedApiKey}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
                               targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/bank?key=${purchasedApiKey}&query=ABCD0001325`;
+                            } else if (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) {
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/email?key=${purchasedApiKey}&query=gauravbeniwal303@gmail.com`;
                             } else {
                               targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=${purchasedApiKey}&number=9879712345`;
                             }

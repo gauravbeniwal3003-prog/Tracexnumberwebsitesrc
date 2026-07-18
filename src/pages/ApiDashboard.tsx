@@ -219,16 +219,22 @@ export default function ApiDashboard() {
                           onClick={() => {
                             const planUpper = String(key.plan_name || "").toUpperCase();
                             let targetUrl = "";
-                            const baseDomain = getApiBaseUrl();
+                            const baseDomain = getApiBaseUrl().replace(/\/$/, "");
                             
                             if (planUpper.includes("TELEGRAM")) {
-                              targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&query=@gaurav_beniwal_0001`;
+                              targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001`;
+                            } else if (planUpper.includes("VEHICLE")) {
+                              targetUrl = `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268`;
+                            } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
+                              targetUrl = `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C`;
                             } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) {
                               targetUrl = `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732`;
                             } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
                               targetUrl = `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325`;
+                            } else if (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) {
+                              targetUrl = `${baseDomain}/api/email?key=${key.api_key}&query=gauravbeniwal303@gmail.com`;
                             } else {
-                              targetUrl = `${baseDomain}/api/lookup?key=${key.api_key}&numquery=9879712345`;
+                              targetUrl = `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                             }
                             copyToClipboard(targetUrl, `${key.id}-endpoint`);
                           }}
