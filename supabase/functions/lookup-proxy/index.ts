@@ -22,8 +22,11 @@ serve(async (req) => {
       )
     }
 
-    const lookupUrl = "https://exploitsindia.site//osint-api/number.php";
-    const apiUrl = `${lookupUrl}?exploits=${encodeURIComponent(query)}`;
+    const lookupUrl = "https://techvishalboss.com/api/v1/lookup.php";
+    const lookupKey = Deno.env.get('LOOKUP_API_KEY') || "TVB_SGL_C24439EA";
+    const lookupService = "number";
+
+    const apiUrl = `${lookupUrl}?key=${lookupKey}&service=${lookupService}&number=${query}`;
     
     console.log(`Searching TRACEXDATA for: ${query}`);
 

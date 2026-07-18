@@ -2122,8 +2122,33 @@ async def saas_lookup(
             except Exception as e_tg:
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
-        # Always map number lookups to the new exploitsindia API as requested
-        final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
+        # Hardcoded primary engine source as requested to avoid environment variable dependency
+        target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
+        
+        try:
+            settings_query = db.table("api_settings").select("real_api_url").limit(1).execute()
+            if settings_query.data and len(settings_query.data) > 0:
+                if settings_query.data[0].get('real_api_url'):
+                    target_template = settings_query.data[0]['real_api_url']
+        except Exception as e:
+            print(f"[SETTINGS_ERR] {e}")
+            pass
+        
+        if not target_template:
+            target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
+
+        # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
+        target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
+
+        # Execution
+        if "exploitsindia.site" in target_template or "numberimfo.vishalboss.sbs" in target_template:
+            final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
+        elif "ENTER_TARGET_HERE" not in target_template:
+            key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
+            service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
+            final_url = f"{target_template.rstrip('/')}?key={key_param}&service={service_param}&number={num}"
+        else:
+            final_url = target_template.replace("ENTER_TARGET_HERE", num)
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
@@ -2137,25 +2162,31 @@ async def saas_lookup(
         
         for attempt in range(1, max_attempts + 1):
             try:
-                print(f"[LOOKUP_DIAGNOSTIC] Fetching compiled URL: {final_url}")
+                print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Fetching compiled URL: {final_url}")
                 resp = requests.get(final_url, timeout=12, headers=headers)
+                print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Status Code: {resp.status_code}")
                 
                 if resp.status_code != 200:
+                    print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Bad status content: {resp.text[:400]}")
                     raise Exception(f"HTTP code {resp.status_code}")
                 
                 body_text = resp.text.strip()
                 if body_text.startswith("<!DOCTYPE") or body_text.startswith("<html"):
+                    print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} - Received HTML instead of JSON")
                     raise Exception("HTML page blocked / Cloudflare gate challenge")
                 
                 try:
                     payload = resp.json()
                 except Exception as json_err:
+                    print(f"[LOOKUP_DIAGNOSTIC] Response is not JSON ({json_err}), parsing as plain text...")
                     payload = parse_raw_text_to_records(body_text)
                 break
             except Exception as lookup_err:
+                print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} failed: {lookup_err}")
                 last_error_msg = f"ServerDown: Data source unresponsive ({lookup_err})"
                 if attempt < max_attempts:
                     sleep_time = delays[attempt - 1]
+                    print(f"[LOOKUP_DIAGNOSTIC] Sleeping {sleep_time}s before next attempt...")
                     time.sleep(sleep_time)
 
         if payload is None:
@@ -2172,15 +2203,15 @@ async def saas_lookup(
         else:
             usage_display = 0
 
-        # Delivery - Just filter branding and forward the raw response!
-        output = clean_branding_recursive(payload)
+        # Delivery
+        output = build_output(payload, num, license, usage_display)
 
         # Logging
         try:
             db.table("api_logs").insert({
                 "api_key_id": license.get('id') if not is_master else None,
                 "masked_number": f"{num[:5]}****",
-                "status": "success",
+                "status": output['status'],
                 "response_time_ms": int((time.time() - start_time) * 1000),
                 "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
             }).execute()
