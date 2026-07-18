@@ -1432,7 +1432,7 @@ export default function AdminDashboard() {
                                  onClick={() => {
                                    const planUpper = String(key.plan_name || "").toUpperCase();
                                    const baseDomain = getApiBaseUrl().replace(/\/$/, "");
-                                    const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
+                                    const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) ? `${baseDomain}/api/email?key=${key.api_key}&query=test@gmail.com` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                                    navigator.clipboard.writeText(targetUrl);
                                    alert('Full API URL Copied!');
                                  }}
@@ -1676,6 +1676,7 @@ export default function AdminDashboard() {
                     <option value="BA&NK Lookup (1 Month)">BA&NK Lookup (1 Month)</option>
                     <option value="Vehicle Lookup (1 Month)">Vehicle Lookup (1 Month)</option>
                     <option value="PN Card Lookup (1 Month)">PN Card Lookup (1 Month)</option>
+                    <option value="Email Lookup (1 Month)">Email Lookup (1 Month)</option>
                     <option value="All Combo Special (1 Month)">All Combo Special (1 Month)</option>
                   </select>
                   <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-[0.1em] px-1 block mt-1">
@@ -1772,6 +1773,7 @@ export default function AdminDashboard() {
                       <option value="BA&NK Lookup (1 Month)">BA&NK Lookup (1 Month)</option>
                       <option value="Vehicle Lookup (1 Month)">Vehicle Lookup (1 Month)</option>
                       <option value="PN Card Lookup (1 Month)">PN Card Lookup (1 Month)</option>
+                      <option value="Email Lookup (1 Month)">Email Lookup (1 Month)</option>
                       <option value="All Combo Special (1 Month)">All Combo Special (1 Month)</option>
                     </select>
                   </div>

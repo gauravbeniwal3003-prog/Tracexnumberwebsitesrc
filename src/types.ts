@@ -85,6 +85,11 @@ export const API_PLANS: PricingPlan[] = [
   { id: 'api_aadhaar_to_pan_2000', name: 'Aadhaar To PAN (22 Lookups)', price: 2000, type: 'credits', value: 22 },
   { id: 'api_aadhaar_to_pan_5000', name: 'Aadhaar To PAN (60 Lookups)', price: 5000, type: 'credits', value: 60 },
   { id: 'api_aadhaar_to_pan_10000', name: 'Aadhaar To PAN (15 Days)', price: 10000, type: 'unlimited', value: 360 },
+
+  // Email
+  { id: 'api_email_20', name: 'Email Lookup (40 Lookups)', price: 20, type: 'credits', value: 40 },
+  { id: 'api_email_50', name: 'Email Lookup (200 Lookups)', price: 50, type: 'credits', value: 200 },
+  { id: 'api_email_350', name: 'Email Lookup (1 Month)', price: 350, type: 'unlimited', value: 720 },
 ];
 
 export const SPECIAL_DEAL_PLAN: PricingPlan = {

@@ -142,6 +142,7 @@ export default function App() {
         <Route path="/bank" element={<Home service="bnk" />} />
         <Route path="/vehicle" element={<Home service="vehicle" />} />
         <Route path="/pancard" element={<Home service="pancard" />} />
+        <Route path="/email" element={<Home service="email" />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/contactus" element={<Contact />} />
         <Route path="/refund" element={<Refund />} />
@@ -212,7 +213,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' }) {
+function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' }) {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const handleOpenLogin = () => {
@@ -427,6 +428,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setError('Please enter a valid PN/PAN Card Number (e.g., ABCDE1234F).');
         return;
       }
+    } else if (service === 'email') {
+      if (!targetVal.includes('@') || !targetVal.includes('.')) {
+        setError('Please enter a valid Email Address (e.g., test@gmail.com).');
+        return;
+      }
     }
 
     let creditCost = 2;
@@ -442,6 +448,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       creditCost = 10;
     } else if (service === 'aadhaar_to_pan') {
       creditCost = 150;
+    } else if (service === 'email') {
+      creditCost = 20;
     }
 
     if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
@@ -483,7 +491,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       // Import corresponding lookups
-      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupPancard, lookupAadhaarToPan } = await import('./services/api.ts');
+      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
 
       if (service === 'aadhaar_to_pan') {
         setAadhaarPanResult(null);
@@ -559,6 +567,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupVehicle(targetVal);
       } else if (service === 'pancard') {
         data = await lookupPancard(targetVal);
+      } else if (service === 'email') {
+        data = await lookupEmail(targetVal);
       }
 
       const hasValidData = (data.results && Object.keys(data.results).length > 0) || (data.raw_results && data.raw_results.trim().length > 0);
@@ -608,6 +618,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'vehicle') return 'VIP Vehicle Lookup';
     if (service === 'pancard') return 'VIP PN/PAN Card Lookup';
     if (service === 'aadhaar_to_pan') return 'VIP Aadhaar to PAN Lookup';
+    if (service === 'email') return 'VIP Email Lookup';
     return 'VIP Number Details Lookup';
   };
 
@@ -618,6 +629,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'vehicle') return 'Enter Vehicle Number (e.g. BR07PB6268)...';
     if (service === 'pancard') return 'Enter PN/PAN Card Number (e.g. NTEPK1628C)...';
     if (service === 'aadhaar_to_pan') return 'Enter 12-digit Aadhaar Number...';
+    if (service === 'email') return 'Enter Email Address (e.g. test@gmail.com)...';
     return 'Search number...';
   };
 
@@ -806,6 +818,16 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             💳 PN CARD (10 CTR)
           </Link>
           <Link
+            to="/email"
+            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+              service === 'email'
+                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
+                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            📧 EMAIL (20 CTR)
+          </Link>
+          <Link
             to="/panfind"
             className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
               service === 'aadhaar_to_pan'
@@ -870,6 +892,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                       setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
                     } else if (service === 'pancard') {
                       setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
+                    } else if (service === 'email') {
+                      setPhoneNumber(val.trim().toLowerCase());
                     } else {
                       setPhoneNumber(val.replace(/[^a-zA-Z0-9_\s\-]/g, '').slice(0, 40));
                     }

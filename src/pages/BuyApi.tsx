@@ -15,7 +15,8 @@ import {
   Car, 
   Landmark, 
   CreditCard,
-  Info
+  Info,
+  Mail
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -153,6 +154,23 @@ const SERVICES: ApiService[] = [
       { id: 'api_aadhaar_to_pan_2000', name: 'Aadhaar To PAN Pro', price: 2000, limit: '22 Lookups', duration: '30 Days validity' },
       { id: 'api_aadhaar_to_pan_5000', name: 'Aadhaar To PAN Enterprise', price: 5000, limit: '60 Lookups', duration: '30 Days validity', popular: true },
       { id: 'api_aadhaar_to_pan_10000', name: 'Fortnightly Unlimited', price: 10000, limit: 'Unlimited Lookups', duration: '15 Days validity' }
+    ]
+  },
+  {
+    id: 'email',
+    name: 'Email Lookup API',
+    icon: Mail,
+    description: 'Trace email addresses to search for associated physical profiles or leaked registry entries.',
+    badge: 'Plans from ₹20',
+    features: [
+      'Raw Response Forwarding (No Branding)',
+      'High speed database lookup API',
+      'Daily Lookup Limit of 1000 by default'
+    ],
+    plans: [
+      { id: 'api_email_20', name: 'Email Starter', price: 20, limit: '40 Lookups', duration: '30 Days validity' },
+      { id: 'api_email_50', name: 'Email Basic', price: 50, limit: '200 Lookups', duration: '30 Days validity' },
+      { id: 'api_email_350', name: 'Email Monthly', price: 350, limit: 'Unlimited Lookups (1K/day)', duration: '1 Month validity', popular: true }
     ]
   }
 ];

@@ -570,7 +570,7 @@ export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'ban
 
 export const fetchWithFallback = async (
   endpoint: string,
-  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle',
+  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email',
   query: string,
   token: string
 ): Promise<any> => {
@@ -735,6 +735,44 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
     }
   } catch (error: any) {
     console.error(`PN Card lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
+  }
+};
+
+export const lookupEmail = async (email: string): Promise<ApiResponse> => {
+  const cleanEmail = email.trim().toLowerCase();
+  
+  console.log('Searching TRACEXDATA Email Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=email&query=${encodeURIComponent(cleanEmail)}`;
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+
+    const apiData = await fetchWithFallback(endpoint, 'email', cleanEmail, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || 'No records found for this Email.'
+      };
+    }
+  } catch (error: any) {
+    console.error(`Email lookup error:`, error);
     return {
       status: false,
       results: {},
