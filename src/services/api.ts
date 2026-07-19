@@ -496,7 +496,7 @@ const scrubBranding = (obj: any): any => {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'success', 'status', 'found', 'message', 'api_info', 'powered_by', 'owner', 'contact', 'buy_api', 'support', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy', 'website', 'telegram'].includes(lowerKey)) {
+      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy'].includes(lowerKey)) {
         continue;
       }
       cleaned[key] = scrubBranding(val);
@@ -600,7 +600,7 @@ export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'ban
 
 export const fetchWithFallback = async (
   endpoint: string,
-  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email' | 'telegram',
+  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email' | 'telegram' | 'veh_owner_num',
   query: string,
   token: string
 ): Promise<any> => {
@@ -727,6 +727,43 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
     }
   } catch (error: any) {
     console.error(`Vehicle lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
+  }
+};
+
+export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse> => {
+  const cleanVehicleNo = vehicleNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  console.log('Searching TRACEXDATA Vehicle To Owner Number Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=veh_owner_num&query=${cleanVehicleNo}`;
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+
+    const apiData = await fetchWithFallback(endpoint, 'veh_owner_num', cleanVehicleNo, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || apiData?.results?.error || 'No records found for this Vehicle Number.'
+      };
+    }
+  } catch (error: any) {
+    console.error(`Vehicle To Owner Number lookup error:`, error);
     return {
       status: false,
       results: {},

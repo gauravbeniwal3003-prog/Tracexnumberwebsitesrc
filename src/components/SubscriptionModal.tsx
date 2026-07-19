@@ -315,6 +315,8 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             const planUpper = String(purchasedPlanName || "").toUpperCase();
                             if (planUpper.includes("TELEGRAM")) {
                               return `${getApiBaseUrl().replace(/\/$/, "")}/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
+                            } else if (planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE TO OWNER") || planUpper.includes("OWNER")) {
+                              return `${getApiBaseUrl().replace(/\/$/, "")}/api/veh-owner-num?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("VEHICLE")) {
                               return `${getApiBaseUrl().replace(/\/$/, "")}/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
@@ -336,6 +338,8 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             let targetUrl = "";
                             if (planUpper.includes("TELEGRAM")) {
                               targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/telegram?key=${purchasedApiKey}&api=gaurav_beniwal_0001`;
+                            } else if (planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE TO OWNER") || planUpper.includes("OWNER")) {
+                              targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/veh-owner-num?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("VEHICLE")) {
                               targetUrl = `${getApiBaseUrl().replace(/\/$/, "")}/api/vehicle?key=${purchasedApiKey}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {

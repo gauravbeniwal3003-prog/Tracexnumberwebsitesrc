@@ -1335,6 +1335,8 @@ export default function AdminDashboard() {
                             let targetUrl = "";
                             if (planUpper.includes("TELEGRAM")) {
                               targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001`;
+                            } else if (planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE TO OWNER") || planUpper.includes("OWNER")) {
+                              targetUrl = `${baseDomain}/api/veh-owner-num?key=${key.api_key}&query=BR07PB6268`;
                             } else if (planUpper.includes("VEHICLE")) {
                               targetUrl = `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {
@@ -1434,7 +1436,7 @@ export default function AdminDashboard() {
                                  onClick={() => {
                                    const planUpper = String(key.plan_name || "").toUpperCase();
                                    const baseDomain = getApiBaseUrl().replace(/\/$/, "");
-                                    const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) ? `${baseDomain}/api/email?key=${key.api_key}&query=gauravbeniwal303@gmail.com` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
+                                   const targetUrl = planUpper.includes("TELEGRAM") ? `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001` : (planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE TO OWNER") || planUpper.includes("OWNER")) ? `${baseDomain}/api/veh-owner-num?key=${key.api_key}&query=BR07PB6268` : planUpper.includes("VEHICLE") ? `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268` : (planUpper.includes("PAN") || planUpper.includes("PN")) ? `${baseDomain}/api/pancard?key=${key.api_key}&query=NTEPK1628C` : (planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH")) ? `${baseDomain}/api/identity?key=${key.api_key}&query=381933049732` : (planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("BA&NK")) ? `${baseDomain}/api/bank?key=${key.api_key}&query=ABCD0001325` : (planUpper.includes("EMAIL") || planUpper.includes("MAIL")) ? `${baseDomain}/api/email?key=${key.api_key}&query=gauravbeniwal303@gmail.com` : `${baseDomain}/api/lookup?key=${key.api_key}&number=9879712345`;
                                    navigator.clipboard.writeText(targetUrl);
                                    alert('Full API URL Copied!');
                                  }}
@@ -1677,6 +1679,7 @@ export default function AdminDashboard() {
                     <option value="Identity Card Lookup (1 Month)">Identity Card Lookup (1 Month)</option>
                     <option value="BA&NK Lookup (1 Month)">BA&NK Lookup (1 Month)</option>
                     <option value="Vehicle Lookup (1 Month)">Vehicle Lookup (1 Month)</option>
+                    <option value="Vehicle To Owner Lookup (1 Month)">Vehicle To Owner Lookup (1 Month)</option>
                     <option value="PN Card Lookup (1 Month)">PN Card Lookup (1 Month)</option>
                     <option value="Email Lookup (1 Month)">Email Lookup (1 Month)</option>
                     <option value="All Combo Special (1 Month)">All Combo Special (1 Month)</option>

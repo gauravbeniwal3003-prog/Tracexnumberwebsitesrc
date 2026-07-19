@@ -1527,6 +1527,8 @@ async def user_lookup(
         credit_cost = 150
     elif service_clean == 'email':
         credit_cost = 20
+    elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
+        credit_cost = 15
         
     # Check if daily free credit top-up is due before evaluating current credits
     from datetime import timedelta
@@ -1672,6 +1674,9 @@ async def user_lookup(
                 api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_query)}"
             elif service_clean == 'email':
                 api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+            elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
                 
             if api_url:
                 print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
@@ -1771,6 +1776,13 @@ async def saas_lookup(
                 request=request,
                 key=key,
                 query=query or number or numquery
+            )
+        elif service_lower in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm"]:
+            rc_arg = request.query_params.get("rc") or query or number or numquery
+            return await veh_owner_num_lookup(
+                request=request,
+                key=key,
+                rc=rc_arg
             )
 
 
@@ -1993,7 +2005,6 @@ async def saas_lookup(
 
         # 8. Intelligence Source Dispatch
         if is_telegram_query:
-            return make_api_response({"status": "error", "message": "Telegram lookup is currently under maintenance. Please try again later."})
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num if num.startswith('@') else f"@{num}"
             api_url = f"https://exploitsindia.site//osint-api/telegram.php?exploits={requests.utils.quote(target_username)}"
@@ -3278,6 +3289,253 @@ async def vehicle_lookup(
             return make_api_response({"status": "error", "message": "api error"})
     except Exception as general_err:
         print(f"[VEHICLE_ERR] {general_err}")
+        return make_api_response({"status": "error", "message": "api error"})
+
+
+@app.get("/api/veh-owner-num")
+async def veh_owner_num_lookup(
+    request: Request,
+    key: Optional[str] = Query(None),
+    rc: Optional[str] = Query(None),
+    query: Optional[str] = Query(None),
+    vehicle: Optional[str] = Query(None),
+    vehicle_no: Optional[str] = Query(None),
+    exploits: Optional[str] = Query(None)
+):
+    import re
+    import time
+    from datetime import datetime
+    
+    start_time = time.time()
+    target_query = (rc or query or vehicle or vehicle_no or exploits or "").strip()
+    
+    if not target_query:
+        return make_api_response({"status": "error", "message": "Vehicle query parameter is required"})
+        
+    # Clean to alphanumeric and uppercase
+    target_query = re.sub(r'[^a-zA-Z0-9]', '', target_query).upper()
+    if len(target_query) < 3:
+        return make_api_response({"status": "error", "message": "Invalid Query: Vehicle plate number must be at least 3 characters long"})
+        
+    db = get_supabase()
+    if not db:
+        return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
+        
+    is_master = key == INTERNAL_MASTER_KEY
+    key_record = None
+    
+    try:
+        if is_master:
+            key_record = {
+                "id": "master",
+                "plan_name": "Internal Master API",
+                "status": "active",
+                "requests_used": 0,
+                "request_limit": None
+            }
+        else:
+            if not key:
+                return make_api_response({"status": "error", "message": "API key is required"})
+                
+            try:
+                auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+                if not auth_query.data or len(auth_query.data) == 0:
+                    return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
+                    
+                key_record = auth_query.data[0]
+                if key_record.get('status') != 'active':
+                    return make_api_response({
+                        "status": "error",
+                        "message": "Subscription Blocked: API key expired or suspended",
+                        "buy_url": "https://tracexdata-api.onrender.com/buy-api"
+                    })
+                    
+                # Expiry check
+                if key_record.get('expires_at'):
+                    try:
+                        clean_expires = key_record['expires_at'].replace('Z', '')
+                        if '+' in clean_expires:
+                            clean_expires = clean_expires.split('+')[0]
+                        exp_date = datetime.fromisoformat(clean_expires)
+                        if exp_date < datetime.utcnow():
+                            return make_api_response({"status": "error", "message": "Key Expired: Please renew subscription"})
+                    except Exception as ex_err:
+                        print(f"[EXP_PARSE_ERR] {ex_err}")
+                        
+                # Usage check
+                requests_used = key_record.get('requests_used') or 0
+                limit = key_record.get('request_limit')
+                if limit is not None and int(requests_used) >= int(limit):
+                    return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
+                    
+                # Permission check
+                plan_upper = str(key_record.get('plan_name') or "").upper()
+                is_allowed = any(p in plan_upper for p in ["VEH_OWNER", "VEH_NUMM", "VEHICLE_TO_NUMBER", "VEHICLE", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
+                if not is_allowed:
+                    return make_api_response({
+                        "status": "error",
+                        "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated a 'vehicle to owner number' query."
+                    })
+            except Exception as db_err:
+                print(f"[DB_ERR] {db_err}")
+                return make_api_response({"status": "error", "message": "api error"})
+                
+        # Check cache first
+        cache_key = f"OWN_{target_query}"
+        try:
+            cache_query = db.table("vehicle_search_results").select("raw_data").eq("vehicle_number", cache_key).execute()
+            if cache_query.data and len(cache_query.data) > 0:
+                cached_row = cache_query.data[0]
+                cached_raw_data = cached_row.get("raw_data")
+                if cached_raw_data and isinstance(cached_raw_data, dict):
+                    # Check if dummy
+                    is_cache_invalid = cached_raw_data.get("raw_data") and (cached_raw_data.get("raw_data") == "N/A" or not str(cached_raw_data.get("raw_data")).strip())
+                    if not is_cache_invalid:
+                        print(f"[CACHE HIT] Serving Vehicle To Owner Number lookup for {target_query} from database cache.")
+                        
+                        # Telemetry update
+                        if not is_master and key_record and key_record.get('id'):
+                            try:
+                                db.table("api_keys").update({
+                                    "requests_used": int(key_record.get('requests_used') or 0) + 1,
+                                    "last_used_at": datetime.utcnow().isoformat()
+                                }).eq("id", key_record.get('id')).execute()
+                            except: pass
+                            
+                        try:
+                            masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                            db.table("api_logs").insert({
+                                "api_key_id": key_record.get('id') if not is_master else None,
+                                "masked_number": f"VEH_OWNER: {masked_q}",
+                                "status": "success",
+                                "response_time_ms": int((time.time() - start_time) * 1000),
+                                "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                            }).execute()
+                        except: pass
+                        
+                        return make_api_response({"status": "success", "results": cached_raw_data})
+        except Exception as cache_err:
+            print(f"[CACHE_ERR] Vehicle owner number cache check error: {cache_err}")
+
+        # Proxy fetch
+        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
+            "Accept": "application/json,text/plain,*/*"
+        }
+        
+        try:
+            resp = requests.get(api_url, timeout=15, headers=headers)
+            if resp.status_code != 200:
+                try:
+                    masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                    db.table("api_logs").insert({
+                        "api_key_id": key_record.get('id') if not is_master else None,
+                        "masked_number": f"VEH_OWNER: {masked_q}",
+                        "status": "failed",
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                    }).execute()
+                except: pass
+                return make_api_response({"status": "error", "message": "api error"})
+                
+            text = resp.text or ""
+            
+            # JSON parsing
+            is_json = False
+            parsed_data = None
+            try:
+                parsed_data = json.loads(text)
+                is_json = True
+            except Exception:
+                cleaned_body = clean_branding_text_line_by_line(text)
+                try:
+                    parsed_data = json.loads(cleaned_body)
+                    is_json = True
+                except Exception:
+                    parsed_data = {"raw_data": cleaned_body}
+
+            # Error detection
+            is_error = False
+            if is_json and parsed_data:
+                status_str = str(parsed_data.get("status") or parsed_data.get("success") or "").lower()
+                message_str = str(parsed_data.get("message") or parsed_data.get("error") or "").lower()
+                if status_str in ["error", "fail", "failed", "false"] or "no result" in message_str or "no records found" in message_str or "not found" in message_str:
+                    is_error = True
+            else:
+                lower_text = text.lower()
+                if "no result" in lower_text or "no records found" in lower_text or "error" in lower_text or not text.strip() or "unknown" in lower_text:
+                    is_error = True
+
+            if is_error:
+                try:
+                    masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                    db.table("api_logs").insert({
+                        "api_key_id": key_record.get('id') if not is_master else None,
+                        "masked_number": f"VEH_OWNER: {masked_q}",
+                        "status": "failed",
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                    }).execute()
+                except: pass
+                return make_api_response({"status": "error", "message": "api error"})
+
+            if isinstance(parsed_data, dict):
+                if "api_creator" in parsed_data:
+                    del parsed_data["api_creator"]
+                if "api_creator" in parsed_data.get("data", {}):
+                    del parsed_data["data"]["api_creator"]
+
+            cleaned_data = clean_branding_recursive(parsed_data)
+            
+            # Save successful search result in database cache using unique prefix
+            if cleaned_data and isinstance(cleaned_data, dict) and len(cleaned_data) > 0:
+                try:
+                    db.table("vehicle_search_results").upsert({
+                        "vehicle_number": cache_key,
+                        "raw_data": cleaned_data
+                    }, on_conflict="vehicle_number").execute()
+                    print(f"[CACHE SAVE] Saved Vehicle To Owner Number lookup for {target_query} to cache.")
+                except Exception as cache_save_err:
+                    print(f"Failed to save Vehicle To Owner Number to cache: {cache_save_err}")
+
+            # Telemetry update
+            if not is_master and key_record and key_record.get('id'):
+                try:
+                    db.table("api_keys").update({
+                        "requests_used": int(key_record.get('requests_used') or 0) + 1,
+                        "last_used_at": datetime.utcnow().isoformat()
+                    }).eq("id", key_record.get('id')).execute()
+                except Exception as up_err:
+                    print(f"[REQS_UP_ERR] {up_err}")
+                    
+            try:
+                masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                db.table("api_logs").insert({
+                    "api_key_id": key_record.get('id') if not is_master else None,
+                    "masked_number": f"VEH_OWNER: {masked_q}",
+                    "status": "success",
+                    "response_time_ms": int((time.time() - start_time) * 1000),
+                    "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                }).execute()
+            except: pass
+            
+            return make_api_response({"status": "success", "results": cleaned_data})
+        except Exception as conn_err:
+            print(f"[CONN_ERR] {conn_err}")
+            try:
+                masked_q = f"{target_query[:3]}****{target_query[-2:]}" if len(target_query) >= 5 else target_query
+                db.table("api_logs").insert({
+                    "api_key_id": key_record.get('id') if not is_master else None,
+                    "masked_number": f"VEH_OWNER: {masked_q}",
+                    "status": "failed",
+                    "response_time_ms": int((time.time() - start_time) * 1000),
+                    "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                }).execute()
+            except: pass
+            return make_api_response({"status": "error", "message": "api error"})
+    except Exception as general_err:
+        print(f"[VEH_OWNER_ERR] {general_err}")
         return make_api_response({"status": "error", "message": "api error"})
 
 

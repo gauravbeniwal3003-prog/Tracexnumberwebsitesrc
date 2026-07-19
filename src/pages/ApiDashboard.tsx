@@ -223,6 +223,8 @@ export default function ApiDashboard() {
                             
                             if (planUpper.includes("TELEGRAM")) {
                               targetUrl = `${baseDomain}/api/telegram?key=${key.api_key}&api=gaurav_beniwal_0001`;
+                            } else if (planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE TO OWNER") || planUpper.includes("OWNER")) {
+                              targetUrl = `${baseDomain}/api/veh-owner-num?key=${key.api_key}&query=BR07PB6268`;
                             } else if (planUpper.includes("VEHICLE")) {
                               targetUrl = `${baseDomain}/api/vehicle?key=${key.api_key}&query=BR07PB6268`;
                             } else if (planUpper.includes("PAN") || planUpper.includes("PN")) {

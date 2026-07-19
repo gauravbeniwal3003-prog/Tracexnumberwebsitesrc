@@ -141,6 +141,7 @@ export default function App() {
         <Route path="/identity" element={<Home service="adhr" />} />
         <Route path="/bank" element={<Home service="bnk" />} />
         <Route path="/vehicle" element={<Home service="vehicle" />} />
+        <Route path="/veh-owner" element={<Home service="veh_owner_num" />} />
         <Route path="/pancard" element={<Home service="pancard" />} />
         <Route path="/email" element={<Home service="email" />} />
         <Route path="/terms" element={<Terms />} />
@@ -213,7 +214,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' }) {
+function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' | 'veh_owner_num' }) {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const handleOpenLogin = () => {
@@ -357,6 +358,14 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         'Extracting Chassis Credentials...',
         'Finalizing Vehicle Report...'
       ];
+    } else if (service === 'veh_owner_num') {
+      messages = [
+        'Connecting to National Owner Registry...',
+        'Resolving License Plate with ID Database...',
+        'Mapping Owner Registered Phone Number...',
+        'Decrypting Linked Contact Profiles...',
+        'Wrapping Owner Intel Response...'
+      ];
     } else if (service === 'pancard') {
       messages = [
         'Connecting to Income Tax Department Registry...',
@@ -423,6 +432,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setError('Please enter a valid Vehicle Number (e.g., DL1CA1234).');
         return;
       }
+    } else if (service === 'veh_owner_num') {
+      if (targetVal.length < 3) {
+        setError('Please enter a valid Vehicle Number (e.g., HR60E3838).');
+        return;
+      }
     } else if (service === 'pancard') {
       if (targetVal.length < 5) {
         setError('Please enter a valid PN/PAN Card Number (e.g., ABCDE1234F).');
@@ -444,6 +458,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       creditCost = 10;
     } else if (service === 'vehicle') {
       creditCost = 5;
+    } else if (service === 'veh_owner_num') {
+      creditCost = 15;
     } else if (service === 'pancard') {
       creditCost = 10;
     } else if (service === 'aadhaar_to_pan') {
@@ -491,7 +507,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       // Import corresponding lookups
-      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
+      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupVehOwnerNum, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
 
       if (service === 'aadhaar_to_pan') {
         setAadhaarPanResult(null);
@@ -565,6 +581,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupBnk(targetVal);
       } else if (service === 'vehicle') {
         data = await lookupVehicle(targetVal);
+      } else if (service === 'veh_owner_num') {
+        data = await lookupVehOwnerNum(targetVal);
       } else if (service === 'pancard') {
         data = await lookupPancard(targetVal);
       } else if (service === 'email') {
@@ -616,6 +634,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'adhr') return 'VIP Identity Card Lookup';
     if (service === 'bnk') return 'VIP BA&NK Lookup';
     if (service === 'vehicle') return 'VIP Vehicle Lookup';
+    if (service === 'veh_owner_num') return 'VIP Vehicle To Owner Details Lookup';
     if (service === 'pancard') return 'VIP PN/PAN Card Lookup';
     if (service === 'aadhaar_to_pan') return 'VIP Aadhaar to PAN Lookup';
     if (service === 'email') return 'VIP Email Lookup';
@@ -627,6 +646,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'adhr') return 'Enter Identity/Aadhaar query (e.g. 962397300673)...';
     if (service === 'bnk') return 'Enter Bank query or IFSC code (e.g. HDFC0001325)...';
     if (service === 'vehicle') return 'Enter Vehicle Number (e.g. BR07PB6268)...';
+    if (service === 'veh_owner_num') return 'Enter Vehicle Number for Owner Details (e.g. HR60E3838)...';
     if (service === 'pancard') return 'Enter PN/PAN Card Number (e.g. NTEPK1628C)...';
     if (service === 'aadhaar_to_pan') return 'Enter 12-digit Aadhaar Number...';
     if (service === 'email') return 'Enter Email Address (e.g. test@gmail.com)...';
@@ -808,6 +828,16 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             🚗 VEHICLE (5 CTR)
           </Link>
           <Link
+            to="/veh-owner"
+            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+              service === 'veh_owner_num'
+                ? 'bg-amber-500/15 border-amber-500/35 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)] animate-pulse'
+                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            🚗 VEH TO OWNER (15 CTR)
+          </Link>
+          <Link
             to="/pancard"
             className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
               service === 'pancard'
@@ -869,7 +899,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
                   } else if (service === 'adhr' || service === 'aadhaar_to_pan') {
                     setPhoneNumber(val.replace(/[^0-9]/g, '').slice(0, 12));
-                  } else if (service === 'vehicle') {
+                  } else if (service === 'vehicle' || service === 'veh_owner_num') {
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
                   } else if (service === 'pancard') {
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
