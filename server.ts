@@ -1659,15 +1659,15 @@ app.get("/api/lookup", async (req, res) => {
         });
       }
     } else if ((lookupType as string) === 'telegram') {
-      const target_username = targetQuery.startsWith('@') ? targetQuery : `@${targetQuery}`;
-      const api_url = `https://exploitsindia.site//osint-api/telegram.php?exploits=${encodeURIComponent(target_username)}`;
+      const target_username = targetQuery.replace(/^@/, "");
+      const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
       const response = await fetch(api_url);
       if (!response.ok) {
         throw new Error(`Telegram Engine Offline: Status ${response.status}`);
       }
 
       const text = await response.text();
-      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
       const lowerText = cleanedText.toLowerCase();
 
       if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -1675,25 +1675,45 @@ app.get("/api/lookup", async (req, res) => {
          return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
       }
 
-      const usernameMatch = cleanedText.match(/Username:\s*([^\s\n\r]+)/i);
-      const idMatch = cleanedText.match(/Telegram ID:\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-      const phoneMatch = cleanedText.match(/Phone Number:\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      let recordsList: any[] = [];
+      let isParsedAsJson = false;
 
-      const username = usernameMatch ? usernameMatch[1].trim() : target_username;
-      const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-      const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
-
-      if (telegram_id === "N/A" && phone === "N/A") {
-         await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-         return res.status(404).json({ status: "error", message: "Lookup matched but profile contains no traceable ID or phone." });
+      try {
+        const parsed = JSON.parse(text);
+        const cleaned_json = scrubAllBranding(parsed);
+        if (cleaned_json && (cleaned_json.results || cleaned_json.data || cleaned_json.records)) {
+          const items = cleaned_json.results || cleaned_json.data || cleaned_json.records;
+          recordsList = Array.isArray(items) ? items : [items];
+          isParsedAsJson = true;
+        } else if (cleaned_json && typeof cleaned_json === 'object') {
+          recordsList = [cleaned_json];
+          isParsedAsJson = true;
+        }
+      } catch (e) {
+        // Fallback to text parsing
       }
 
-      const recordsList = [{
-        name: "Telegram Registered Profile",
-        telegram_id: telegram_id,
-        username: username,
-        mobile: phone || "N/A"
-      }];
+      if (!isParsedAsJson) {
+        const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
+        const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+
+        const username = usernameMatch ? usernameMatch[1].trim() : target_username;
+        const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
+        const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+
+        if (telegram_id === "N/A" && phone === "N/A") {
+           await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+           return res.status(404).json({ status: "error", message: "Lookup matched but profile contains no traceable ID or phone." });
+        }
+
+        recordsList = [{
+          name: "Telegram Registered Profile",
+          telegram_id: telegram_id,
+          username: username,
+          mobile: phone || "N/A"
+        }];
+      }
 
       const newCount = (keyRecord.requests_used || 0) + 1;
       if (!isMaster && keyRecord?.id) {
@@ -2613,8 +2633,8 @@ app.get("/api/telegram", async (req, res) => {
       });
     }
 
-    const target_username = targetTelegramId.startsWith('@') ? targetTelegramId : `@${targetTelegramId}`;
-    const api_url = `https://exploitsindia.site/osint-api/telegram.php?exploits=${encodeURIComponent(target_username)}`;
+    const target_username = targetTelegramId.replace(/^@/, "");
+    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -2628,7 +2648,7 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
@@ -2636,37 +2656,57 @@ app.get("/api/telegram", async (req, res) => {
        return res.status(404).json({ status: "error", message: "api error" });
     }
 
-    const usernameMatch = cleanedText.match(/Username:\s*([^\s\n\r]+)/i);
-    const idMatch = cleanedText.match(/Telegram ID:\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-    const phoneMatch = cleanedText.match(/Phone Number:\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-    const countryMatch = cleanedText.match(/Country:\s*([^\n\r]+)/i);
-    const codeMatch = cleanedText.match(/Country Code:\s*([^\n\r]+)/i);
+    let results: any = null;
+    let isParsedAsJson = false;
 
-    const username = usernameMatch ? usernameMatch[1].trim() : target_username;
-    const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-    const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
-    const country = countryMatch ? countryMatch[1].trim() : "N/A";
-    const country_code = codeMatch ? codeMatch[1].trim() : "N/A";
-
-    if (telegram_id === "N/A" && phone === "N/A") {
-       await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+    try {
+      const parsed = JSON.parse(text);
+      const cleaned_json = cleanBrandingObject(parsed);
+      if (cleaned_json) {
+        if (cleaned_json.results || cleaned_json.data) {
+          results = cleaned_json.results || cleaned_json.data;
+        } else {
+          results = cleaned_json;
+        }
+        isParsedAsJson = true;
+      }
+    } catch (e) {
+      // Fallback to text parsing
     }
 
-    const results = {
-      "Telegram Match": {
-        name: username,
-        telegram_id: telegram_id,
-        mobile: phone,
-        father_name: "N/A",
-        alt_mobile: country_code,
-        email: "N/A",
-        operator: country,
-        state_circle: "N/A",
-        address: "N/A",
-        platform: "Telegram Lookup"
+    if (!isParsedAsJson) {
+      const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
+      const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      const countryMatch = cleanedText.match(/Country:\s*([^\n\r]+)/i);
+      const codeMatch = cleanedText.match(/Country Code:\s*([^\n\r]+)/i);
+
+      const username = usernameMatch ? usernameMatch[1].trim() : target_username;
+      const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
+      const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+      const country = countryMatch ? countryMatch[1].trim() : "N/A";
+      const country_code = codeMatch ? codeMatch[1].trim() : "N/A";
+
+      if (telegram_id === "N/A" && phone === "N/A") {
+         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+         return res.status(404).json({ status: "error", message: "api error" });
       }
-    };
+
+      results = {
+        "Telegram Match": {
+          name: username,
+          telegram_id: telegram_id,
+          mobile: phone,
+          father_name: "N/A",
+          alt_mobile: country_code,
+          email: "N/A",
+          operator: country,
+          state_circle: "N/A",
+          address: "N/A",
+          platform: "Telegram Lookup"
+        }
+      };
+    }
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {

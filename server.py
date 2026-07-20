@@ -2021,8 +2021,8 @@ async def saas_lookup(
         # 8. Intelligence Source Dispatch
         if is_telegram_query:
             # LIVE API CALL FOR TELEGRAM username LOOKUP
-            target_username = num if num.startswith('@') else f"@{num}"
-            api_url = f"https://exploitsindia.site//osint-api/telegram.php?exploits={requests.utils.quote(target_username)}"
+            target_username = num.lstrip('@')
+            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={requests.utils.quote(target_username)}"
             
             headers = {
                 "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
@@ -2041,25 +2041,58 @@ async def saas_lookup(
                 if "no result" in lowerText or "no records found" in lowerText or not cleanedText.strip():
                     return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
-                import re
-                usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
-                idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
-                phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
-                countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
-                codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+                # Try to parse JSON first
+                try:
+                    parsed = resp.json()
+                    cleaned_json = clean_branding_recursive(parsed)
+                    
+                    new_count = (license.get('requests_used') or 0) + 1
+                    if not is_master:
+                        db.table("api_keys").update({
+                            "requests_used": new_count,
+                            "last_used_at": datetime.utcnow().isoformat()
+                        }).eq("id", license['id']).execute()
 
-                username = usernameMatch.group(1).strip() if usernameMatch else target_username
-                telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
-                phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
-                country = countryMatch.group(1).strip() if countryMatch else "N/A"
-                country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
+                    try:
+                        db.table("api_logs").insert({
+                            "api_key_id": license.get('id') if not is_master else None,
+                            "masked_number": f"TELEGRAM:{num[:5]}",
+                            "status": "success",
+                            "response_time_ms": int((time.time() - start_time) * 1000),
+                            "ip_address": request.headers.get('x-forwarded-for', request.client.host) if request else "0.0.0.0"
+                        }).execute()
+                    except:
+                        pass
 
-                if telegram_id == "N/A" and phone == "N/A":
                     return make_api_response({
-                        "status": "success", 
-                        "results": {}, 
-                        "message": "no data found"
+                        "status": "success",
+                        "success": True,
+                        "results": cleaned_json,
+                        "credits_remaining": (int(limit) - new_count) if (limit is not None and not is_master) else 999999,
+                        "requests_used": new_count if not is_master else 0,
+                        "execution_time_ms": int((time.time() - start_time) * 1000)
                     })
+                except Exception as json_err:
+                    # Fallback to regex text parsing
+                    import re
+                    usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
+                    idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+                    phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+                    countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+                    codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+
+                    username = usernameMatch.group(1).strip() if usernameMatch else target_username
+                    telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
+                    phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
+                    country = countryMatch.group(1).strip() if countryMatch else "N/A"
+                    country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
+
+                    if telegram_id == "N/A" and phone == "N/A":
+                        return make_api_response({
+                            "status": "success", 
+                            "results": {}, 
+                            "message": "no data found"
+                        })
 
                 # Post-fetch validation to verify protection status (both for Telegram ID and username)
                 post_protected = False
