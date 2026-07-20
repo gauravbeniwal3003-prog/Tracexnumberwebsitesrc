@@ -2404,6 +2404,25 @@ async def telegram_lookup(
             })
 
         target_username = targetTelegramId.lstrip('@')
+        cache_key = f"tg_{target_username.lower()}"
+
+        # 1. Check database cache first
+        try:
+            cache_query = db.table("search_results").select("raw_data").eq("mobile_number", cache_key).execute()
+            if cache_query.data and len(cache_query.data) > 0:
+                cached_row = cache_query.data[0]
+                cached_raw_data = cached_row.get("raw_data")
+                if cached_raw_data:
+                    # Update key record requests used
+                    if not is_master and keyRecord:
+                        db.table("api_keys").update({
+                            "requests_used": (keyRecord.get('requests_used') or 0) + 1,
+                            "last_used_at": datetime.utcnow().isoformat()
+                        }).eq("id", keyRecord['id']).execute()
+                    return make_api_response({"status": "success", "results": cached_raw_data, "cached": True})
+        except Exception as cache_err:
+            print(f"[Telegram Cache Read Error] {cache_err}")
+
         api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
         
         headers = {
@@ -2411,11 +2430,15 @@ async def telegram_lookup(
             "Accept": "text/plain,text/html,application/json,*/*"
         }
 
-        resp = requests.get(api_url, timeout=15, headers=headers)
-        if resp.status_code != 200:
-            return make_api_response({"status": "error", "message": "API Source currently unreachable"})
+        try:
+            resp = requests.get(api_url, timeout=10, headers=headers)
+            if resp.status_code != 200:
+                return make_api_response({"status": "success", "results": {}, "message": "no data found"})
+            text = resp.text or ""
+        except Exception as fetch_err:
+            print(f"[Telegram Fetch Error / Timeout] {fetch_err}")
+            return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
-        text = resp.text or ""
         cleanedText = clean_branding_text_line_by_line(text)
         lowerText = cleanedText.lower()
 
@@ -2473,23 +2496,24 @@ async def telegram_lookup(
                         "last_used_at": datetime.utcnow().isoformat()
                     }).eq("id", keyRecord['id']).execute()
 
+                protected_results = {
+                    "Telegram Match": {
+                        "name": "PROTECTED RECORD",
+                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                        "mobile": "PROTECTED @ TRACEX SHIELD",
+                        "father_name": "PROTECTED @ TRACEX SHIELD",
+                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
+                        "email": "PROTECTED @ TRACEX SHIELD",
+                        "operator": "PROTECTED @ TRACEX SHIELD",
+                        "state_circle": "PROTECTED @ TRACEX SHIELD",
+                        "address": "PROTECTED @ TRACEX SHIELD",
+                        "platform": "Telegram Lookup"
+                    }
+                }
                 return make_api_response({
                     "status": "success",
                     "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
-                    "results": {
-                        "Telegram Match": {
-                            "name": "PROTECTED RECORD",
-                            "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
-                            "mobile": "PROTECTED @ TRACEX SHIELD",
-                            "father_name": "PROTECTED @ TRACEX SHIELD",
-                            "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                            "email": "PROTECTED @ TRACEX SHIELD",
-                            "operator": "PROTECTED @ TRACEX SHIELD",
-                            "state_circle": "PROTECTED @ TRACEX SHIELD",
-                            "address": "PROTECTED @ TRACEX SHIELD",
-                            "platform": "Telegram Lookup"
-                        }
-                    }
+                    "results": protected_results
                 })
 
             results = {
@@ -2506,6 +2530,15 @@ async def telegram_lookup(
                     "platform": "Telegram Lookup"
                 }
             }
+
+            # Save successful result to database cache
+            try:
+                db.table("search_results").upsert({
+                    "mobile_number": cache_key,
+                    "raw_data": results
+                }, on_conflict="mobile_number").execute()
+            except Exception as cache_save_err:
+                print(f"[Telegram Cache Save Error] {cache_save_err}")
 
             # Record telemetry for successful search
             if not is_master and keyRecord:
@@ -2569,23 +2602,24 @@ async def telegram_lookup(
                         "last_used_at": datetime.utcnow().isoformat()
                     }).eq("id", keyRecord['id']).execute()
 
+                protected_results = {
+                    "Telegram Match": {
+                        "name": "PROTECTED RECORD",
+                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                        "mobile": "PROTECTED @ TRACEX SHIELD",
+                        "father_name": "PROTECTED @ TRACEX SHIELD",
+                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
+                        "email": "PROTECTED @ TRACEX SHIELD",
+                        "operator": "PROTECTED @ TRACEX SHIELD",
+                        "state_circle": "PROTECTED @ TRACEX SHIELD",
+                        "address": "PROTECTED @ TRACEX SHIELD",
+                        "platform": "Telegram Lookup"
+                    }
+                }
                 return make_api_response({
                     "status": "success",
                     "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
-                    "results": {
-                        "Telegram Match": {
-                            "name": "PROTECTED RECORD",
-                            "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
-                            "mobile": "PROTECTED @ TRACEX SHIELD",
-                            "father_name": "PROTECTED @ TRACEX SHIELD",
-                            "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                            "email": "PROTECTED @ TRACEX SHIELD",
-                            "operator": "PROTECTED @ TRACEX SHIELD",
-                            "state_circle": "PROTECTED @ TRACEX SHIELD",
-                            "address": "PROTECTED @ TRACEX SHIELD",
-                            "platform": "Telegram Lookup"
-                        }
-                    }
+                    "results": protected_results
                 })
 
             results = {
@@ -2603,6 +2637,15 @@ async def telegram_lookup(
                 }
             }
 
+            # Save successful result to database cache
+            try:
+                db.table("search_results").upsert({
+                    "mobile_number": cache_key,
+                    "raw_data": results
+                }, on_conflict="mobile_number").execute()
+            except Exception as cache_save_err:
+                print(f"[Telegram Cache Save Error] {cache_save_err}")
+
             # Record telemetry for successful search
             if not is_master and keyRecord:
                 db.table("api_keys").update({
@@ -2614,7 +2657,7 @@ async def telegram_lookup(
 
     except Exception as err:
         print(f"Telegram Proxy error: {err}")
-        return make_api_response({"status": "error", "message": "api error"})
+        return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
 
 @app.get("/api/email")

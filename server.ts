@@ -2634,26 +2634,70 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     const target_username = targetTelegramId.replace(/^@/, "");
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
-    const response = await fetch(api_url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+    const cache_key = `tg_${target_username.toLowerCase()}`;
+
+    // SECURE BACKEND DATABASE CACHE CHECK FIRST
+    try {
+      if (supabaseAdmin) {
+        const { data: cachedRow } = await supabaseAdmin
+          .from('search_results')
+          .select('raw_data')
+          .eq('mobile_number', cache_key)
+          .maybeSingle();
+
+        if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+          console.log(`[Telegram Cache Hit] Serving ${targetTelegramId} from database cache`);
+          
+          // Record telemetry for successful cached search
+          if (!isMaster && keyRecord?.id) {
+            await supabaseAdmin.from("api_keys").update({ 
+              requests_used: (keyRecord.requests_used || 0) + 1,
+              last_used_at: new Date().toISOString()
+            }).eq("id", keyRecord.id);
+          }
+
+          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "success", Date.now() - startTime);
+          return res.status(200).json({ status: "success", results: cachedRow.raw_data, cached: true });
+        }
       }
-    });
-    if (!response.ok) {
-       await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+    } catch (cacheErr) {
+      console.error("[Telegram Cache Read Error]", cacheErr);
     }
 
-    const text = await response.text();
+    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds timeout
+
+    let text = "";
+    try {
+      const response = await fetch(api_url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, et Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+        return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+      }
+      text = await response.text();
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      console.warn("[Telegram Fetch Error / Timeout]", fetchErr);
+      await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+      return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+    }
+
     const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
     const lowerText = cleanedText.toLowerCase();
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+    if (lowerText.includes("no result") || lowerText.includes("no records found") || !text.trim()) {
        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(200).json({ status: "success", results: {}, message: "no data found" });
     }
 
     let results: any = null;
@@ -2663,7 +2707,7 @@ app.get("/api/telegram", async (req, res) => {
       const parsed = JSON.parse(text);
       if (parsed && (parsed.success === false || parsed.success === "false")) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-        return res.status(404).json({ status: "error", message: "api error" });
+        return res.status(200).json({ status: "success", results: {}, message: "no data found" });
       }
 
       const cleaned_json = cleanBrandingObject(parsed);
@@ -2713,7 +2757,7 @@ app.get("/api/telegram", async (req, res) => {
 
       if (telegram_id === "N/A" && phone === "N/A") {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-         return res.status(404).json({ status: "error", message: "api error" });
+         return res.status(200).json({ status: "success", results: {}, message: "no data found" });
       }
 
       results = {
@@ -2730,6 +2774,19 @@ app.get("/api/telegram", async (req, res) => {
           platform: "Telegram Lookup"
         }
       };
+    }
+
+    // Save successful result to database cache
+    try {
+      if (supabaseAdmin && results) {
+        await supabaseAdmin.from('search_results').upsert({
+          mobile_number: cache_key,
+          raw_data: results
+        }, { onConflict: 'mobile_number' });
+        console.log(`[Telegram Cache Save] Successfully cached lookup for: ${target_username}`);
+      }
+    } catch (cacheSaveErr) {
+      console.error("[Telegram Cache Save Error]", cacheSaveErr);
     }
 
     // Record telemetry for successful search
