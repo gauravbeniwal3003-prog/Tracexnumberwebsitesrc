@@ -2661,14 +2661,38 @@ app.get("/api/telegram", async (req, res) => {
 
     try {
       const parsed = JSON.parse(text);
+      if (parsed && (parsed.success === false || parsed.success === "false")) {
+        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+        return res.status(404).json({ status: "error", message: "api error" });
+      }
+
       const cleaned_json = cleanBrandingObject(parsed);
       if (cleaned_json) {
-        if (cleaned_json.results || cleaned_json.data) {
-          results = cleaned_json.results || cleaned_json.data;
+        const telegram_id = cleaned_json.tg_id || cleaned_json.telegram_id || target_username;
+        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "N/A";
+        const username = cleaned_json.username || cleaned_json.name || target_username;
+        const country = cleaned_json.country || "N/A";
+        const country_code = cleaned_json.country_code || "N/A";
+
+        if (telegram_id === "N/A" && phone === "N/A") {
+          // Fallback to text parser
         } else {
-          results = cleaned_json;
+          results = {
+            "Telegram Match": {
+              name: username,
+              telegram_id: telegram_id,
+              mobile: phone,
+              father_name: "N/A",
+              alt_mobile: country_code,
+              email: "N/A",
+              operator: country,
+              state_circle: "N/A",
+              address: "N/A",
+              platform: "Telegram Lookup"
+            }
+          };
+          isParsedAsJson = true;
         }
-        isParsedAsJson = true;
       }
     } catch (e) {
       // Fallback to text parsing

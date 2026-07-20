@@ -2361,10 +2361,10 @@ async def telegram_lookup(
         is_strict_telegram_plan = "TELEGRAM" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
         if is_strict_telegram_plan:
             cleaned_tg = targetTelegramId.lstrip('@')
-            if cleaned_tg.isdigit() or len(cleaned_tg) < 3 or not any(c.isalpha() for c in cleaned_tg):
+            if len(cleaned_tg) < 3:
                 return make_api_response({
                     "status": "error",
-                    "message": "Your plan is of telegram lookup so please enter telegram username"
+                    "message": "Your plan is of telegram lookup so please enter a valid telegram username or user ID (minimum 3 characters)"
                 })
 
         # Checking safety protection bypass
@@ -2425,8 +2425,88 @@ async def telegram_lookup(
         # Try to parse JSON first
         try:
             parsed = resp.json()
+            
+            # Check if source explicitly returned success: false
+            if parsed.get("success") is False or str(parsed.get("success")).lower() == "false":
+                return make_api_response({"status": "success", "results": {}, "message": "no data found"})
+
             cleaned_json = clean_branding_recursive(parsed)
             
+            telegram_id = cleaned_json.get('tg_id') or cleaned_json.get('telegram_id') or target_username
+            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or "N/A"
+            username = cleaned_json.get('username') or cleaned_json.get('name') or target_username
+            country = cleaned_json.get('country') or "N/A"
+            country_code = cleaned_json.get('country_code') or "N/A"
+
+            if telegram_id == "N/A" and phone == "N/A":
+                return make_api_response({"status": "success", "results": {}, "message": "no data found"})
+
+            # Post-fetch validation to verify protection status (both for Telegram ID and username)
+            post_protected = False
+            if telegram_id != "N/A":
+                try:
+                    p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
+                    if p_query_id and p_query_id.data:
+                        post_protected = True
+                except Exception as e_post1:
+                    print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
+
+            if not post_protected and username and username != "N/A":
+                clean_un = username.lstrip('@')
+                at_un = f"@{clean_un}"
+                try:
+                    p_query_un1 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", clean_un).execute()
+                    if p_query_un1 and p_query_un1.data:
+                        post_protected = True
+                    else:
+                        p_query_un2 = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", at_un).execute()
+                        if p_query_un2 and p_query_un2.data:
+                            post_protected = True
+                except Exception as e_post2:
+                    print(f"[API_POST_UN_PROTECT_ERR] {e_post2}")
+
+            if post_protected:
+                # Deduct request and update telemetry since we hit the API and did a lookup
+                if not is_master and keyRecord:
+                    db.table("api_keys").update({
+                        "requests_used": (keyRecord.get('requests_used') or 0) + 1,
+                        "last_used_at": datetime.utcnow().isoformat()
+                    }).eq("id", keyRecord['id']).execute()
+
+                return make_api_response({
+                    "status": "success",
+                    "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
+                    "results": {
+                        "Telegram Match": {
+                            "name": "PROTECTED RECORD",
+                            "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                            "mobile": "PROTECTED @ TRACEX SHIELD",
+                            "father_name": "PROTECTED @ TRACEX SHIELD",
+                            "alt_mobile": "PROTECTED @ TRACEX SHIELD",
+                            "email": "PROTECTED @ TRACEX SHIELD",
+                            "operator": "PROTECTED @ TRACEX SHIELD",
+                            "state_circle": "PROTECTED @ TRACEX SHIELD",
+                            "address": "PROTECTED @ TRACEX SHIELD",
+                            "platform": "Telegram Lookup"
+                        }
+                    }
+                })
+
+            results = {
+                "Telegram Match": {
+                    "name": username,
+                    "telegram_id": telegram_id,
+                    "mobile": phone,
+                    "father_name": "N/A",
+                    "alt_mobile": country_code,
+                    "email": "N/A",
+                    "operator": country,
+                    "state_circle": "N/A",
+                    "address": "N/A",
+                    "platform": "Telegram Lookup"
+                }
+            }
+
             # Record telemetry for successful search
             if not is_master and keyRecord:
                 db.table("api_keys").update({
@@ -2434,8 +2514,9 @@ async def telegram_lookup(
                     "last_used_at": datetime.utcnow().isoformat()
                 }).eq("id", keyRecord['id']).execute()
 
-            return make_api_response({"status": "success", "results": cleaned_json})
-        except:
+            return make_api_response({"status": "success", "results": results})
+        except Exception as json_err:
+            print(f"Telegram JSON parse fallback to text: {json_err}")
             # Fallback to text parse
             usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
             idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
