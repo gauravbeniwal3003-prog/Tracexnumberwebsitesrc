@@ -195,8 +195,8 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
 
   return {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    buy_api: "https://tracexnumber.web.app/buy-api",
-    website: "https://tracexnumber.web.app",
+    buy_api: "https://tracexdata.online/buy-api",
+    website: "https://tracexdata.online",
     query: query,
     api_status: {
       plan: planName,
@@ -356,8 +356,8 @@ function formatUnifiedSaaSResponse({
 
   return {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    buy_api: "https://tracexnumber.web.app/buy-api",
-    website: "https://tracexnumber.web.app",
+    buy_api: "https://tracexdata.online/buy-api",
+    website: "https://tracexdata.online",
     query: query,
     api_status: {
       plan: planName,
@@ -2344,83 +2344,6 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   }
 });
 
-// --- DYNAMIC PASTEBIN REDIRECT URL SYNCING SYSTEM ---
-let cachedRedirectConfig: { url: string; videoId: string; lastFetched: number } | null = null;
-
-app.get("/api/redirect-config", async (req, res) => {
-  const CACHE_TTL = 60 * 1000; // 1 minute in milliseconds
-  const now = Date.now();
-
-  if (cachedRedirectConfig && (now - cachedRedirectConfig.lastFetched < CACHE_TTL)) {
-    return res.json({ url: cachedRedirectConfig.url, videoId: cachedRedirectConfig.videoId });
-  }
-
-  try {
-    const pasteUrl = "https://pastebin.com/raw/nrWUkS4N";
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-    const response = await fetch(pasteUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Pastebin. Status: ${response.status}`);
-    }
-
-    const text = await response.text();
-    
-    // Parse the paste text:
-    // Format: Video-https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_Duration-256Activate-4
-    const index = text.indexOf("Video-");
-    let videoUrl = "https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_"; // default/fallback if error parsing
-
-    if (index !== -1) {
-      let videoPart = text.slice(index + 6).trim();
-      const durationIndex = videoPart.indexOf("Duration-");
-      if (durationIndex !== -1) {
-        videoPart = videoPart.slice(0, durationIndex).trim();
-      }
-      videoPart = videoPart.split(/[\r\n]+/)[0].trim();
-      if (videoPart) {
-        videoUrl = videoPart;
-      }
-    }
-
-    // Extract video ID
-    let videoId = "HJmP2pH9N4o"; // default/fallback
-    try {
-      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-      const match = videoUrl.match(regExp);
-      if (match && match[2].length === 11) {
-        videoId = match[2];
-      }
-    } catch (err) {
-      console.error("Error parsing youtube ID in api:", err);
-    }
-
-    cachedRedirectConfig = {
-      url: videoUrl,
-      videoId,
-      lastFetched: now
-    };
-
-    return res.json({ url: videoUrl, videoId });
-  } catch (err: any) {
-    console.error("Error fetching/syncing Pastebin redirect config:", err.message);
-    
-    // If we have a cached version, return it even if expired, rather than failing
-    if (cachedRedirectConfig) {
-      return res.json({ url: cachedRedirectConfig.url, videoId: cachedRedirectConfig.videoId });
-    }
-
-    // Fallback to the default video url/id
-    return res.json({
-      url: "https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_",
-      videoId: "HJmP2pH9N4o"
-    });
-  }
-});
-
 // --- SECURE GAURAV BENIWAL PVT PYTHON SCRIPT PURCHASE & DOWNLOAD SYSTEM ---
 
 app.get("/api/script/status", async (req, res) => {
@@ -3941,7 +3864,7 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier)/gi, "")
+      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
       .replace(/Powered_by/gi, "")

@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
@@ -18,6 +18,7 @@ import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
+import { initNotificationEngine } from './services/notifications.ts';
 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import ScrollToTop from './components/ScrollToTop.tsx';
@@ -42,11 +43,6 @@ export default function App() {
   const [isProtectOpen, setIsProtectOpen] = useState(false);
   const [protectTab, setProtectTab] = useState<'mobile' | 'telegram'>('mobile');
 
-  const redirectConfigRef = useRef<{ url: string; videoId: string }>({
-    url: 'https://youtu.be/HJmP2pH9N4o?si=1m_OS3U7eqMAxvp_',
-    videoId: 'HJmP2pH9N4o'
-  });
-
   useEffect(() => {
     const handleLoginEvent = () => setIsLoginOpen(true);
     const handleLaunchPayment = (e: any) => {
@@ -66,19 +62,6 @@ export default function App() {
     window.addEventListener('launch-payment', handleLaunchPayment);
     window.addEventListener('open-protect', handleProtectEvent as EventListener);
 
-    // Fetch dynamic redirect url from server synced with Pastebin
-    fetch(`${getApiBaseUrl()}/api/redirect-config`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.videoId) {
-          redirectConfigRef.current = {
-            url: data.url,
-            videoId: data.videoId
-          };
-        }
-      })
-      .catch(err => console.error("Error loading synced redirect config:", err));
-
     // Auto-open subscription modal to process returned payments
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.get('order_id')) {
@@ -91,44 +74,17 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' }
     }).catch(err => console.error("Error logging visitor:", err));
 
-    // YouTube deep-link redirection logic on 3rd click of session
-    const handleGlobalClick = () => {
-      const redirected = sessionStorage.getItem('yt_redirected');
-      if (redirected === 'true') return;
+    // Initialize true local notification engine
+    try {
+      initNotificationEngine();
+    } catch (err) {
+      console.error("Failed to boot notification engine:", err);
+    }
 
-      const currentClicksStr = sessionStorage.getItem('yt_clicks') || '0';
-      const currentClicks = parseInt(currentClicksStr, 10) + 1;
-      sessionStorage.setItem('yt_clicks', currentClicks.toString());
-
-      if (currentClicks >= 3) {
-        sessionStorage.setItem('yt_redirected', 'true');
-        const { url, videoId } = redirectConfigRef.current;
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-        const isAndroid = /Android/.test(navigator.userAgent);
-
-        if (isAndroid) {
-          // Direct Intent to launch YouTube app on Android
-          window.location.href = `intent://www.youtube.com/watch?v=${videoId}#Intent;package=com.google.android.youtube;scheme=https;end;`;
-        } else if (isIOS) {
-          // Deep link protocol for iOS
-          window.location.href = `youtube://www.youtube.com/watch?v=${videoId}`;
-          setTimeout(() => {
-            window.location.href = url;
-          }, 1500);
-        } else {
-          // Default browser redirection
-          window.location.href = url;
-        }
-      }
-    };
-
-    window.addEventListener('click', handleGlobalClick);
-    
     return () => {
       window.removeEventListener('open-login', handleLoginEvent);
       window.removeEventListener('launch-payment', handleLaunchPayment);
       window.removeEventListener('open-protect', handleProtectEvent as EventListener);
-      window.removeEventListener('click', handleGlobalClick);
     };
   }, []);
 
@@ -237,6 +193,32 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     pancard_result: any;
     pancard_error: string | null;
   } | null>(null);
+
+  const [notifPermission, setNotifPermission] = useState<string>('default');
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotifPermission(Notification.permission);
+    } else {
+      setNotifPermission('unsupported');
+    }
+  }, []);
+
+  const handleRequestPermission = async () => {
+    if (!('Notification' in window)) return;
+    const { requestNotificationPermission } = await import('./services/notifications.ts');
+    const granted = await requestNotificationPermission();
+    setNotifPermission(Notification.permission);
+    if (granted) {
+      const { checkAndTriggerNotification } = await import('./services/notifications.ts');
+      checkAndTriggerNotification();
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    const { triggerTestNotificationDirectly } = await import('./services/notifications.ts');
+    await triggerTestNotificationDirectly();
+  };
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<any[]>([]);
@@ -1087,6 +1069,70 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           )}
         </div>
       </main>
+
+      {/* Local Notifications Status Widget */}
+      <div className="max-w-md mx-auto mb-8 text-center px-4 relative z-50">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-4 border-white/5 bg-zinc-950/40 backdrop-blur-3xl rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl"
+        >
+          <div className="flex items-center gap-3 text-left">
+            <div className={`p-2.5 rounded-xl border ${
+              notifPermission === 'granted'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : notifPermission === 'denied'
+                ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400'
+            }`}>
+              {notifPermission === 'granted' ? (
+                <Bell size={18} className="animate-bounce" />
+              ) : (
+                <BellOff size={18} />
+              )}
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-zinc-100 uppercase tracking-wider font-mono">
+                {notifPermission === 'granted' ? '🔔 System Alerts Active' : '🔔 Live System Alerts'}
+              </h4>
+              <p className="text-[10px] text-zinc-500 leading-tight">
+                {notifPermission === 'granted'
+                  ? 'True-local alerts will keep you engaged with online nodes.'
+                  : 'Get notified about active OSINT nodes and system status.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {notifPermission === 'default' && (
+              <button
+                onClick={handleRequestPermission}
+                className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-zinc-950 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all shadow-[0_0_15px_-5px_rgba(34,211,238,0.5)] active:scale-[0.97]"
+              >
+                Enable
+              </button>
+            )}
+            {notifPermission === 'granted' && (
+              <button
+                onClick={handleSendTestNotification}
+                className="px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all active:scale-[0.97]"
+              >
+                Test Notif
+              </button>
+            )}
+            {notifPermission === 'denied' && (
+              <span className="text-[9px] font-bold uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-md">
+                Blocked
+              </span>
+            )}
+            {notifPermission === 'unsupported' && (
+              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 bg-white/5 border border-white/5 px-2.5 py-1 rounded-md">
+                Unsupported
+              </span>
+            )}
+          </div>
+        </motion.div>
+      </div>
 
       {/* Footer / Credit */}
       <footer className="w-full py-6 md:py-10 px-4 md:px-6 flex flex-col items-center justify-center gap-3 relative z-50">

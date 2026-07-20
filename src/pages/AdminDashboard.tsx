@@ -33,6 +33,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<any>({});
   const [isServiceRoleActive, setIsServiceRoleActive] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Stats State
   const [keys, setKeys] = useState<any[]>([]);
@@ -133,7 +134,12 @@ export default function AdminDashboard() {
   }, [isAdmin]);
 
   const fetchData = async () => {
-    setLoading(true);
+    const isFirstLoad = keys.length === 0 && profiles.length === 0 && logs.length === 0;
+    if (isFirstLoad) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -231,6 +237,7 @@ export default function AdminDashboard() {
     }
 
     setLoading(false);
+    setIsRefreshing(false);
   };
 
   const handleGenerateKey = async () => {
@@ -652,8 +659,13 @@ export default function AdminDashboard() {
                  Manual Key
                </button>
              )}
-             <button onClick={fetchData} className="p-3 rounded-xl bg-white/5 border border-white/5 text-zinc-400 hover:text-white transition-all">
-               <RefreshCcw size={18} />
+             <button 
+               onClick={fetchData} 
+               disabled={isRefreshing}
+               className="p-3 rounded-xl bg-white/5 border border-white/5 text-zinc-400 hover:text-white disabled:opacity-50 transition-all"
+               title="Refresh Data"
+             >
+               <RefreshCcw size={18} className={isRefreshing ? "animate-spin text-cyan-400" : ""} />
              </button>
           </div>
         </header>
@@ -1014,9 +1026,10 @@ export default function AdminDashboard() {
               </h3>
               <button 
                 onClick={fetchData} 
-                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 transition-all flex items-center gap-2"
+                disabled={isRefreshing}
+                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 disabled:opacity-50 transition-all flex items-center gap-2"
               >
-                <RefreshCcw size={14} />
+                <RefreshCcw size={14} className={isRefreshing ? "animate-spin text-cyan-400" : ""} />
                 Refresh Logs
               </button>
             </div>
@@ -1151,9 +1164,10 @@ export default function AdminDashboard() {
               </h3>
               <button 
                 onClick={fetchData} 
-                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 transition-all flex items-center gap-2"
+                disabled={isRefreshing}
+                className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs hover:bg-cyan-500/20 disabled:opacity-50 transition-all flex items-center gap-2"
               >
-                <RefreshCcw size={14} />
+                <RefreshCcw size={14} className={isRefreshing ? "animate-spin text-cyan-400" : ""} />
                 Refresh Traces
               </button>
             </div>

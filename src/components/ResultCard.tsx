@@ -57,7 +57,7 @@ export default function ResultCard({ data, index }: ResultCardProps) {
 ✈️ Telegram ID: ${data.telegram_id || 'N/A'}
 📱 Registered Mobile: ${data.mobile || 'N/A'}
 
-🌐 Website: tracexdata-api.onrender.com
+🌐 Website: tracexdata.online
 📢 Telegram: t.me/Gaurav_beni_0001
 --------------------------------
 *Powered by TRACEXDATA Intelligence*
@@ -83,7 +83,7 @@ export default function ResultCard({ data, index }: ResultCardProps) {
 --------------------------------
 ${customLines}${addrLine}
 
-🌐 Website: tracexdata-api.onrender.com
+🌐 Website: tracexdata.online
 📢 Telegram: t.me/Gaurav_beni_0001
 --------------------------------
 *Powered by TRACEXDATA Intelligence*
@@ -102,7 +102,7 @@ ${customLines}${addrLine}
 📍 State: ${data.operator || 'N/A'}
 🏠 Address: ${data.address || 'N/A'}
 
-🌐 Website: tracexdata-api.onrender.com
+🌐 Website: tracexdata.online
 📢 Telegram: t.me/Gaurav_beni_0001
 --------------------------------
 *Powered by TRACEXDATA Intelligence*

@@ -1125,7 +1125,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
     forbidden_keywords = [
         "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
         "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
-        "support:", "c143", "cyber", "soldier"
+        "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo"
     ]
     for line in lines:
         line_lower = line.lower().strip()
@@ -1134,7 +1134,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         if any(fw in line_lower for fw in forbidden_keywords):
             continue
         # Strip some inline patterns
-        line = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)', '', line, flags=re.IGNORECASE)
+        line = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)', '', line, flags=re.IGNORECASE)
         # Strip code tag elements
         line = re.sub(r'<\/?code>', '', line)
         cleaned_lines.append(line)
@@ -1298,8 +1298,8 @@ def clean_branding_recursive(obj):
     return obj
 
 def make_api_response(data: dict) -> dict:
-    data["api_buy_link"] = "https://tracexnumber.web.app/buy-api"
-    data["website_link"] = "https://tracexnumber.web.app"
+    data["api_buy_link"] = "https://tracexdata.online/buy-api"
+    data["website_link"] = "https://tracexdata.online"
     return data
 
 def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
@@ -3779,9 +3779,9 @@ def scrub_all_branding(obj):
     if isinstance(obj, str):
         import re
         # Case-insensitive removal of any provider/developer related brand words
-        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support)', '', obj, flags=re.IGNORECASE)
-        res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?Cyb3rS0ldier', '', res, flags=re.IGNORECASE)
-        res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?Cyb3rS0ldier', '', res, flags=re.IGNORECASE)
+        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
+        res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
+        res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
         return res.strip()
     if isinstance(obj, list):
