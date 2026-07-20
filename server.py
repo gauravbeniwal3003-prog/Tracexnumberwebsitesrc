@@ -1125,7 +1125,8 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
     forbidden_keywords = [
         "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
         "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
-        "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo"
+        "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo",
+        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx"
     ]
     for line in lines:
         line_lower = line.lower().strip()
@@ -1134,7 +1135,12 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         if any(fw in line_lower for fw in forbidden_keywords):
             continue
         # Strip some inline patterns
-        line = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)', '', line, flags=re.IGNORECASE)
+        line = re.sub(
+            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            '',
+            line,
+            flags=re.IGNORECASE
+        )
         # Strip code tag elements
         line = re.sub(r'<\/?code>', '', line)
         cleaned_lines.append(line)
@@ -1283,15 +1289,16 @@ def clean_branding_recursive(obj):
         return [clean_branding_recursive(x) for x in obj]
     elif isinstance(obj, str):
         import re
-        forbidden_phrases = [
-            "tech_vishal", "techvishal", "tech vishal", "vishal boss", "vishal_boss", 
-            "techvishalboss", "tech vishal boss", "vishal"
-        ]
-        val = obj
-        for phrase in forbidden_phrases:
-            pattern = re.compile(re.escape(phrase), re.IGNORECASE)
-            val = pattern.sub("", val)
+        # Aggressive regular expression matching all forms of supplier branding
+        pattern = re.compile(
+            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            re.IGNORECASE
+        )
+        val = pattern.sub("", obj)
+        # Clean up multi-spaces
         val = re.sub(r'\s+', ' ', val).strip()
+        # Clean trailing and leading punctuation leftover from branding removal
+        val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
         if not val or val.upper() in ["", "BOSS"]:
             return "N/A"
         return val
@@ -1306,6 +1313,14 @@ def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
     # Detect items: could be a list or a dict (Result 1, Result 2, etc.)
     items = raw_json.get('results') or raw_json.get('data') or raw_json.get('records')
     
+    # Safely handle the case where raw_json is already the parsed results dictionary (e.g. from plain-text API responses)
+    if not items and isinstance(raw_json, dict):
+        has_nested = any(isinstance(v, dict) for v in raw_json.values())
+        if has_nested:
+            items = raw_json
+        elif any(k in raw_json for k in ["name", "mobile", "phone", "full_name"]):
+            items = {"Result 1": raw_json}
+            
     clean_results = {}
     
     # CASE 1: Items is a Dictionary (e.g., {"Result 1": {...}})
