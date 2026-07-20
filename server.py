@@ -2159,30 +2159,11 @@ async def saas_lookup(
         # Hardcoded primary engine source as requested to avoid environment variable dependency
         target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
         
-        try:
-            settings_query = db.table("api_settings").select("real_api_url").limit(1).execute()
-            if settings_query.data and len(settings_query.data) > 0:
-                if settings_query.data[0].get('real_api_url'):
-                    target_template = settings_query.data[0]['real_api_url']
-        except Exception as e:
-            print(f"[SETTINGS_ERR] {e}")
-            pass
+        # Override to ensure only this API is always used
+        target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
         
-        if not target_template:
-            target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
-
-        # Force replace any old/stale API keys with the new active key to ensure the new API is used everywhere
-        target_template = target_template.replace("TVB_SGL_053B3AA6", "TVB_SGL_C24439EA")
-
         # Execution
-        if "exploitsindia.site" in target_template or "numberimfo.vishalboss.sbs" in target_template:
-            final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
-        elif "ENTER_TARGET_HERE" not in target_template:
-            key_param = os.getenv("LOOKUP_API_KEY") or "TVB_SGL_C24439EA"
-            service_param = os.getenv("LOOKUP_API_SERVICE") or "number"
-            final_url = f"{target_template.rstrip('/')}?key={key_param}&service={service_param}&number={num}"
-        else:
-            final_url = target_template.replace("ENTER_TARGET_HERE", num)
+        final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
