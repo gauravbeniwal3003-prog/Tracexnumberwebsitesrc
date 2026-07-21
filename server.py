@@ -1284,7 +1284,7 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
 
 def clean_branding_recursive(obj):
     if isinstance(obj, dict):
-        return {clean_branding_recursive(k): clean_branding_recursive(v) for k, v in obj.items()}
+        return {k: clean_branding_recursive(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [clean_branding_recursive(x) for x in obj]
     elif isinstance(obj, str):
@@ -2022,23 +2022,25 @@ async def saas_lookup(
         if is_telegram_query:
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num.lstrip('@')
-            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={requests.utils.quote(target_username)}"
+            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
             
             headers = {
-                "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
-                "Accept": "text/plain,text/html,application/json,*/*"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9"
             }
 
             try:
                 resp = requests.get(api_url, timeout=15, headers=headers)
+                print(f"[Telegram Dispatch Fetch] Status Code: {resp.status_code}, Response (first 400 chars): {resp.text[:400] if resp.text else 'Empty'}")
                 if resp.status_code != 200:
                     return make_api_response({"status": "error", "message": "API Source currently unreachable"})
 
                 text = resp.text or ""
                 cleanedText = clean_branding_text_line_by_line(text)
-                lowerText = cleanedText.lower()
+                lower_raw_text = text.lower()
 
-                if "no result" in lowerText or "no records found" in lowerText or not cleanedText.strip():
+                if "no result" in lower_raw_text or "no records found" in lower_raw_text or not text.strip():
                     return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
                 # Try to parse JSON first
@@ -2076,10 +2078,24 @@ async def saas_lookup(
                     # Fallback to regex text parsing
                     import re
                     usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
+                    if not usernameMatch:
+                        usernameMatch = re.search(r"\"(?:username|name)\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
+
                     idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+                    if not idMatch:
+                        idMatch = re.search(r"\"(?:tg_id|telegram_id)\"\s*:\s*\"?(\d+)\"?", cleanedText, re.IGNORECASE)
+
                     phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+                    if not phoneMatch:
+                        phoneMatch = re.search(r"\"(?:number|mobile|phone)\"\s*:\s*\"?(\d+)\"?", cleanedText, re.IGNORECASE)
+
                     countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+                    if not countryMatch:
+                        countryMatch = re.search(r"\"country\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
+
                     codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+                    if not codeMatch:
+                        codeMatch = re.search(r"\"country_code\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
 
                     username = usernameMatch.group(1).strip() if usernameMatch else target_username
                     telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
@@ -2426,12 +2442,14 @@ async def telegram_lookup(
         api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
-            "Accept": "text/plain,text/html,application/json,*/*"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"
         }
 
         try:
             resp = requests.get(api_url, timeout=10, headers=headers)
+            print(f"[Telegram Fetch] Status Code: {resp.status_code}, Response (first 400 chars): {resp.text[:400] if resp.text else 'Empty'}")
             if resp.status_code != 200:
                 return make_api_response({"status": "success", "results": {}, "message": "no data found"})
             text = resp.text or ""
@@ -2440,9 +2458,9 @@ async def telegram_lookup(
             return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
         cleanedText = clean_branding_text_line_by_line(text)
-        lowerText = cleanedText.lower()
+        lower_raw_text = text.lower()
 
-        if "no result" in lowerText or "no records found" in lowerText or not cleanedText.strip():
+        if "no result" in lower_raw_text or "no records found" in lower_raw_text or not text.strip():
             return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
         # Try to parse JSON first
@@ -2552,10 +2570,24 @@ async def telegram_lookup(
             print(f"Telegram JSON parse fallback to text: {json_err}")
             # Fallback to text parse
             usernameMatch = re.search(r"(?:Username|User):\s*([^\s\n\r]+)", cleanedText, re.IGNORECASE)
+            if not usernameMatch:
+                usernameMatch = re.search(r"\"(?:username|name)\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
+
             idMatch = re.search(r"(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+            if not idMatch:
+                idMatch = re.search(r"\"(?:tg_id|telegram_id)\"\s*:\s*\"?(\d+)\"?", cleanedText, re.IGNORECASE)
+
             phoneMatch = re.search(r"(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?", cleanedText, re.IGNORECASE)
+            if not phoneMatch:
+                phoneMatch = re.search(r"\"(?:number|mobile|phone)\"\s*:\s*\"?(\d+)\"?", cleanedText, re.IGNORECASE)
+
             countryMatch = re.search(r"Country:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+            if not countryMatch:
+                countryMatch = re.search(r"\"country\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
+
             codeMatch = re.search(r"Country Code:\s*([^\n\r]+)", cleanedText, re.IGNORECASE)
+            if not codeMatch:
+                codeMatch = re.search(r"\"country_code\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
 
             username = usernameMatch.group(1).strip() if usernameMatch else targetTelegramId
             telegram_id = idMatch.group(1).strip() if idMatch else "N/A"

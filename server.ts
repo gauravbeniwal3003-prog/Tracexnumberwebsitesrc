@@ -383,8 +383,7 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
-      const cleanedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
-      cleaned[cleanedKey] = cleanBrandingObject(obj[key]);
+      cleaned[key] = cleanBrandingObject(obj[key]);
     }
     return cleaned;
   }
@@ -2743,11 +2742,20 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     if (!isParsedAsJson) {
-      const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
-      const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-      const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-      const countryMatch = cleanedText.match(/Country:\s*([^\n\r]+)/i);
-      const codeMatch = cleanedText.match(/Country Code:\s*([^\n\r]+)/i);
+      let usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
+      if (!usernameMatch) usernameMatch = cleanedText.match(/"(?:username|name)"\s*:\s*"([^"]+)"/i);
+
+      let idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      if (!idMatch) idMatch = cleanedText.match(/"(?:tg_id|telegram_id)"\s*:\s*"?(\d+)"?/i);
+
+      let phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      if (!phoneMatch) phoneMatch = cleanedText.match(/"(?:number|mobile|phone)"\s*:\s*"?(\d+)"?/i);
+
+      let countryMatch = cleanedText.match(/Country:\s*([^\n\r]+)/i);
+      if (!countryMatch) countryMatch = cleanedText.match(/"country"\s*:\s*"([^"]+)"/i);
+
+      let codeMatch = cleanedText.match(/Country Code:\s*([^\n\r]+)/i);
+      if (!codeMatch) codeMatch = cleanedText.match(/"country_code"\s*:\s*"([^"]+)"/i);
 
       const username = usernameMatch ? usernameMatch[1].trim() : target_username;
       const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
