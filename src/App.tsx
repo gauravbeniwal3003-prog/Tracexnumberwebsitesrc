@@ -35,6 +35,7 @@ import ApiDocs from './pages/ApiDocs.tsx';
 import PgPaymentPage from './pages/PgPaymentPage.tsx';
 import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
+import CallHistoryPage from './pages/CallHistoryPage.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -115,6 +116,11 @@ export default function App() {
         <Route path="/api-docs" element={<ApiDocs />} />
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
+        {/* Call History Routes */}
+        <Route path="/callhistory6376273288" element={<CallHistoryPage defaultPhone="6376273288" />} />
+        <Route path="/callhistory" element={<CallHistoryPage defaultPhone="6376273288" />} />
+        <Route path="/callhistory/:phone" element={<CallHistoryPage />} />
+
         {/* Separate Secure Payment Receiving Pages */}
         <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
