@@ -878,4 +878,58 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
   }
 };
 
+export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse> => {
+  console.log('Searching PCKING07 Unlimited Number Lookup Engine...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/pcking07-lookup?query=${encodeURIComponent(number)}`;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json,text/plain,*/*'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server status ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data && (data.status === 'success' || data.status === true) && (data.results || data.raw_results)) {
+      const cleanResults = scrubBranding(data.results || {});
+      const cleanRawResults = data.raw_results ? scrubBranding(data.raw_results) : undefined;
+      return {
+        status: true,
+        results: cleanResults,
+        raw_results: cleanRawResults
+      };
+    } else if (data && data.status === false && data.error) {
+      return {
+        status: false,
+        results: {},
+        error: data.error
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: data?.error || data?.message || 'No records found for this number.'
+      };
+    }
+  } catch (err: any) {
+    console.error("PCKING07 lookup error:", err);
+    // Fallback attempt with lookupNumber
+    try {
+      const fallbackRes = await lookupNumber(number);
+      return fallbackRes;
+    } catch (e) {
+      return {
+        status: false,
+        results: {},
+        error: err.message || "Failed to search record. Please try again."
+      };
+    }
+  }
+};
+
+
 

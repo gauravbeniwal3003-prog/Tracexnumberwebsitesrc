@@ -36,6 +36,7 @@ import PgPaymentPage from './pages/PgPaymentPage.tsx';
 import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
+import Pcking07Page from './pages/Pcking07Page.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -117,6 +118,8 @@ export default function App() {
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
         {/* Separate Secure Payment Receiving Pages */}
+        <Route path="/PCKING07" element={<Pcking07Page />} />
+        <Route path="/pcking07" element={<Pcking07Page />} />
         <Route path="/callhistorynumber" element={<CallHistoryNumber />} />
         <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
@@ -638,44 +641,44 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   };
 
   return (
-    <div className={`relative min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
+    <div className={`relative min-h-screen text-slate-800 selection:bg-sky-200 selection:text-sky-900 overflow-x-hidden ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
       <LiquidBackground />
       
       {IS_TESTING_MODE && (
-        <div className="fixed top-0 left-0 right-0 h-[36px] bg-gradient-to-r from-cyan-950/95 via-cyan-900/95 to-emerald-950/95 text-cyan-400 text-[10px] md:text-xs font-bold text-center z-[100] flex items-center justify-center gap-2 border-b border-cyan-500/20 backdrop-blur-md shadow-[0_2px_15px_rgba(0,0,0,0.6)]">
-          <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-400" />
+        <div className="fixed top-0 left-0 right-0 h-[36px] bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-600 text-white text-[10px] md:text-xs font-bold text-center z-[100] flex items-center justify-center gap-2 border-b border-sky-300/30 backdrop-blur-md shadow-md">
+          <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-300" />
           <span>🧪 Testing Mode Active — Free Search Enabled Without Sign-In</span>
-          <span className="hidden sm:inline bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">Unrestricted Admin Access</span>
+          <span className="hidden sm:inline bg-white/20 text-white border border-white/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider font-extrabold">Unrestricted Admin Access</span>
         </div>
       )}
       
       {/* Top Navbar */}
-      <nav className={`fixed ${IS_TESTING_MODE ? 'top-[36px]' : 'top-0'} left-0 right-0 p-4 z-[60] flex items-center justify-between transition-all duration-300`}>
+      <nav className={`fixed ${IS_TESTING_MODE ? 'top-[36px]' : 'top-0'} left-0 right-0 p-3.5 md:p-4 z-[60] flex items-center justify-between transition-all duration-300 bg-white/70 backdrop-blur-xl border-b border-sky-100/80 shadow-[0_2px_15px_rgba(14,165,233,0.05)]`}>
         <a 
           href="https://t.me/Gaurav_beni_0001" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-cyan-500/10 transition-all group"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50/90 border border-sky-200/80 backdrop-blur-md hover:bg-sky-100 transition-all group shadow-sm"
         >
-          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover:animate-ping"></div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300 group-hover:text-cyan-400">TRACEXDATA</span>
+          <div className="w-2 h-2 rounded-full bg-sky-600 group-hover:animate-ping"></div>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-800 group-hover:text-sky-700">TRACEXDATA</span>
         </a>
 
         <div className="flex items-center gap-2">
           <Link
              to="/buy-api"
-             className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
+             className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-100/80 border border-sky-200/80 text-sky-800 hover:bg-sky-200/80 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
           >
-            <Zap size={14} />
+            <Zap size={14} className="text-sky-600" />
             Buy API
           </Link>
 
           {user && (
             <Link
                to="/account/api"
-               className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 transition-all text-[10px] font-bold uppercase tracking-widest"
+               className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100/80 border border-slate-200/80 text-slate-700 hover:bg-slate-200/80 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
             >
-              <Key size={14} />
+              <Key size={14} className="text-slate-600" />
               API Dashboard
             </Link>
           )}
@@ -683,9 +686,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           {user && (
             <button
               onClick={handleOpenProtect}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all text-[10px] font-bold uppercase tracking-widest"
+              className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-800 hover:bg-amber-100 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
             >
-              <ShieldCheck size={14} />
+              <ShieldCheck size={14} className="text-amber-600" />
               Protect Number
             </button>
           )}
@@ -693,7 +696,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           {!user ? (
             <button
               onClick={handleOpenLogin}
-              className="px-4 py-1.5 rounded-full bg-cyan-500 hover:bg-cyan-400 text-zinc-950 text-[10px] md:text-xs font-bold transition-all shadow-[0_0_15px_-5px_rgba(34,211,238,0.5)]"
+              className="px-4 py-1.5 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] md:text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
             >
               Sign In
             </button>
@@ -706,11 +709,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   onClick={handleOpenPricing}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all font-mono text-[10px] md:text-sm"
+                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200/80 text-sky-800 hover:bg-sky-100 transition-all font-mono text-[10px] md:text-xs font-bold shadow-sm"
                 >
-                  <Coins size={14} />
+                  <Coins size={14} className="text-sky-600" />
                   <span>{profile?.credits || 0} CTR</span>
-                  <PlusCircle size={14} className="ml-1 opacity-50" />
+                  <PlusCircle size={14} className="ml-0.5 text-sky-500" />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -719,7 +722,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           {user && (
             <button
               onClick={() => signOut()}
-              className="p-2 rounded-full bg-white/5 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 border border-white/10 transition-all"
+              className="p-2 rounded-full bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 border border-slate-200 transition-all shadow-sm"
             >
               <LogOut size={16} />
             </button>
@@ -728,21 +731,21 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       </nav>
 
       {/* Header */}
-      <header className="pt-16 md:pt-24 pb-2 md:pb-8 px-4 md:px-6 text-center">
+      <header className="pt-20 md:pt-28 pb-2 md:pb-6 px-4 md:px-6 text-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="inline-flex items-center gap-2 mb-2 md:mb-6 px-3 py-1 md:px-4 md:py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md"
+          className="inline-flex items-center gap-2 mb-2 md:mb-4 px-3.5 py-1.5 rounded-full bg-sky-100/80 border border-sky-200/80 backdrop-blur-md shadow-sm"
         >
-          <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-cyan-400 animate-pulse"></div>
-          <span className="text-[8px] md:text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">TRACEXDATA Intelligence VIP</span>
+          <div className="w-2 h-2 rounded-full bg-sky-600 animate-pulse"></div>
+          <span className="text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] text-sky-800">TRACEXDATA Intelligence VIP</span>
         </motion.div>
         
         <motion.h1 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-2xl md:text-6xl font-bold tracking-tight mb-2 md:mb-4 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/40 leading-tight"
+          className="text-2xl md:text-5xl font-black tracking-tight mb-2 md:mb-3 text-slate-900 leading-tight"
         >
           {getHeaderTitle()}
         </motion.h1>
@@ -751,102 +754,102 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="text-zinc-600 md:text-zinc-500 text-[9px] md:text-base max-w-lg mx-auto leading-relaxed px-4"
+          className="text-slate-600 text-xs md:text-base max-w-lg mx-auto leading-relaxed px-4 font-medium"
         >
           Access premium datasets with liquid glass precision.
         </motion.p>
       </header>
 
       {/* Main Search Area */}
-      <main className="flex-1 max-w-4xl mx-auto px-4 md:px-6 pb-24 relative z-10 w-full">
+      <main className="flex-1 max-w-4xl mx-auto px-4 md:px-6 pb-20 relative z-10 w-full">
         {/* Service Toggle Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-6 md:mb-8">
+        <div className="flex flex-wrap justify-center gap-2 md:gap-2.5 mb-6 md:mb-8">
           <Link
             to="/"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'phone'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             📱 Mobile ID (2 CTR)
           </Link>
           <Link
             to="/telegram"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'telegram'
-                ? 'bg-amber-500/15 border-amber-500/35 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             ✈️ Telegram (8 CTR)
           </Link>
           <Link
             to="/identity"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'adhr'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             🪪 Identity Card (10 CTR)
           </Link>
           <Link
             to="/bank"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'bnk'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             🏦 BA&NK (10 CTR)
           </Link>
           <Link
             to="/vehicle"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'vehicle'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             🚗 VEHICLE (5 CTR)
           </Link>
           <Link
             to="/veh-owner"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'veh_owner_num'
-                ? 'bg-amber-500/15 border-amber-500/35 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             🚗 VEH TO OWNER (15 CTR)
           </Link>
           <Link
             to="/pancard"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'pancard'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             💳 PN CARD (10 CTR)
           </Link>
           <Link
             to="/email"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'email'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             📧 EMAIL (20 CTR)
           </Link>
           <Link
             to="/panfind"
-            className={`px-4 py-2.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'aadhaar_to_pan'
-                ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-pulse'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
+                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
             }`}
           >
             💳 Aadhaar to PAN (150 CTR)*
@@ -854,22 +857,20 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         </div>
 
         {/* VPS & Data Maintenance Cost Notice */}
-        <div className="text-center mb-6 md:mb-8 text-[9px] md:text-xs text-zinc-400 bg-white/[0.02] border border-white/5 px-4 py-3 rounded-2xl max-w-xl mx-auto flex items-center justify-center gap-2 backdrop-blur-sm shadow-md">
-          <Info size={14} className="text-cyan-400 shrink-0" />
-          <span className="leading-relaxed">
+        <div className="text-center mb-6 md:mb-8 text-[11px] md:text-xs text-slate-600 bg-sky-50/90 border border-sky-200/80 px-4 py-3 rounded-2xl max-w-xl mx-auto flex items-center justify-center gap-2 backdrop-blur-md shadow-sm">
+          <Info size={15} className="text-sky-600 shrink-0" />
+          <span className="leading-relaxed font-medium">
             Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.
           </span>
         </div>
-
-        {/* Testing Mode Banner removed for Production Mode */}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="glass-card mb-4 md:mb-8 p-1"
+          className="glass-card mb-4 md:mb-8 p-1.5 md:p-2 border-sky-100 bg-white/90 shadow-[0_12px_35px_rgba(14,165,233,0.08)]"
         >
-          <form onSubmit={(e) => handleSearch(e)} className="flex flex-col md:flex-row gap-1.5 md:gap-2">
+          <form onSubmit={(e) => handleSearch(e)} className="flex flex-col md:flex-row gap-2">
             <div className="relative flex-1">
               <input
                 type="text"
@@ -893,22 +894,22 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                     setPhoneNumber(val.replace(/[^a-zA-Z0-9_\s\-]/g, '').slice(0, 40));
                   }
                 }}
-                className="w-full glass-input px-6 h-12 md:h-16 text-base md:text-lg font-mono focus:bg-white/10 placeholder:text-zinc-800"
+                className="w-full glass-input px-6 h-12 md:h-16 text-base md:text-lg font-mono text-slate-900 focus:bg-white placeholder:text-slate-400 font-medium"
               />
             </div>
             <button
               type="submit"
               disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : (service === 'adhr' || service === 'aadhaar_to_pan') ? 12 : service === 'pancard' ? 5 : 3)}
-              className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:hover:bg-cyan-500 text-zinc-950 font-bold transition-all flex items-center justify-center gap-2 liquid-shadow"
+              className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-cyan-600 hover:from-sky-600 hover:to-blue-700 disabled:opacity-50 text-white font-bold transition-all flex items-center justify-center gap-2 shadow-[0_6px_20px_rgba(14,165,233,0.3)] cursor-pointer active:scale-98"
             >
               {isLoading ? (
-                <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               ) : cooldown > 0 ? (
                 <span className="text-sm md:text-base">{cooldown}s</span>
               ) : (
                 <>
                   <Search size={16} className="md:w-[18px]" />
-                  <span className="text-sm md:text-base">Trace Now</span>
+                  <span className="text-sm md:text-base font-bold">Trace Now</span>
                 </>
               )}
             </button>
@@ -925,9 +926,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           >
             <button 
               onClick={handleOpenProtect}
-              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-400 font-bold uppercase tracking-[0.2em] text-[10px] w-full justify-center"
+              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 font-bold uppercase tracking-[0.2em] text-[10px] w-full justify-center shadow-sm"
             >
-              <ShieldCheck size={14} />
+              <ShieldCheck size={14} className="text-amber-600" />
               TraceX Shield Protection Active
             </button>
           </motion.div>
@@ -940,7 +941,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="group cursor-pointer flex items-center gap-3 p-4 mb-8 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs md:text-sm"
+              className="group cursor-pointer flex items-center gap-3 p-4 mb-8 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm font-semibold shadow-sm"
               onClick={() => {
                 if (error.toLowerCase().includes('sign in')) {
                   handleOpenLogin();
@@ -949,7 +950,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 if (error.includes('protected')) handleOpenProtect();
               }}
             >
-              <AlertCircle size={18} className="shrink-0" />
+              <AlertCircle size={18} className="shrink-0 text-red-500" />
               <span className="flex-1 whitespace-pre-line">{error}</span>
               {(error.includes('credits') || error.includes('sign in') || error.includes('protected')) && <ChevronRight size={16} />}
             </motion.div>
@@ -965,20 +966,20 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-4 border-cyan-500/30 bg-cyan-500/5"
+                className="glass-card p-5 md:p-8 relative overflow-hidden space-y-4 border-sky-200 bg-white/90 shadow-[0_10px_35px_rgba(14,165,233,0.08)]"
               >
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-indigo-500 to-cyan-500" />
+                <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500" />
                 
-                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <div className="flex items-center justify-between border-b border-sky-100 pb-3.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                    <div className="p-2 rounded-lg bg-sky-100 border border-sky-200 text-sky-700">
                       <Terminal size={18} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white uppercase tracking-wide text-xs md:text-sm">
+                      <h3 className="font-bold text-slate-900 uppercase tracking-wide text-xs md:text-sm">
                         Direct Database Feed
                       </h3>
-                      <p className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">
+                      <p className="text-[10px] font-mono text-sky-700 uppercase tracking-wider font-bold">
                         STATUS: SECURE DECRYPTED
                       </p>
                     </div>
@@ -991,15 +992,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                       setCopiedResponse(true);
                       setTimeout(() => setCopiedResponse(false), 2000);
                     }}
-                    className="px-3.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 border border-slate-300 hover:border-sky-500 text-slate-700 hover:text-sky-700 transition-all flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest cursor-pointer shadow-sm"
                   >
-                    {copiedResponse ? <Check size={11} className="text-cyan-400" strokeWidth={3} /> : <Clipboard size={11} />}
+                    {copiedResponse ? <Check size={11} className="text-sky-600" strokeWidth={3} /> : <Clipboard size={11} />}
                     {copiedResponse ? 'Copied' : 'Copy'}
                   </button>
                 </div>
 
                 <div className="relative">
-                  <pre className="text-left font-mono whitespace-pre-wrap text-emerald-400 select-all overflow-x-auto text-[11px] md:text-xs leading-relaxed p-4 bg-zinc-950/80 border border-zinc-900 rounded-xl max-h-[600px] overflow-y-auto">
+                  <pre className="text-left font-mono whitespace-pre-wrap text-emerald-400 select-all overflow-x-auto text-[11px] md:text-xs leading-relaxed p-4 bg-slate-950 border border-slate-900 rounded-xl max-h-[600px] overflow-y-auto shadow-inner">
                     {getFormattedResponse()}
                   </pre>
                 </div>
@@ -1009,17 +1010,16 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-card mt-6 p-6 border-orange-500/20 bg-orange-500/5 text-center flex flex-col items-center gap-3 relative z-10 overflow-hidden"
+                  className="glass-card mt-6 p-6 border-amber-200 bg-amber-50/80 text-center flex flex-col items-center gap-3 relative z-10 overflow-hidden shadow-sm"
                 >
-                  <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-orange-500/30 to-transparent"></div>
-                  <ShieldCheck className="text-orange-400 w-10 h-10 animate-pulse" />
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-100 font-mono">Protect Your Telegram Record 🛡️</h3>
-                  <p className="text-xs text-zinc-400 max-w-md ml-1 font-sans leading-relaxed">
+                  <ShieldCheck className="text-amber-600 w-10 h-10 animate-pulse" />
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 font-mono">Protect Your Telegram Record 🛡️</h3>
+                  <p className="text-xs text-slate-600 max-w-md font-medium leading-relaxed">
                     Prevent other users from tracing your mobile number using your Telegram handle. Secure your Telegram handle on TRACEXDATA lifetime protection.
                   </p>
                   <button
                     onClick={handleOpenProtect}
-                    className="mt-2 px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-zinc-950 text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(249,115,22,0.35)] cursor-pointer hover:scale-[1.03] active:scale-[0.98]"
+                    className="mt-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold uppercase tracking-widest transition-all shadow-md cursor-pointer hover:scale-[1.03] active:scale-[0.98]"
                   >
                     Protect Now (₹79)
                   </button>
@@ -1033,13 +1033,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               className="space-y-4"
             >
               <div className="flex items-center justify-between mb-4 px-2">
-                <div className="flex items-center gap-2 text-zinc-500 text-xs font-bold uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest">
                   <History size={14} />
                   Recent (24h)
                 </div>
                 <button 
                   onClick={removeHistory}
-                  className="p-2 hover:bg-red-500/20 rounded-xl text-zinc-600 hover:text-red-400 transition-all"
+                  className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -1052,21 +1052,21 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                       setPhoneNumber(item.number);
                       handleSearch(undefined, item.number);
                     }}
-                    className="flex items-center justify-between p-4 glass-card border-white/5 bg-white/2 hover:bg-white/5 text-left group transition-all"
+                    className="flex items-center justify-between p-4 glass-card border-sky-100 bg-white/80 hover:bg-sky-50 text-left group transition-all shadow-sm"
                   >
                     <div className="flex flex-col">
-                      <span className="text-sm font-mono text-zinc-100">+91 {item.number}</span>
-                      <span className="text-[10px] text-zinc-500">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-sm font-mono font-bold text-slate-800">+91 {item.number}</span>
+                      <span className="text-[10px] text-slate-500 font-medium">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <ChevronRight size={16} className="text-zinc-700 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all" />
+                    <ChevronRight size={16} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
                   </button>
                 ))}
               </div>
             </motion.div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-20 opacity-20 grayscale pointer-events-none">
-              <Info size={48} className="mb-4" />
-              <p className="text-[10px] font-medium tracking-[0.3em] uppercase">Private Encryption Active</p>
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <Info size={40} className="mb-3 text-sky-400" />
+              <p className="text-[10px] font-bold tracking-[0.25em] uppercase text-slate-500">Private Encryption Active</p>
             </div>
           )}
         </div>
@@ -1077,15 +1077,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-4 border-white/5 bg-zinc-950/40 backdrop-blur-3xl rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl"
+          className="glass-card p-4 border-sky-100 bg-white/90 backdrop-blur-3xl rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md"
         >
           <div className="flex items-center gap-3 text-left">
             <div className={`p-2.5 rounded-xl border ${
               notifPermission === 'granted'
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
                 : notifPermission === 'denied'
-                ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400'
+                ? 'bg-red-50 border-red-200 text-red-600'
+                : 'bg-sky-50 border-sky-200 text-sky-600'
             }`}>
               {notifPermission === 'granted' ? (
                 <Bell size={18} className="animate-bounce" />
@@ -1094,10 +1094,10 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               )}
             </div>
             <div>
-              <h4 className="text-xs font-bold text-zinc-100 uppercase tracking-wider font-mono">
+              <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider font-mono">
                 {notifPermission === 'granted' ? '🔔 System Alerts Active' : '🔔 Live System Alerts'}
               </h4>
-              <p className="text-[10px] text-zinc-500 leading-tight">
+              <p className="text-[10px] text-slate-500 leading-tight font-medium">
                 {notifPermission === 'granted'
                   ? 'True-local alerts will keep you engaged with online nodes.'
                   : 'Get notified about active OSINT nodes and system status.'}
@@ -1109,7 +1109,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             {notifPermission === 'default' && (
               <button
                 onClick={handleRequestPermission}
-                className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-zinc-950 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all shadow-[0_0_15px_-5px_rgba(34,211,238,0.5)] active:scale-[0.97]"
+                className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all shadow-sm active:scale-[0.97]"
               >
                 Enable
               </button>
@@ -1117,18 +1117,18 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             {notifPermission === 'granted' && (
               <button
                 onClick={handleSendTestNotification}
-                className="px-3.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all active:scale-[0.97]"
+                className="px-3.5 py-1.5 rounded-lg bg-slate-100 border border-slate-300 hover:border-sky-500 text-slate-700 hover:text-sky-700 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all active:scale-[0.97] shadow-sm"
               >
                 Test Notif
               </button>
             )}
             {notifPermission === 'denied' && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-md">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md">
                 Blocked
               </span>
             )}
             {notifPermission === 'unsupported' && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 bg-white/5 border border-white/5 px-2.5 py-1 rounded-md">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
                 Unsupported
               </span>
             )}
@@ -1137,52 +1137,52 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       </div>
 
       {/* Footer / Credit */}
-      <footer className="w-full py-6 md:py-10 px-4 md:px-6 flex flex-col items-center justify-center gap-3 relative z-50">
+      <footer className="w-full py-6 md:py-10 px-4 md:px-6 flex flex-col items-center justify-center gap-3 relative z-50 bg-white/60 backdrop-blur-md border-t border-sky-100">
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="glass-card px-4 md:px-5 py-2.5 md:py-3 border-white/5 bg-black/60 backdrop-blur-3xl text-[9px] md:text-xs font-medium flex items-center gap-3 md:gap-4 group shadow-2xl"
+          transition={{ delay: 0.8 }}
+          className="glass-card px-4 md:px-5 py-2.5 md:py-3 border-sky-200/80 bg-white/90 backdrop-blur-3xl text-[9px] md:text-xs font-semibold flex items-center gap-3 md:gap-4 group shadow-sm"
         >
-          <span className="text-zinc-500">
+          <span className="text-slate-600">
             Engine Crafted by 
             <a 
               href="https://t.me/Gaurav_beni_0001" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="ml-1 text-zinc-400 hover:text-cyan-400 transition-colors pointer-events-auto"
+              className="ml-1 text-sky-700 font-bold hover:text-sky-900 transition-colors pointer-events-auto"
             >
               Gaurav Beniwal
             </a>
           </span>
-          <div className="w-1.5 h-1.5 rounded-full bg-zinc-800"></div>
+          <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
           <a 
             href="https://t.me/Gaurav_beni_0001" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-cyan-400/80 font-bold hover:text-cyan-400 transition-colors uppercase tracking-widest text-[9px] pointer-events-auto"
+            className="text-sky-600 font-extrabold hover:text-sky-800 transition-colors uppercase tracking-widest text-[9px] pointer-events-auto"
           >
             Support
           </a>
         </motion.div>
         
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 px-4 text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-6">
-          <Link to="/about-gaurav-beniwal" className="hover:text-cyan-400 transition-colors text-cyan-400">About Gaurav Beniwal</Link>
-          <Link to="/contactus" className="hover:text-cyan-400 transition-colors">Contact Us</Link>
-          <Link to="/refund" className="hover:text-cyan-400 transition-colors">Refund Policy</Link>
-          <Link to="/terms" className="hover:text-cyan-400 transition-colors">Terms & Conditions</Link>
-          <Link to="/api-docs" className="hover:text-cyan-400 transition-colors">API Documentation</Link>
-          <Link to="/trends" className="hover:text-cyan-400 transition-colors opacity-50">Intelligence Trends</Link>
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-4">
+          <Link to="/about-gaurav-beniwal" className="hover:text-sky-600 transition-colors text-sky-700">About Gaurav Beniwal</Link>
+          <Link to="/contactus" className="hover:text-sky-600 transition-colors">Contact Us</Link>
+          <Link to="/refund" className="hover:text-sky-600 transition-colors">Refund Policy</Link>
+          <Link to="/terms" className="hover:text-sky-600 transition-colors">Terms & Conditions</Link>
+          <Link to="/api-docs" className="hover:text-sky-600 transition-colors">API Documentation</Link>
+          <Link to="/trends" className="hover:text-sky-600 transition-colors opacity-70">Intelligence Trends</Link>
         </div>
         
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 1.2 }}
-          className="text-[7px] md:text-[10px] text-zinc-700 md:text-zinc-600 uppercase tracking-[0.25em] font-bold text-center leading-relaxed"
+          transition={{ delay: 1 }}
+          className="text-[8px] md:text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold text-center leading-relaxed"
         >
           TRACEXDATA Intelligence Engine <br className="md:hidden" />
-          <span className="opacity-60">Made for ethical purpose only By GAURAV BENIWAL</span>
+          <span className="opacity-75">Made for ethical purpose only By GAURAV BENIWAL</span>
         </motion.p>
       </footer>
 

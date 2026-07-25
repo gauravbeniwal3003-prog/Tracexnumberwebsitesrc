@@ -78,7 +78,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 40 }}
             transition={{ type: "spring", damping: 25, stiffness: 280 }}
-            className="relative z-10 w-full max-w-[340px] bg-zinc-950/95 border border-amber-500/30 rounded-2xl p-4 shadow-[0_0_40px_rgba(245,158,11,0.15)] overflow-hidden"
+            className="relative z-10 w-full max-w-[340px] bg-white/95 border border-amber-300 rounded-2xl p-4 shadow-2xl shadow-amber-500/10 overflow-hidden"
             id="promo-modal"
           >
             {/* Glowing amber header border */}
@@ -87,7 +87,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
             {/* Close Button Top-Right (Optional auxiliary close) */}
             <button
               onClick={handleClose}
-              className="absolute top-3 right-3 p-1 rounded-full bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white transition-all z-20 cursor-pointer"
+              className="absolute top-3 right-3 p-1 rounded-full bg-slate-100 border border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-all z-20 cursor-pointer"
               id="promo-close-btn"
             >
               <X size={14} />
@@ -95,7 +95,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
 
             {/* Exclusive Personal Badge */}
             <div className="flex justify-center mb-2.5">
-              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[8px] font-extrabold uppercase tracking-[0.12em] animate-pulse">
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[8px] font-extrabold uppercase tracking-[0.12em] animate-pulse">
                 <Sparkles size={9} />
                 PERSONAL OFFER ONLY FOR YOU
               </div>
@@ -103,23 +103,23 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
 
             {/* Title & Offer Headings */}
             <div className="text-center mb-3">
-              <h2 className="text-lg font-black uppercase tracking-tight text-white mb-0.5 leading-tight">
-                Get <span className="text-amber-400">1 Month Unlimited</span>
+              <h2 className="text-lg font-black uppercase tracking-tight text-slate-900 mb-0.5 leading-tight">
+                Get <span className="text-amber-600">1 Month Unlimited</span>
               </h2>
               <div className="flex items-center justify-center gap-2">
-                <span className="text-zinc-500 line-through text-xs font-mono">₹1,199</span>
-                <span className="px-1.5 py-0.2 bg-red-500/20 border border-red-500/30 text-red-400 text-[9px] font-black rounded uppercase tracking-wider">
+                <span className="text-slate-400 line-through text-xs font-mono">₹1,199</span>
+                <span className="px-1.5 py-0.2 bg-red-100 border border-red-200 text-red-600 text-[9px] font-black rounded uppercase tracking-wider">
                   Save 83%
                 </span>
               </div>
-              <div className="text-2xl font-extrabold text-amber-400 font-mono tracking-tighter mt-0.5">
+              <div className="text-2xl font-extrabold text-amber-600 font-mono tracking-tighter mt-0.5">
                 At Just ₹200
               </div>
             </div>
 
             {/* Notice regarding Personal Offer Exclusion */}
-            <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/10 text-center mb-3">
-              <p className="text-[10px] text-amber-300/95 font-medium leading-relaxed">
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-center mb-3">
+              <p className="text-[10px] text-amber-800 font-medium leading-relaxed">
                 🎯 <span className="font-bold">Confidential Deal:</span> Custom-allocated personal offer. <span className="underline decoration-amber-400/50">Other users cannot view this pricing</span>.
               </p>
             </div>
@@ -127,23 +127,23 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
             {/* Plan Benefits */}
             <div className="space-y-2 mb-3.5">
               <div className="flex items-start gap-2">
-                <CheckCircle2 size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <span className="text-[11px] text-zinc-300 font-medium leading-normal">
-                  <strong className="text-white font-semibold">Unlimited Lookups</strong> for 30 Days (Phone, Identity, etc.)
+                <CheckCircle2 size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                <span className="text-[11px] text-slate-600 font-medium leading-normal">
+                  <strong className="text-slate-900 font-semibold">Unlimited Lookups</strong> for 30 Days (Phone, Identity, etc.)
                 </span>
               </div>
               <div className="flex items-start gap-2">
-                <Zap size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <span className="text-[11px] text-zinc-300 font-medium leading-normal">
+                <Zap size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                <span className="text-[11px] text-slate-600 font-medium leading-normal">
                   No query limitations, trace instantly at ultra-high priority
                 </span>
               </div>
               
               {/* EXCLUSION NOTE */}
-              <div className="flex items-start gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/10">
-                <ShieldAlert size={12} className="text-red-400 mt-0.5 shrink-0 animate-pulse" />
-                <span className="text-[9px] text-zinc-400 leading-normal font-medium">
-                  <strong className="text-red-400 block mb-0.5 font-bold uppercase tracking-wider">Aadhaar to PAN Lookup Not Included</strong>
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 border border-red-200">
+                <ShieldAlert size={12} className="text-red-500 mt-0.5 shrink-0 animate-pulse" />
+                <span className="text-[9px] text-slate-600 leading-normal font-medium">
+                  <strong className="text-red-600 block mb-0.5 font-bold uppercase tracking-wider">Aadhaar to PAN Lookup Not Included</strong>
                   Requires manual queries to government portals, strictly excluded from unlimited packages.
                 </span>
               </div>
@@ -155,7 +155,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
                 {/* Cross Button alongside Claim Offer button */}
                 <button
                   onClick={handleClose}
-                  className="px-3.5 py-2.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-all flex items-center justify-center active:scale-[0.98] cursor-pointer"
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center active:scale-[0.98] cursor-pointer"
                   id="promo-decline-btn"
                   title="Close & Decline"
                 >
@@ -164,7 +164,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
                 {/* Main Claim Button */}
                 <button
                   onClick={handleClaim}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black tracking-widest uppercase text-[9.5px] transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)] flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black tracking-widest uppercase text-[9.5px] transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
                   id="promo-buy-btn"
                 >
                   <Flame size={11} className="animate-pulse" />
@@ -172,7 +172,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
                 </button>
               </div>
 
-              <div className="flex items-center justify-center gap-3.5 text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider">
+              <div className="flex items-center justify-center gap-3.5 text-[8.5px] text-slate-500 font-bold uppercase tracking-wider">
                 <span className="flex items-center gap-1">
                   <Lock size={8} />
                   Secure checkout

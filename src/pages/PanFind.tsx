@@ -136,28 +136,22 @@ export default function PanFind() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#020204] text-zinc-100 selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden flex flex-col justify-between font-sans">
+    <div className="relative min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between font-sans">
       <LiquidBackground />
-
-      {/* Decorative Orbs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden -z-20">
-        <div className="absolute top-[20%] right-[10%] w-80 h-80 rounded-full bg-gradient-to-br from-cyan-500/5 to-transparent blur-[100px]" />
-        <div className="absolute bottom-[25%] left-[15%] w-96 h-96 rounded-full bg-gradient-to-tr from-purple-500/5 to-transparent blur-[120px]" />
-      </div>
 
       {/* Secure Header */}
       <nav className="fixed top-0 left-0 right-0 p-4 md:p-6 z-[60] flex items-center justify-between pointer-events-none">
         <Link 
           to="/"
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-xl pointer-events-auto transition-all hover:bg-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
+          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-sky-200 backdrop-blur-xl pointer-events-auto transition-all hover:bg-sky-50 shadow-sm"
         >
-          <ArrowLeft size={14} className="text-zinc-400" />
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-zinc-100">TRACEXDATA</span>
+          <ArrowLeft size={14} className="text-slate-600" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-800">TRACEXDATA</span>
         </Link>
 
-        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-500/5 border border-emerald-500/20 backdrop-blur-xl pointer-events-auto shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-          <Shield size={12} className="text-emerald-400" />
-          <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest font-mono">
+        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 backdrop-blur-xl pointer-events-auto shadow-sm">
+          <Shield size={12} className="text-emerald-600" />
+          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest font-mono">
             SECURE CHECKOUT
           </span>
         </div>
@@ -176,20 +170,17 @@ export default function PanFind() {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
-                className="glass-card p-6 md:p-8 relative overflow-hidden"
+                className="glass-card p-6 md:p-8 relative overflow-hidden rounded-[32px] border border-sky-200 bg-white shadow-sm"
               >
-                {/* Glowing neon accent header */}
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500" />
-
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                  <div className="p-2.5 rounded-xl bg-sky-100 border border-sky-200 text-sky-600">
                     <FileSearch size={22} className="animate-pulse" />
                   </div>
                   <div>
-                    <h1 className="text-lg font-bold tracking-tight text-white uppercase italic">
+                    <h1 className="text-lg font-black tracking-tight text-slate-900 uppercase italic">
                       Aadhaar To PAN Search
                     </h1>
-                    <p className="text-xs text-zinc-400">
+                    <p className="text-xs text-slate-600 font-medium">
                       Instantly query secure linking details for Rs. 150
                     </p>
                   </div>
@@ -199,7 +190,7 @@ export default function PanFind() {
                   
                   {/* Target Aadhaar input */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-700 block">
                       Target Aadhaar Number (12 Digits)
                     </label>
                     <div className="relative">
@@ -210,23 +201,23 @@ export default function PanFind() {
                         placeholder="e.g. 511422100978"
                         value={aadhaarNumber}
                         onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-mono tracking-widest text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                        className="w-full bg-slate-50 border border-sky-200 rounded-xl px-4 py-3 text-sm font-mono tracking-widest text-slate-900 focus:outline-none focus:border-sky-500 transition-colors shadow-inner font-semibold"
                       />
-                      <Search className="absolute right-4 top-3.5 text-zinc-600" size={16} />
+                      <Search className="absolute right-4 top-3.5 text-slate-400" size={16} />
                     </div>
                   </div>
 
                   {/* Divider */}
                   <div className="flex items-center my-6">
-                    <div className="flex-grow border-t border-white/5" />
-                    <span className="text-[9px] font-bold tracking-[0.2em] text-zinc-600 px-3 uppercase">Payer Contact details</span>
-                    <div className="flex-grow border-t border-white/5" />
+                    <div className="flex-grow border-t border-sky-100" />
+                    <span className="text-[9px] font-black tracking-[0.2em] text-slate-500 px-3 uppercase">Payer Contact details</span>
+                    <div className="flex-grow border-t border-sky-100" />
                   </div>
 
                   {/* Guest Contact Details */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block">
                         Full Name (Optional)
                       </label>
                       <input
@@ -234,12 +225,12 @@ export default function PanFind() {
                         placeholder="John Doe"
                         value={payerName}
                         onChange={(e) => setPayerName(e.target.value)}
-                        className="w-full bg-zinc-950/40 border border-zinc-800/80 rounded-xl px-4 py-2.5 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                        className="w-full bg-slate-50 border border-sky-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition-colors font-medium"
                       />
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block">
                         Phone (Optional)
                       </label>
                       <input
@@ -248,13 +239,13 @@ export default function PanFind() {
                         placeholder="9999999999"
                         value={payerPhone}
                         onChange={(e) => setPayerPhone(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-zinc-950/40 border border-zinc-800/80 rounded-xl px-4 py-2.5 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                        className="w-full bg-slate-50 border border-sky-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition-colors font-medium"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block">
                       Email Address (Optional)
                     </label>
                     <input
@@ -262,17 +253,17 @@ export default function PanFind() {
                       placeholder="john@example.com"
                       value={payerEmail}
                       onChange={(e) => setPayerEmail(e.target.value)}
-                      className="w-full bg-zinc-950/40 border border-zinc-800/80 rounded-xl px-4 py-2.5 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                      className="w-full bg-slate-50 border border-sky-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition-colors font-medium"
                     />
                   </div>
 
                   {/* Pricing Overview and CTA */}
-                  <div className="p-4 rounded-xl bg-cyan-500/5 border border-cyan-500/10 flex items-center justify-between mt-6">
+                  <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between mt-6">
                     <div className="flex items-center gap-2">
-                      <CreditCard className="text-cyan-400" size={16} />
-                      <span className="text-xs font-semibold text-zinc-300">Transaction Value</span>
+                      <CreditCard className="text-sky-600" size={16} />
+                      <span className="text-xs font-bold text-slate-700">Transaction Value</span>
                     </div>
-                    <span className="text-base font-extrabold text-white font-mono">
+                    <span className="text-base font-black text-slate-900 font-mono">
                       ₹ 150.00
                     </span>
                   </div>
@@ -281,7 +272,7 @@ export default function PanFind() {
                     <motion.div
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-xl bg-red-500/5 border border-red-500/20 text-xs text-red-400 flex items-start gap-2"
+                      className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 font-semibold"
                     >
                       <AlertCircle size={14} className="shrink-0 mt-0.5" />
                       <span>{errorMsg}</span>
@@ -291,7 +282,7 @@ export default function PanFind() {
                   <button
                     type="submit"
                     disabled={isProcessing}
-                    className="w-full relative overflow-hidden group py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 text-white font-semibold text-xs uppercase tracking-widest hover:from-cyan-400 hover:to-purple-500 transition-all shadow-[0_0_20px_rgba(6,182,212,0.15)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold text-xs uppercase tracking-widest transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                   >
                     {isProcessing ? (
                       <>
@@ -316,20 +307,19 @@ export default function PanFind() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="glass-card p-10 text-center flex flex-col items-center justify-center gap-6"
+                className="glass-card p-10 text-center flex flex-col items-center justify-center gap-6 rounded-[32px] border border-sky-200 bg-white shadow-sm"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-cyan-500/10 blur-xl animate-pulse" />
-                  <div className="relative p-5 rounded-full bg-zinc-950 border border-cyan-500/30 text-cyan-400">
+                  <div className="relative p-5 rounded-full bg-sky-50 border border-sky-200 text-sky-600">
                     <Loader2 className="animate-spin" size={42} />
                   </div>
                 </div>
 
                 <div className="space-y-2 max-w-sm">
-                  <h2 className="text-base font-bold text-white uppercase tracking-wider">
+                  <h2 className="text-base font-black text-slate-900 uppercase tracking-wider">
                     Verifying Payment Ledger
                   </h2>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
                     Analyzing transaction logs and querying secure government links. Please keep this screen open.
                   </p>
                 </div>
@@ -343,27 +333,25 @@ export default function PanFind() {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-6"
+                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-6 rounded-[32px] border border-sky-200 bg-white shadow-sm"
               >
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500" />
-
-                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <div className="flex items-center justify-between border-b border-sky-100 pb-4">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <div className="p-2 rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-800">
                       <ShieldCheck size={18} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white uppercase tracking-wide text-sm">
+                      <h3 className="font-black text-slate-900 uppercase tracking-wide text-sm">
                         Verified PAN Records
                       </h3>
-                      <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-wider">
+                      <p className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider">
                         STATUS: SUCCESSFUL LOOKUP
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={handleReset}
-                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-[10px] uppercase tracking-wider font-bold text-zinc-300"
+                    className="px-3 py-1.5 rounded-lg bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-colors text-[10px] uppercase tracking-wider font-black text-slate-800 cursor-pointer"
                   >
                     New Search
                   </button>
@@ -373,20 +361,20 @@ export default function PanFind() {
                 <div className="space-y-3 font-mono">
                   
                   {/* Status row */}
-                  <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-1">
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Aadhaar Target</span>
-                    <span className="text-xs text-zinc-200">{results.aadhaar_number || queryAadhaar || "N/A"}</span>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-1">
+                    <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Aadhaar Target</span>
+                    <span className="text-xs text-slate-900 font-extrabold">{results.aadhaar_number || queryAadhaar || "N/A"}</span>
                   </div>
 
                   {results.full_pan_number && (
-                    <div className="p-4 rounded-xl bg-cyan-500/5 border border-cyan-500/10 flex items-center justify-between">
+                    <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between">
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] text-cyan-400 font-bold uppercase tracking-wider">Allocated PAN Number</span>
-                        <span className="text-base font-extrabold text-white tracking-widest">{results.full_pan_number}</span>
+                        <span className="text-[9px] text-sky-700 font-black uppercase tracking-wider">Allocated PAN Number</span>
+                        <span className="text-base font-black text-slate-900 tracking-widest">{results.full_pan_number}</span>
                       </div>
                       <button
                         onClick={() => copyToClipboard(results.full_pan_number)}
-                        className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-cyan-500/30 text-zinc-400 hover:text-cyan-400 transition-all flex items-center justify-center group"
+                        className="p-2 rounded-lg bg-white border border-sky-200 hover:border-sky-400 text-slate-600 hover:text-sky-700 transition-all flex items-center justify-center group cursor-pointer shadow-sm"
                         title="Copy PAN"
                       >
                         <Clipboard size={14} className="group-hover:scale-110 transition-transform" />
@@ -396,33 +384,33 @@ export default function PanFind() {
 
                   {results.aadhaar_status && (
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Linking Status</span>
-                        <span className="text-xs text-zinc-200 capitalize">{results.aadhaar_status}</span>
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
+                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Linking Status</span>
+                        <span className="text-xs text-slate-900 capitalize font-bold">{results.aadhaar_status}</span>
                       </div>
-                      <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Search Code</span>
-                        <span className="text-xs text-zinc-200">{results.response_code || 200}</span>
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
+                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Search Code</span>
+                        <span className="text-xs text-slate-900 font-bold">{results.response_code || 200}</span>
                       </div>
                     </div>
                   )}
 
                   {results.message && (
-                    <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Server Message</span>
-                      <span className="text-xs text-zinc-300">{results.message}</span>
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
+                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Server Message</span>
+                      <span className="text-xs text-slate-800 font-medium">{results.message}</span>
                     </div>
                   )}
 
                   {results.aadhaar_to_panfind_status && (
-                    <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-900 flex flex-col gap-0.5">
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Search State</span>
-                      <span className="text-xs text-zinc-200">{results.aadhaar_to_panfind_status}</span>
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
+                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Search State</span>
+                      <span className="text-xs text-slate-900 font-bold">{results.aadhaar_to_panfind_status}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="p-3 text-center text-[10px] text-zinc-500 font-mono">
+                <div className="p-3 text-center text-[10px] text-slate-500 font-mono font-semibold">
                   Security Seal: Data decrypted securely and never retained on disk.
                 </div>
               </motion.div>
@@ -435,17 +423,17 @@ export default function PanFind() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                className="glass-card p-8 text-center space-y-6"
+                className="glass-card p-8 text-center space-y-6 rounded-[32px] border border-sky-200 bg-white shadow-sm"
               >
-                <div className="p-4 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 w-fit mx-auto">
+                <div className="p-4 rounded-full bg-rose-50 border border-rose-200 text-rose-600 w-fit mx-auto">
                   <AlertCircle size={36} />
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="font-bold text-white uppercase tracking-wider text-sm">
+                  <h3 className="font-black text-slate-900 uppercase tracking-wider text-sm">
                     Query Blocked
                   </h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
                     {errorMsg || 'We were unable to verify your Cashfree payment or the search gateway is busy. Please try again.'}
                   </p>
                 </div>
@@ -453,13 +441,13 @@ export default function PanFind() {
                 <div className="flex gap-4 justify-center">
                   <button
                     onClick={handleReset}
-                    className="px-5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors text-xs font-semibold text-zinc-300"
+                    className="px-5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-colors text-xs font-black text-slate-800 cursor-pointer"
                   >
                     Try Again
                   </button>
                   <Link
                     to="/"
-                    className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs font-semibold text-zinc-400 hover:text-white"
+                    className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors text-xs font-bold text-slate-700"
                   >
                     Go Back
                   </Link>
@@ -473,7 +461,7 @@ export default function PanFind() {
       </div>
 
       {/* Footer Details */}
-      <footer className="p-6 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-600 border-t border-white/5 relative z-10">
+      <footer className="p-6 text-center text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 bg-sky-50/50 border-t border-sky-100 relative z-10">
         TRACEXDATA Security Engine — Managed by Gaurav Beniwal
       </footer>
     </div>

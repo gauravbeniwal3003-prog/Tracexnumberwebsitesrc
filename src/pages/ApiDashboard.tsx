@@ -73,44 +73,44 @@ export default function ApiDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#030303] flex items-center justify-center">
-        <RefreshCcw className="animate-spin text-cyan-500" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <RefreshCcw className="animate-spin text-sky-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#030303] text-zinc-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
       <LiquidBackground />
       
       {/* Sidebar/Nav */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between">
-        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
-          <LayoutDashboard size={16} className="text-cyan-400" />
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-300">Account Home</span>
+      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between bg-white/70 backdrop-blur-md border-b border-sky-100">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer shadow-sm">
+          <LayoutDashboard size={16} className="text-sky-600" />
+          <span className="text-xs font-black uppercase tracking-widest text-slate-800">Account Home</span>
         </button>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/api-docs')} className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 px-4 py-2 hover:text-white transition-colors">Documentation</button>
-          <button onClick={() => navigate('/buy-api')} className="bg-cyan-500 text-zinc-950 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest">Buy API</button>
+          <button onClick={() => navigate('/api-docs')} className="text-[10px] font-black uppercase tracking-widest text-slate-600 px-4 py-2 hover:text-slate-900 transition-colors cursor-pointer">Documentation</button>
+          <button onClick={() => navigate('/buy-api')} className="bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest cursor-pointer shadow-sm">Buy API</button>
         </div>
       </nav>
 
       <div className="relative z-10 pt-24 pb-12 px-4 max-w-5xl mx-auto">
         <header className="mb-12">
-          <h1 className="text-3xl font-bold mb-2">API Intelligence</h1>
-          <p className="text-zinc-500 text-sm">Manage your secret keys and monitor real-time platform usage.</p>
+          <h1 className="text-3xl font-black mb-2 text-slate-900">API Intelligence</h1>
+          <p className="text-slate-600 text-sm font-medium">Manage your secret keys and monitor real-time platform usage.</p>
         </header>
 
         {keys.length === 0 ? (
-          <div className="glass-card flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-6 text-zinc-600">
+          <div className="glass-card flex flex-col items-center justify-center py-24 text-center rounded-[32px] border border-sky-200 bg-white shadow-sm">
+            <div className="w-16 h-16 rounded-full bg-sky-50 flex items-center justify-center mb-6 text-sky-600 border border-sky-100">
               <Database size={32} />
             </div>
-            <h3 className="text-xl font-bold mb-2">No Active API Keys</h3>
-            <p className="text-zinc-500 text-sm max-w-sm mb-8">You haven't purchased any API plans yet. Unlock full platform capability with our SaaS endpoints.</p>
+            <h3 className="text-xl font-black mb-2 text-slate-900">No Active API Keys</h3>
+            <p className="text-slate-600 text-sm max-w-sm mb-8 font-medium">You haven't purchased any API plans yet. Unlock full platform capability with our SaaS endpoints.</p>
             <button 
               onClick={() => navigate('/buy-api')}
-              className="px-8 py-3 rounded-xl bg-cyan-500 text-zinc-950 font-bold text-xs hover:bg-cyan-400"
+              className="px-8 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold text-xs cursor-pointer shadow-sm"
             >
               Get My First Key
             </button>
@@ -126,36 +126,36 @@ export default function ApiDashboard() {
                   key={key.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-card p-6 md:p-8"
+                  className="glass-card p-6 md:p-8 rounded-[28px] border border-sky-200 bg-white shadow-sm"
                 >
                   <div className="flex flex-col md:flex-row gap-8">
                     {/* Key Info */}
                     <div className="flex-1 space-y-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-xl border ${isExpired ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400'}`}>
+                          <div className={`p-2 rounded-xl border ${isExpired ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-sky-50 border-sky-200 text-sky-600'}`}>
                             <Key size={18} />
                           </div>
                           <div>
-                            <h4 className="font-bold text-white leading-tight">{key.plan_name}</h4>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-0.5">Plan Identity</p>
+                            <h4 className="font-black text-slate-900 leading-tight">{key.plan_name}</h4>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold mt-0.5">Plan Identity</p>
                           </div>
                         </div>
-                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                          isExpired ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                          isExpired ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                         }`}>
                           {isExpired ? 'Expired' : 'Active'}
                         </div>
                       </div>
 
                       <div className="relative group">
-                        <div className="flex items-center justify-between font-mono bg-black/40 border border-white/5 rounded-xl px-4 py-3 group-hover:bg-black/60 transition-all">
-                          <span className="text-zinc-400 text-sm overflow-hidden text-ellipsis whitespace-nowrap mr-4">
+                        <div className="flex items-center justify-between font-mono bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 shadow-inner">
+                          <span className="text-slate-200 text-sm overflow-hidden text-ellipsis whitespace-nowrap mr-4">
                             {key.api_key}
                           </span>
                           <button 
                             onClick={() => copyToClipboard(key.api_key, key.id)}
-                            className="text-cyan-400 hover:text-cyan-300 transition-colors shrink-0"
+                            className="text-sky-400 hover:text-sky-300 transition-colors shrink-0 cursor-pointer"
                           >
                             {copiedKey === key.id ? <CheckCircle size={16} /> : <Copy size={16} />}
                           </button>
@@ -166,7 +166,7 @@ export default function ApiDashboard() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0 }}
-                              className="absolute -top-8 right-0 text-[10px] font-bold text-cyan-400"
+                              className="absolute -top-8 right-0 text-[10px] font-black text-sky-600"
                             >
                               Copied!
                             </motion.span>
@@ -175,19 +175,19 @@ export default function ApiDashboard() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 rounded-2xl bg-white/2 border border-white/5">
-                          <div className="flex items-center gap-2 text-zinc-500 mb-1">
+                        <div className="p-4 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+                          <div className="flex items-center gap-2 text-slate-500 mb-1">
                             <Clock size={12} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Time Remaining</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Time Remaining</span>
                           </div>
-                          <span className="text-lg font-bold text-white">{calculateTimeLeft(key.expires_at)}</span>
+                          <span className="text-lg font-black text-slate-900">{calculateTimeLeft(key.expires_at)}</span>
                         </div>
-                        <div className="p-4 rounded-2xl bg-white/2 border border-white/5">
-                          <div className="flex items-center gap-2 text-zinc-500 mb-1">
+                        <div className="p-4 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+                          <div className="flex items-center gap-2 text-slate-500 mb-1">
                             <Activity size={12} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Usage Count</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Usage Count</span>
                           </div>
-                          <span className="text-lg font-bold text-white">{key.requests_used} reqs</span>
+                          <span className="text-lg font-black text-slate-900">{key.requests_used} reqs</span>
                         </div>
                       </div>
                     </div>
@@ -195,23 +195,23 @@ export default function ApiDashboard() {
                     {/* Stats & Actions */}
                     <div className="w-full md:w-64 space-y-6">
                       <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] uppercase font-bold tracking-widest text-zinc-500">
+                        <div className="flex justify-between text-[10px] uppercase font-black tracking-widest text-slate-600">
                           <span>Request Quota</span>
                           <span>{key.request_limit ? `${Math.round(progress)}%` : 'Unlimited'}</span>
                         </div>
                         {key.request_limit ? (
-                           <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                           <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-sky-100">
                              <div 
-                               className={`h-full transition-all duration-1000 ${progress > 90 ? 'bg-red-500' : 'bg-cyan-500'}`}
+                               className={`h-full transition-all duration-1000 ${progress > 90 ? 'bg-rose-500' : 'bg-sky-500'}`}
                                style={{ width: `${progress}%` }}
                              />
                            </div>
                         ) : (
-                          <div className="h-1.5 w-full bg-cyan-500/20 rounded-full flex items-center justify-center">
-                            <span className="text-[8px] font-bold text-cyan-400">∞ LIFETIME THROUGHPUT</span>
+                          <div className="h-6 w-full bg-sky-100/80 border border-sky-200 rounded-full flex items-center justify-center">
+                            <span className="text-[9px] font-black text-sky-800">∞ LIFETIME THROUGHPUT</span>
                           </div>
                         )}
-                        <p className="text-[9px] text-zinc-600 font-medium">Reset on renewal. Includes full dataset lookup.</p>
+                        <p className="text-[9px] text-slate-500 font-semibold">Reset on renewal. Includes full dataset lookup.</p>
                       </div>
 
                       <div className="pt-4 space-y-2">
@@ -240,14 +240,14 @@ export default function ApiDashboard() {
                             }
                             copyToClipboard(targetUrl, `${key.id}-endpoint`);
                           }}
-                          className="w-full py-3 rounded-xl bg-white/5 border border-white/5 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                          className="w-full py-3 rounded-xl bg-sky-50 border border-sky-200 text-slate-800 text-[10px] font-black uppercase tracking-widest hover:bg-sky-100 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                         >
                           <Code size={14} />
                           Copy Endpoint
                         </button>
                         <button 
                           onClick={() => navigate('/buy-api')}
-                          className="w-full py-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-500/20 transition-all flex items-center justify-center gap-2"
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                         >
                           Renew / Upgrade
                         </button>
@@ -261,24 +261,24 @@ export default function ApiDashboard() {
         )}
 
         <section className="mt-24 grid grid-cols-1 md:grid-cols-2 gap-8">
-           <div className="p-8 rounded-[32px] border border-white/5 bg-white/2">
-             <HelpCircle className="text-zinc-600 mb-6" size={32} />
-             <h4 className="text-xl font-bold mb-4">Quick Documentation</h4>
-             <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+           <div className="p-8 rounded-[32px] border border-sky-200 bg-white shadow-sm">
+             <HelpCircle className="text-sky-600 mb-6" size={32} />
+             <h4 className="text-xl font-black mb-4 text-slate-900">Quick Documentation</h4>
+             <p className="text-slate-600 text-sm mb-6 leading-relaxed font-medium">
                All endpoints return high-fidelity JSON. We recommend using a backend proxy to keep your API key hidden from frontend users.
              </p>
-             <button onClick={() => navigate('/api-docs')} className="text-cyan-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 hover:translate-x-1 transition-all">
+             <button onClick={() => navigate('/api-docs')} className="text-sky-700 font-extrabold text-xs uppercase tracking-widest flex items-center gap-2 hover:translate-x-1 transition-all cursor-pointer">
                Full Documentation
                <ChevronRight size={14} />
              </button>
            </div>
-           <div className="p-8 rounded-[32px] border border-white/5 bg-white/2">
-             <LayoutDashboard className="text-zinc-600 mb-6" size={32} />
-             <h4 className="text-xl font-bold mb-4">Request Logs</h4>
-             <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+           <div className="p-8 rounded-[32px] border border-sky-200 bg-white shadow-sm">
+             <LayoutDashboard className="text-sky-600 mb-6" size={32} />
+             <h4 className="text-xl font-black mb-4 text-slate-900">Request Logs</h4>
+             <p className="text-slate-600 text-sm mb-6 leading-relaxed font-medium">
                Detailed analytics and request history are available in your primary account dashboard. Monitor IP origin and response times.
              </p>
-             <button onClick={() => navigate('/')} className="text-zinc-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 hover:translate-x-1 transition-all">
+             <button onClick={() => navigate('/')} className="text-slate-600 font-extrabold text-xs uppercase tracking-widest flex items-center gap-2 hover:translate-x-1 transition-all cursor-pointer">
                Return Home
                <ChevronRight size={14} />
              </button>
@@ -286,7 +286,7 @@ export default function ApiDashboard() {
         </section>
       </div>
 
-      <footer className="py-12 text-center text-[10px] text-zinc-700 font-bold uppercase tracking-[0.2em]">
+      <footer className="py-12 text-center text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] bg-sky-50/50 border-t border-sky-100">
         TraceXData Intelligence • API Gateway v4.1
       </footer>
     </div>

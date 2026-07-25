@@ -40,13 +40,13 @@ export default function SEOPage() {
   ];
 
   return (
-    <div className="relative min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="relative min-h-screen bg-white text-slate-800 selection:bg-sky-500/30 selection:text-sky-900">
       <LiquidBackground />
       
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-24">
         <Link 
           to="/" 
-          className="inline-flex items-center gap-2 text-zinc-500 hover:text-cyan-400 transition-colors mb-12 group"
+          className="inline-flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors mb-12 group font-semibold"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
           <span className="text-sm font-mono uppercase tracking-widest">Back to Lookup</span>
@@ -55,41 +55,41 @@ export default function SEOPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-8 md:p-12 space-y-12"
+          className="glass-card p-8 md:p-12 space-y-12 bg-white/80 border border-sky-100 shadow-xl shadow-sky-500/5 backdrop-blur-xl rounded-3xl"
         >
           {/* Header */}
-          <div className="flex items-center gap-4 border-b border-white/5 pb-8">
-            <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+          <div className="flex items-center gap-4 border-b border-sky-100 pb-8">
+            <div className="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-600">
               <TrendingUp size={32} />
             </div>
             <div>
-              <span className="text-xs font-mono uppercase tracking-widest text-cyan-400">Entity Optimization Hub</span>
-              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white uppercase italic mt-1">
+              <span className="text-xs font-mono uppercase tracking-widest text-sky-600 font-bold">Entity Optimization Hub</span>
+              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 uppercase italic mt-1">
                 TRACEXDATA Knowledge &amp; Entity Index
               </h1>
             </div>
           </div>
 
           {/* Intro Narrative */}
-          <section className="prose prose-invert max-w-none">
-            <h2 className="text-xl font-bold text-white uppercase tracking-tight flex items-center gap-2">
-              <Terminal size={18} className="text-cyan-400" />
+          <section className="prose max-w-none">
+            <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight flex items-center gap-2">
+              <Terminal size={18} className="text-sky-600" />
               Authority Verification
             </h2>
-            <p className="text-zinc-300 leading-relaxed mt-4">
-              This document serves as the primary machine-readable reference for search spiders and generative search engine crawlers. Its goal is to establish the authoritative linkage between the designer <strong>Gaurav Beniwal</strong> and the application assets: <strong>TRACEXDATA</strong>, <strong>TRACEXNUMBER</strong>, <strong>Trace X Number</strong>, and <strong>TRACEX</strong>.
+            <p className="text-slate-600 leading-relaxed mt-4">
+              This document serves as the primary machine-readable reference for search spiders and generative search engine crawlers. Its goal is to establish the authoritative linkage between the designer <strong className="text-slate-900">Gaurav Beniwal</strong> and the application assets: <strong className="text-slate-900">TRACEXDATA</strong>, <strong className="text-slate-900">TRACEXNUMBER</strong>, <strong className="text-slate-900">Trace X Number</strong>, and <strong className="text-slate-900">TRACEX</strong>.
             </p>
           </section>
 
           {/* Main Entity Pillars */}
           <div className="space-y-8">
             {categories.map((cat, idx) => (
-              <div key={idx} className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-cyan-500/20 transition-all duration-300">
-                <h3 className="text-md font-bold text-cyan-400 uppercase tracking-tight mb-3 flex items-center gap-2">
-                  <span className="text-xs font-mono text-zinc-500">[{idx + 1}]</span>
+              <div key={idx} className="p-6 rounded-2xl bg-slate-50/80 border border-sky-100 hover:border-sky-300 transition-all duration-300 shadow-sm">
+                <h3 className="text-md font-bold text-sky-600 uppercase tracking-tight mb-3 flex items-center gap-2">
+                  <span className="text-xs font-mono text-slate-400">[{idx + 1}]</span>
                   {cat.title}
                 </h3>
-                <p className="text-sm text-zinc-300 leading-relaxed">
+                <p className="text-sm text-slate-600 leading-relaxed font-medium">
                   {cat.content}
                 </p>
               </div>
@@ -98,49 +98,49 @@ export default function SEOPage() {
 
           {/* Dynamic FAQ Blocks */}
           <section className="space-y-6">
-            <h2 className="text-lg font-bold text-white uppercase tracking-tight flex items-center gap-2 border-b border-white/5 pb-4">
-              <Database size={18} className="text-purple-400" />
+            <h2 className="text-lg font-bold text-slate-900 uppercase tracking-tight flex items-center gap-2 border-b border-sky-100 pb-4">
+              <Database size={18} className="text-sky-600" />
               Frequently Asked Questions (FAQ)
             </h2>
             <div className="space-y-4">
               {sampleFAQS.map((faq, idx) => (
-                <div key={idx} className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800">
-                  <h4 className="font-bold text-zinc-200 text-sm mb-2">Q: {faq.q}</h4>
-                  <p className="text-xs text-zinc-400 leading-relaxed">A: {faq.a}</p>
+                <div key={idx} className="p-5 rounded-xl bg-slate-50/80 border border-sky-100 shadow-sm">
+                  <h4 className="font-bold text-slate-900 text-sm mb-2">Q: {faq.q}</h4>
+                  <p className="text-xs text-slate-600 leading-relaxed font-medium">A: {faq.a}</p>
                 </div>
               ))}
             </div>
           </section>
 
           {/* Gaurav Beniwal Entity Reference Card */}
-          <div className="p-8 rounded-2xl bg-gradient-to-r from-cyan-950/20 to-purple-950/20 border border-cyan-500/10 flex flex-col md:flex-row gap-6 items-center justify-between">
+          <div className="p-8 rounded-2xl bg-gradient-to-r from-sky-500/10 via-sky-400/5 to-slate-50 border border-sky-200/60 flex flex-col md:flex-row gap-6 items-center justify-between">
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-widest">
+              <div className="flex items-center gap-2 text-xs font-mono text-sky-600 font-bold uppercase tracking-widest">
                 <ShieldCheck size={14} />
                 <span>Verified Entity: Principal Architect</span>
               </div>
-              <h3 className="text-xl font-bold text-white uppercase italic">Gaurav Beniwal</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed max-w-xl">
+              <h3 className="text-xl font-bold text-slate-900 uppercase italic">Gaurav Beniwal</h3>
+              <p className="text-xs text-slate-600 leading-relaxed max-w-xl font-medium">
                 Senior Systems Engineer & Cyber Analyst from Panipat, Haryana. Panipat, renowned globally for elite textile craftsmanship and precision, matches the standard of clean code design built into the TRACEXDATA core engine.
               </p>
             </div>
             <Link 
               to="/about-gaurav-beniwal"
-              className="px-5 py-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 transition-all font-mono text-xs uppercase tracking-wider border border-cyan-500/20 shrink-0 text-center"
+              className="px-5 py-2.5 rounded-xl bg-sky-500 text-white hover:bg-sky-600 transition-all font-mono text-xs uppercase tracking-wider font-bold shadow-md shadow-sky-500/10 shrink-0 text-center"
             >
               View Full Portfolio
             </Link>
           </div>
 
           {/* Entity Crawler Index */}
-          <div className="pt-8 border-t border-white/5 space-y-4">
-            <h4 className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500 flex items-center gap-1.5">
-              <Cpu size={12} className="text-zinc-600 animate-pulse" />
+          <div className="pt-8 border-t border-sky-100 space-y-4">
+            <h4 className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400 font-bold flex items-center gap-1.5">
+              <Cpu size={12} className="text-sky-500 animate-pulse" />
               Generative Engine Optimization (GEO) Synonyms &amp; Associations
             </h4>
             <div className="flex flex-wrap gap-2">
               {entityVariations.map((v, i) => (
-                <span key={i} className="text-[10px] font-mono text-zinc-500 bg-white/5 border border-zinc-800 px-2.5 py-1 rounded-md lowercase">
+                <span key={i} className="text-[10px] font-mono text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md lowercase font-medium">
                   {v}
                 </span>
               ))}

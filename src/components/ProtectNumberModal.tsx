@@ -148,66 +148,66 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="glass-card w-full max-w-md p-8 relative z-10 border-white/10"
+        className="glass-card w-full max-w-md p-8 relative z-10 bg-white border-sky-200 shadow-[0_20px_50px_rgba(14,165,233,0.15)]"
       >
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-white transition-colors">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-800 transition-colors cursor-pointer">
           <X size={20} />
         </button>
 
         {success ? (
           <div className="text-center py-8">
-            <div className="w-20 h-20 bg-green-500/20 text-green-400 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-green-500/30">
+            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-emerald-200">
               <Check size={40} />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Request Shared!</h2>
-            <p className="text-zinc-500 text-sm">Your security request has been sent for manual authorization.</p>
+            <h2 className="text-2xl font-black text-slate-900 mb-2">Request Shared!</h2>
+            <p className="text-slate-600 text-sm font-medium">Your security request has been sent for manual authorization.</p>
           </div>
         ) : (
           <>
             <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-cyan-500/20 text-cyan-400 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-cyan-500/30">
+              <div className="w-16 h-16 bg-sky-100 text-sky-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-sky-200 shadow-sm">
                 <ShieldCheck size={32} />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">TraceX Security</h2>
-              <p className="text-zinc-500 text-sm">Stop anyone from finding your details or records on our platform.</p>
+              <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase tracking-tight">TraceX Security</h2>
+              <p className="text-slate-600 text-sm font-medium">Stop anyone from finding your details or records on our platform.</p>
             </div>
 
             {/* Selection Tabs */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-white/5 rounded-xl border border-white/10 mb-6">
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200 mb-6">
               <button
                 type="button"
                 onClick={() => { setActiveTab('mobile'); setInputValue(''); }}
-                className={`py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'mobile' ? 'bg-cyan-500 text-zinc-950' : 'text-zinc-400 hover:text-white'}`}
+                className={`py-2 text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer ${activeTab === 'mobile' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 Mobile
               </button>
               <button
                 type="button"
                 onClick={() => { setActiveTab('telegram'); setInputValue(''); }}
-                className={`py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'telegram' ? 'bg-cyan-500 text-zinc-950' : 'text-zinc-400 hover:text-white'}`}
+                className={`py-2 text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer ${activeTab === 'telegram' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 Telegram
               </button>
             </div>
 
             <div className="space-y-6">
-              <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+              <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-100 shadow-sm">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Protection Active</span>
-                  <span className="text-cyan-400 font-bold text-sm">Lifetime</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Protection Active</span>
+                  <span className="text-sky-700 font-extrabold text-sm">Lifetime</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Pricing</span>
-                  <span className="text-white font-bold text-xl">₹{getPrice()}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Pricing</span>
+                  <span className="text-slate-900 font-black text-xl">₹{getPrice()}</span>
                 </div>
               </div>
 
               <form onSubmit={handleProtect} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold text-zinc-500 ml-1">{getLabel()}</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">{getLabel()}</label>
                   <div className="relative">
-                    {activeTab === 'mobile' && <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />}
-                    {activeTab === 'telegram' && <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />}
+                    {activeTab === 'mobile' && <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
+                    {activeTab === 'telegram' && <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
                     
                     <input
                       required
@@ -222,7 +222,7 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
                         }
                       }}
                       placeholder={getPlaceholder()}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-12 py-3 focus:outline-none focus:border-cyan-500 transition-all text-white font-mono"
+                      className="w-full bg-slate-50 border border-sky-200 rounded-xl px-12 py-3 focus:outline-none focus:bg-white focus:border-sky-500 transition-all text-slate-900 font-mono font-medium"
                     />
                   </div>
                 </div>
@@ -230,7 +230,7 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
                 <button
                   disabled={loading || !inputValue}
                   type="submit"
-                  className="w-full py-4 rounded-xl bg-cyan-500 text-zinc-950 font-bold flex items-center justify-center gap-2 hover:bg-cyan-400 transition-all disabled:opacity-50 shadow-xl"
+                  className="w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold flex items-center justify-center gap-2 hover:from-sky-600 hover:to-blue-700 transition-all disabled:opacity-50 shadow-md cursor-pointer"
                 >
                   {loading ? (
                     <Loader2 className="animate-spin" size={20} />
@@ -243,7 +243,7 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
                 </button>
               </form>
 
-              <p className="text-[10px] text-zinc-600 text-center uppercase tracking-widest leading-relaxed">
+              <p className="text-[10px] text-slate-500 text-center uppercase tracking-widest leading-relaxed font-bold">
                 Once protected, your record will be locked and hidden from all searches forever.
               </p>
             </div>

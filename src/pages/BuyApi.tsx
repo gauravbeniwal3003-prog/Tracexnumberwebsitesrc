@@ -214,17 +214,17 @@ export default function BuyApi() {
   const activeService = SERVICES.find(s => s.id === selectedServiceId) || SERVICES[0];
 
   return (
-    <div className="min-h-screen bg-[#030303] text-zinc-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
       <LiquidBackground />
       
       {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between">
-        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-cyan-500/10 transition-all group">
-          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover:animate-ping"></div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">TRACEXDATA</span>
+      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between bg-white/70 backdrop-blur-md border-b border-sky-100">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all group cursor-pointer shadow-sm">
+          <div className="w-1.5 h-1.5 rounded-full bg-sky-500 group-hover:animate-ping"></div>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-800">TRACEXDATA</span>
         </button>
         {user && (
-          <button onClick={() => navigate('/account/api')} className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+          <button onClick={() => navigate('/account/api')} className="text-[10px] font-black uppercase tracking-widest text-sky-700 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 hover:bg-sky-200 transition-all cursor-pointer">
             My API Dashboard
           </button>
         )}
@@ -235,16 +235,16 @@ export default function BuyApi() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/5 border border-cyan-500/10 mb-6"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 mb-6 shadow-sm"
           >
-            <Zap size={14} className="text-cyan-400" />
-            <span className="text-xs font-bold uppercase tracking-widest text-cyan-400/80">SaaS API Marketplace</span>
+            <Zap size={14} className="text-sky-600" />
+            <span className="text-xs font-bold uppercase tracking-widest text-sky-800">SaaS API Marketplace</span>
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-7xl font-bold tracking-tighter mb-4 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/40"
+            className="text-4xl md:text-7xl font-black tracking-tighter mb-4 text-slate-900"
           >
             Intelligence at <br className="hidden md:block" /> Your Fingertips.
           </motion.h1>
@@ -252,7 +252,7 @@ export default function BuyApi() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-zinc-500 max-w-2xl mx-auto text-sm md:text-base"
+            className="text-slate-600 max-w-2xl mx-auto text-sm md:text-base font-medium"
           >
             Select the service you want below, configure your custom plan, and easily generate white-label keys to power your platforms.
           </motion.p>
@@ -261,8 +261,8 @@ export default function BuyApi() {
         {/* STEP 1: API Service Selection Cards Grid */}
         <div className="mb-14">
           <div className="flex items-center gap-2 mb-6 justify-center md:justify-start">
-            <span className="w-5 h-5 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-mono text-[10px] font-bold">1</span>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Select API Service Category</h2>
+            <span className="w-5 h-5 rounded-full bg-sky-100 border border-sky-200 flex items-center justify-center text-sky-700 font-mono text-[10px] font-bold">1</span>
+            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-600">Select API Service Category</h2>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -274,25 +274,25 @@ export default function BuyApi() {
                 <button
                   key={srv.id}
                   onClick={() => setSelectedServiceId(srv.id)}
-                  className={`text-left p-6 rounded-2xl border transition-all relative ${
+                  className={`text-left p-6 rounded-2xl border transition-all relative cursor-pointer shadow-sm ${
                     isSelected 
-                      ? 'border-cyan-500 bg-cyan-500/5 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
-                      : 'border-white/5 bg-white/2 hover:bg-white/5 hover:border-white/10'
+                      ? 'border-sky-500 bg-sky-50/90 shadow-md ring-2 ring-sky-400/20' 
+                      : 'border-sky-100 bg-slate-50/70 hover:bg-sky-50/50 hover:border-sky-300'
                   }`}
                 >
                   {isSelected && (
-                    <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-cyan-400" />
+                    <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-sky-600" />
                   )}
                   <div className="flex items-center gap-4 mb-3">
-                    <div className={`p-3 rounded-xl ${isSelected ? 'bg-cyan-500/10 text-cyan-400' : 'bg-white/5 text-zinc-400'}`}>
+                    <div className={`p-3 rounded-xl ${isSelected ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 border border-sky-100'}`}>
                       <IconComp size={20} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white text-sm sm:text-base leading-tight">{srv.name}</h3>
-                      <span className="text-[10px] text-zinc-500 font-mono">{srv.badge}</span>
+                      <h3 className="font-extrabold text-slate-900 text-sm sm:text-base leading-tight">{srv.name}</h3>
+                      <span className="text-[10px] text-sky-700 font-extrabold font-mono">{srv.badge}</span>
                     </div>
                   </div>
-                  <p className="text-zinc-400 text-xs line-clamp-2 leading-relaxed">{srv.description}</p>
+                  <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed font-medium">{srv.description}</p>
                 </button>
               );
             })}
@@ -301,12 +301,12 @@ export default function BuyApi() {
 
         {/* STEP 2: Selected API Plans Grid */}
         <div className="mb-24">
-          <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-sky-100">
             <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-mono text-[10px] font-bold">2</span>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Available Plans for {activeService.name}</h2>
+              <span className="w-5 h-5 rounded-full bg-sky-100 border border-sky-200 flex items-center justify-center text-sky-700 font-mono text-[10px] font-bold">2</span>
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-600">Available Plans for {activeService.name}</h2>
             </div>
-            <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest hidden md:inline">Instant Generation</span>
+            <span className="text-[10px] font-mono text-sky-700 font-extrabold uppercase tracking-widest hidden md:inline">Instant Generation</span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -323,41 +323,41 @@ export default function BuyApi() {
                 return (
                   <div
                     key={plan.id}
-                    className={`relative p-8 rounded-3xl border flex flex-col justify-between ${
+                    className={`relative p-8 rounded-3xl border flex flex-col justify-between shadow-sm ${
                       isPopular 
-                        ? 'border-cyan-500/30 bg-gradient-to-b from-cyan-500/5 to-transparent' 
-                        : 'border-white/5 bg-white/2'
-                    } backdrop-blur-xl group hover:border-cyan-500/20 transition-all`}
+                        ? 'border-sky-300 bg-gradient-to-b from-sky-50 to-blue-50/60 ring-2 ring-sky-400/20' 
+                        : 'border-sky-100 bg-slate-50/80 hover:bg-sky-50/40'
+                    } transition-all`}
                   >
                     {isPopular && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-cyan-500 text-zinc-950 text-[10px] font-bold uppercase tracking-widest">
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-sky-600 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
                         Best Value
                       </div>
                     )}
 
                     <div>
-                      <h3 className="text-lg font-bold text-white mb-1">{plan.name}</h3>
-                      <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-6">
+                      <h3 className="text-lg font-black text-slate-900 mb-1">{plan.name}</h3>
+                      <p className="text-sky-800 text-[10px] font-extrabold uppercase tracking-widest mb-6">
                         {plan.limit} • {plan.duration}
                       </p>
 
                       <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-3xl font-bold text-white">₹{plan.price}</span>
-                        <span className="text-zinc-600 text-xs">/ plan cost</span>
+                        <span className="text-3xl font-black text-slate-900">₹{plan.price}</span>
+                        <span className="text-slate-500 text-xs font-bold">/ plan cost</span>
                       </div>
 
-                      <ul className="space-y-3 mb-10 border-t border-white/5 pt-6">
-                        <li className="flex items-center gap-2.5 text-xs text-zinc-400">
-                          <Check size={14} className="text-cyan-400 shrink-0" />
+                      <ul className="space-y-3 mb-10 border-t border-sky-100 pt-6">
+                        <li className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+                          <Check size={14} className="text-sky-600 shrink-0" />
                           <span>{plan.limit} Included</span>
                         </li>
-                        <li className="flex items-center gap-2.5 text-xs text-zinc-400">
-                          <Check size={14} className="text-cyan-400 shrink-0" />
+                        <li className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+                          <Check size={14} className="text-sky-600 shrink-0" />
                           <span>{plan.duration} API Access</span>
                         </li>
                         {activeService.features.map((feat, fIdx) => (
-                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-zinc-400">
-                            <Check size={14} className="text-cyan-400/70 shrink-0" />
+                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+                            <Check size={14} className="text-sky-600 shrink-0" />
                             <span>{feat}</span>
                           </li>
                         ))}
@@ -366,10 +366,10 @@ export default function BuyApi() {
 
                     <button
                       onClick={() => handleBuy(plan.id, plan.price)}
-                      className={`w-full py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                      className={`w-full py-4 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
                         isPopular 
-                          ? 'bg-cyan-500 text-zinc-950 hover:bg-cyan-400' 
-                          : 'bg-white/5 text-white hover:bg-white/10 border border-white/5'
+                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700' 
+                          : 'bg-white text-slate-800 hover:bg-sky-600 hover:text-white border border-sky-200'
                       }`}
                     >
                       <span>Buy Key Now</span>
@@ -387,14 +387,14 @@ export default function BuyApi() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="relative p-8 rounded-[32px] border border-amber-500/35 bg-amber-500/5 backdrop-blur-xl group hover:border-amber-500/50 transition-all flex flex-col md:flex-row items-center justify-between gap-6 mb-24"
+          className="relative p-8 rounded-[32px] border border-amber-300 bg-amber-50/80 backdrop-blur-xl group hover:border-amber-400 transition-all flex flex-col md:flex-row items-center justify-between gap-6 mb-24 shadow-sm"
         >
           <div className="flex-1">
-            <div className="inline-flex px-3 py-1 rounded-full bg-amber-500 text-zinc-950 text-[10px] font-bold uppercase tracking-widest mb-4">
+            <div className="inline-flex px-3 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest mb-4">
               Custom Enterprise System
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Need a custom API or gateway system?</h3>
-            <p className="text-zinc-400 text-sm max-w-xl leading-relaxed">
+            <h3 className="text-xl font-black text-slate-900 mb-2">Need a custom API or gateway system?</h3>
+            <p className="text-slate-700 text-sm max-w-xl leading-relaxed font-medium">
               We construct custom API gateways, web scraping, automation scripts, and database integrations tailored to your technical requirements.
             </p>
           </div>
@@ -403,7 +403,7 @@ export default function BuyApi() {
             href="https://t.me/Gaurav_beni_0001"
             target="_blank"
             rel="noopener noreferrer"
-            className="py-4 px-8 rounded-xl bg-amber-500 text-zinc-950 font-bold text-sm hover:bg-amber-400 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.25)] shrink-0 w-full md:w-auto"
+            className="py-4 px-8 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm shrink-0 w-full md:w-auto"
           >
             <span>Message on Telegram</span>
             <ArrowRight size={16} />
@@ -412,40 +412,40 @@ export default function BuyApi() {
 
         {/* Features Section */}
         <section className="mb-24 grid grid-cols-1 md:grid-cols-3 gap-12">
-          <div className="space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+          <div className="space-y-4 p-6 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
               <Server size={24} />
             </div>
-            <h4 className="text-lg font-bold text-white">Hidden Infrastructure</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">Your real API remains 100% secure. Users only interact with our secondary gateway key logic.</p>
+            <h4 className="text-lg font-black text-slate-900">Hidden Infrastructure</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">Your real API remains 100% secure. Users only interact with our secondary gateway key logic.</p>
           </div>
-          <div className="space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+          <div className="space-y-4 p-6 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
               <Code size={24} />
             </div>
-            <h4 className="text-lg font-bold text-white">Clean Response</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">No third-party branding. 100% white-label JSON response that integrates perfectly with your UI.</p>
+            <h4 className="text-lg font-black text-slate-900">Clean Response</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">No third-party branding. 100% white-label JSON response that integrates perfectly with your UI.</p>
           </div>
-          <div className="space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+          <div className="space-y-4 p-6 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
               <Shield size={24} />
             </div>
-            <h4 className="text-lg font-bold text-white">Instant Fulfillment</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">Get your API key automatically within seconds after successful payment. No manual waiting.</p>
+            <h4 className="text-lg font-black text-slate-900">Instant Fulfillment</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">Get your API key automatically within seconds after successful payment. No manual waiting.</p>
           </div>
         </section>
 
         {/* API Preview */}
-        <section className="glass-card p-8 md:p-12 mb-24 overflow-hidden rounded-[32px] border border-white/5 bg-white/2">
+        <section className="glass-card p-8 md:p-12 mb-24 overflow-hidden rounded-[32px] border border-sky-200 bg-white shadow-sm">
           <div className="flex flex-col md:flex-row gap-12">
             <div className="flex-1 space-y-6">
-              <h2 className="text-2xl md:text-3xl font-bold text-white">Integrate in Seconds.</h2>
-              <p className="text-zinc-500 text-sm leading-relaxed">Example fetch request to empower your platform with TraceXData Intelligence.</p>
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900">Integrate in Seconds.</h2>
+              <p className="text-slate-600 text-sm leading-relaxed font-medium">Example fetch request to empower your platform with TraceXData Intelligence.</p>
               
               <div className="space-y-2">
                 {['Live Validation', 'Auto Filtering', 'No Rate Limits', 'JSON Ready'].map(item => (
-                  <div key={item} className="flex items-center gap-2 text-zinc-400 font-bold text-[10px] uppercase tracking-widest">
-                    <div className="w-1 h-1 rounded-full bg-cyan-500"></div>
+                  <div key={item} className="flex items-center gap-2 text-slate-700 font-extrabold text-[10px] uppercase tracking-widest">
+                    <div className="w-1.5 h-1.5 rounded-full bg-sky-600"></div>
                     {item}
                   </div>
                 ))}
@@ -454,7 +454,7 @@ export default function BuyApi() {
               <div className="pt-4">
                 <button 
                    onClick={() => navigate('/api-docs')}
-                   className="px-8 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold text-xs hover:bg-white/10 transition-all flex items-center gap-2"
+                   className="px-8 py-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 font-extrabold text-xs hover:bg-sky-100 transition-all flex items-center gap-2 cursor-pointer shadow-sm"
                 >
                   View Documentation
                   <ArrowRight size={14} />
@@ -462,18 +462,18 @@ export default function BuyApi() {
               </div>
             </div>
             
-            <div className="flex-1 bg-black/40 rounded-[24px] p-6 font-mono text-[11px] md:text-sm border border-white/5 shadow-2xl">
-              <div className="flex gap-1.5 mb-6 opacity-30">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+            <div className="flex-1 bg-slate-900 rounded-[24px] p-6 font-mono text-[11px] md:text-sm border border-slate-800 shadow-md">
+              <div className="flex gap-1.5 mb-6 opacity-40">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
               </div>
-              <pre className="text-zinc-400 leading-relaxed overflow-x-auto">
-                <span className="text-cyan-400">fetch</span>(<span className="text-orange-300">"{getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=YOUR_KEY&query=987..."</span>)<br />
-                &nbsp;&nbsp;.<span className="text-cyan-400">then</span>(r =&gt; r.<span className="text-cyan-400">json</span>())<br />
-                &nbsp;&nbsp;.<span className="text-cyan-400">then</span>(data =&gt; &#123;<br />
-                &nbsp;&nbsp;&nbsp;&nbsp;console.<span className="text-cyan-400">log</span>(data.results[<span className="text-orange-300">"Result 1"</span>].name);<br />
-                &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-zinc-600">// Output: "TraceXData Intelligence"</span><br />
+              <pre className="text-slate-300 leading-relaxed overflow-x-auto">
+                <span className="text-sky-400">fetch</span>(<span className="text-emerald-400">"{getApiBaseUrl().replace(/\/$/, "")}/api/lookup?key=YOUR_KEY&query=987..."</span>)<br />
+                &nbsp;&nbsp;.<span className="text-sky-400">then</span>(r =&gt; r.<span className="text-sky-400">json</span>())<br />
+                &nbsp;&nbsp;.<span className="text-sky-400">then</span>(data =&gt; &#123;<br />
+                &nbsp;&nbsp;&nbsp;&nbsp;console.<span className="text-sky-400">log</span>(data.results[<span className="text-emerald-400">"Result 1"</span>].name);<br />
+                &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-slate-500">// Output: "TraceXData Intelligence"</span><br />
                 &nbsp;&nbsp;&#125;);
               </pre>
             </div>
@@ -482,27 +482,27 @@ export default function BuyApi() {
 
         {/* FAQ */}
         <section className="max-w-3xl mx-auto space-y-4">
-           <h2 className="text-xl font-bold text-center mb-10 text-white">Common Questions</h2>
+           <h2 className="text-xl font-black text-center mb-10 text-slate-900">Common Questions</h2>
            <div className="space-y-4">
              {[
                { q: 'Is the API real-time?', a: 'Yes, every query hits our live intelligence engine immediately.' },
                { q: 'Can I use it on multiple websites?', a: 'Your API key is not IP-locked. You can use it across any platform you own.' },
                { q: 'What happens when I hit the limit?', a: 'The API will return a 403 error. You can upgrade or renew anytime.' }
              ].map((item, idx) => (
-               <div key={idx} className="p-6 rounded-2xl bg-white/2 border border-white/5">
-                 <h5 className="font-bold text-white mb-2 text-xs">{item.q}</h5>
-                 <p className="text-zinc-500 text-xs leading-relaxed">{item.a}</p>
+               <div key={idx} className="p-6 rounded-2xl bg-slate-50/80 border border-sky-100 shadow-sm">
+                 <h5 className="font-extrabold text-slate-900 mb-2 text-xs">{item.q}</h5>
+                 <p className="text-slate-600 text-xs leading-relaxed font-medium">{item.a}</p>
                </div>
              ))}
            </div>
         </section>
       </div>
 
-      <footer className="py-20 text-center border-t border-white/5 mt-20">
-         <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-4">Secured by TraceXData Infrastructure</p>
+      <footer className="py-20 text-center border-t border-sky-100 mt-20 bg-sky-50/50">
+         <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Secured by TraceXData Infrastructure</p>
          <div className="flex items-center justify-center gap-6">
-            <button onClick={() => navigate('/contactus')} className="text-zinc-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Support</button>
-            <button onClick={() => navigate('/')} className="text-zinc-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Trace Home</button>
+            <button onClick={() => navigate('/contactus')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Support</button>
+            <button onClick={() => navigate('/')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Trace Home</button>
          </div>
       </footer>
     </div>

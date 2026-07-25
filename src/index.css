@@ -7,29 +7,26 @@
 }
 
 :root {
-  --glass-bg: rgba(10, 10, 15, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --accent-cyan: #22d3ee;
-  --accent-purple: #a855f7;
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(186, 230, 253, 0.8);
+  --accent-cyan: #0284c7;
+  --accent-purple: #2563eb;
 }
 
 body {
-  @apply bg-[#030303] text-zinc-100 min-h-screen overflow-x-hidden font-sans;
-  background-image: 
-    radial-gradient(circle at 10% 10%, rgba(34, 211, 238, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 90% 90%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+  @apply bg-white text-slate-800 min-h-screen overflow-x-hidden font-sans;
 }
 
 .glass-card {
-  @apply backdrop-blur-xl bg-[var(--glass-bg)] border border-[var(--glass-border)] rounded-3xl shadow-2xl;
+  @apply backdrop-blur-2xl bg-white/85 border border-sky-100 rounded-3xl shadow-[0_10px_30px_rgba(14,165,233,0.08)];
 }
 
 .glass-input {
-  @apply backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:border-[var(--accent-cyan)] transition-all px-6 py-4;
+  @apply backdrop-blur-md bg-slate-50/90 border border-sky-200/90 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-100 transition-all px-6 py-4;
 }
 
 .liquid-shadow {
-  box-shadow: 0 0 30px -10px var(--accent-cyan);
+  box-shadow: 0 8px 25px -5px rgba(14, 165, 233, 0.3);
 }
 
 @keyframes gradient-x {

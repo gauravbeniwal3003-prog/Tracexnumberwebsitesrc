@@ -523,31 +523,31 @@ export default function AdminDashboard() {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#030303] flex items-center justify-center"><RefreshCcw className="animate-spin text-cyan-500" /></div>;
+  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><RefreshCcw className="animate-spin text-sky-600" /></div>;
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-white text-slate-800 flex flex-col items-center justify-center p-4">
         <ShieldAlert size={64} className="text-red-500 mb-6" />
         <h1 className="text-3xl font-bold mb-2">Access Denied</h1>
-        <p className="text-zinc-500 text-center max-w-sm mb-8">This area is restricted to TraceXData administrators only.</p>
-        <button onClick={() => navigate('/')} className="px-8 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold">Return Home</button>
+        <p className="text-slate-500 text-center max-w-sm mb-8 font-medium">This area is restricted to TraceXData administrators only.</p>
+        <button onClick={() => navigate('/')} className="px-8 py-3 rounded-xl bg-slate-900 text-white font-bold shadow-md cursor-pointer">Return Home</button>
       </div>
     );
   }
 
 
   return (
-    <div className="min-h-screen bg-[#030303] text-zinc-100 pb-20">
+    <div className="min-h-screen bg-white text-slate-800 pb-20">
       <LiquidBackground />
       
       {/* Admin Sidebar */}
-      <nav className="fixed left-0 top-0 bottom-0 w-64 bg-black/40 border-r border-white/5 backdrop-blur-3xl hidden lg:flex flex-col p-6 z-[70]">
+      <nav className="fixed left-0 top-0 bottom-0 w-64 bg-white/80 border-r border-sky-100 backdrop-blur-3xl hidden lg:flex flex-col p-6 z-[70] shadow-sm">
         <div className="flex items-center gap-3 mb-10 px-2">
-          <div className="w-8 h-8 rounded-lg bg-cyan-500 flex items-center justify-center text-zinc-950">
+          <div className="w-8 h-8 rounded-lg bg-sky-500 flex items-center justify-center text-white font-bold shadow-sm">
             <ShieldCheck size={20} />
           </div>
-          <span className="font-bold tracking-tighter text-lg">Admin Core</span>
+          <span className="font-bold tracking-tighter text-lg text-slate-900">Admin Core</span>
         </div>
 
         <div className="space-y-1">
@@ -564,7 +564,7 @@ export default function AdminDashboard() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
-                activeTab === tab.id ? 'bg-cyan-500 text-zinc-950' : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                activeTab === tab.id ? 'bg-sky-500 text-white shadow-md shadow-sky-500/20' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <tab.icon size={18} />
@@ -574,7 +574,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="mt-auto">
-           <button onClick={() => navigate('/')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-600 hover:text-white text-sm font-bold transition-all">
+           <button onClick={() => navigate('/')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-sm font-bold transition-all">
              <ChevronRight size={18} />
              Exit Panel
            </button>
@@ -582,15 +582,15 @@ export default function AdminDashboard() {
       </nav>
 
       {/* Mobile Top Nav with Tab Swapper */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 border-b border-white/5 bg-[#030303]/90 backdrop-blur-2xl z-[60]">
-        <div className="p-4 flex items-center justify-between border-b border-white/5">
-          <span className="font-bold text-xs uppercase tracking-widest text-cyan-500">TraceX Admin Control</span>
-          <button onClick={() => navigate('/')} className="text-zinc-500 hover:text-white flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
+      <div className="lg:hidden fixed top-0 left-0 right-0 border-b border-sky-100 bg-white/90 backdrop-blur-2xl z-[60] shadow-sm">
+        <div className="p-4 flex items-center justify-between border-b border-sky-100">
+          <span className="font-bold text-xs uppercase tracking-widest text-sky-600">TraceX Admin Control</span>
+          <button onClick={() => navigate('/')} className="text-slate-500 hover:text-slate-900 flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
             Exit Panel
             <ChevronRight size={14} />
           </button>
         </div>
-        <div className="flex gap-2 p-3 overflow-x-auto scrollbar-none bg-[#050505]/50">
+        <div className="flex gap-2 p-3 overflow-x-auto scrollbar-none bg-slate-50/50">
           {[
             { id: 'stats', label: 'Stats', icon: TrendingUp },
             { id: 'users', label: 'Users', icon: Users },
@@ -604,7 +604,7 @@ export default function AdminDashboard() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                activeTab === tab.id ? 'bg-cyan-500 text-zinc-950 font-extrabold shadow-lg shadow-cyan-500/20' : 'text-zinc-400 hover:text-white bg-white/2 border border-white/5'
+                activeTab === tab.id ? 'bg-sky-500 text-white font-extrabold shadow-md shadow-sky-500/20' : 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200'
               }`}
             >
               <tab.icon size={13} />

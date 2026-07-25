@@ -215,28 +215,28 @@ export default function BuyCredits() {
   };
 
   return (
-    <div className="min-h-screen bg-[#030303] text-zinc-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
       <LiquidBackground />
       
       {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between">
-        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-cyan-500/10 transition-all group">
-          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover:animate-ping"></div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">TRACEXDATA</span>
+      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between bg-white/70 backdrop-blur-md border-b border-sky-100">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all group cursor-pointer shadow-sm">
+          <div className="w-1.5 h-1.5 rounded-full bg-sky-500 group-hover:animate-ping"></div>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-800">TRACEXDATA</span>
         </button>
         <div className="flex items-center gap-4">
           {profile && (
-            <div className="hidden xs:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-zinc-300">
-              <span className="text-zinc-500">Credits:</span>
-              <span className="text-cyan-400">{profile.credits ?? 0}</span>
+            <div className="hidden xs:flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-xs font-bold text-slate-700 shadow-sm">
+              <span className="text-slate-500">Credits:</span>
+              <span className="text-sky-600 font-extrabold">{profile.credits ?? 0}</span>
             </div>
           )}
           {user ? (
-            <button onClick={() => navigate('/')} className="text-[10px] font-bold uppercase tracking-widest text-[#a855f7] px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all">
+            <button onClick={() => navigate('/')} className="text-[10px] font-black uppercase tracking-widest text-sky-700 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 hover:bg-sky-200 transition-all cursor-pointer">
               Dashboard
             </button>
           ) : (
-            <button onClick={() => window.dispatchEvent(new CustomEvent('open-login'))} className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all">
+            <button onClick={() => window.dispatchEvent(new CustomEvent('open-login'))} className="text-[10px] font-black uppercase tracking-widest text-sky-600 px-4 py-1.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer">
               Sign In
             </button>
           )}
@@ -248,16 +248,16 @@ export default function BuyCredits() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/5 border border-purple-500/10 mb-6"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 mb-6 shadow-sm"
           >
-            <Zap size={14} className="text-purple-400" />
-            <span className="text-xs font-bold uppercase tracking-widest text-purple-400/80">Recharge &amp; Subscriptions</span>
+            <Zap size={14} className="text-sky-600" />
+            <span className="text-xs font-bold uppercase tracking-widest text-sky-800">Recharge &amp; Subscriptions</span>
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-7xl font-bold tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/40 font-sans"
+            className="text-4xl md:text-7xl font-black tracking-tighter mb-6 text-slate-900 font-sans"
           >
             Power Your Insights. <br className="hidden md:block" /> Unlimited Access.
           </motion.h1>
@@ -265,7 +265,7 @@ export default function BuyCredits() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-zinc-500 max-w-xl mx-auto text-sm md:text-lg"
+            className="text-slate-600 max-w-xl mx-auto text-sm md:text-lg font-medium"
           >
             Select from our fast, high-performance lookup credits or grab an unlimited premium package to bypass all search queue thresholds.
           </motion.p>
@@ -275,12 +275,12 @@ export default function BuyCredits() {
             transition={{ delay: 0.25 }}
             className="flex flex-col gap-3 mt-6 max-w-2xl mx-auto"
           >
-            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono text-xs text-center">
-              <Coins size={12} className="shrink-0" />
+            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800 font-mono text-xs text-center shadow-sm">
+              <Coins size={12} className="shrink-0 text-sky-600" />
               <span>Daily Free Credits - 10 (Topped up daily if balance is less than 10. If previous day's credits are unspent, i.e., balance ≥ 10, no extra free credits are added)</span>
             </div>
-            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-xs text-center animate-pulse">
-              <Server size={12} className="shrink-0" />
+            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-mono text-xs text-center animate-pulse shadow-sm">
+              <Server size={12} className="shrink-0 text-amber-600" />
               <span>Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.</span>
             </div>
           </motion.div>
@@ -293,18 +293,18 @@ export default function BuyCredits() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className={`p-6 rounded-2xl border flex flex-col gap-4 overflow-hidden mb-8 max-w-4xl mx-auto ${
+              className={`p-6 rounded-2xl border flex flex-col gap-4 overflow-hidden mb-8 max-w-4xl mx-auto shadow-sm ${
                 paymentStatus.status === 'success' 
-                  ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                  : 'bg-red-500/10 border-red-500/20 text-red-400'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                  : 'bg-red-50 border-red-200 text-red-900'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 size={16} />
+                  <CheckCircle2 size={16} className="text-emerald-600" />
                   <span className="font-bold uppercase tracking-wider text-[10px]">{paymentStatus.message}</span>
                 </div>
-                <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-white/10 rounded-full">
+                <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-black/5 rounded-full">
                   <X size={14} />
                 </button>
               </div>
@@ -318,15 +318,15 @@ export default function BuyCredits() {
           {/* Section 1: Unlimited search plans */}
           <section>
             <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-2 text-purple-400 font-bold uppercase tracking-[0.25em] text-[10px]">
+              <div className="flex items-center gap-2 text-blue-700 font-bold uppercase tracking-[0.25em] text-[10px]">
                 <Zap size={14} />
                 Elite Subscriptions (Bypass limits)
               </div>
-              <div className="h-px flex-1 bg-white/5" />
+              <div className="h-px flex-1 bg-sky-100" />
             </div>
             
-            <div className="p-4 mb-8 rounded-2xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-xs font-mono flex items-center gap-3">
-              <AlertCircle size={16} className="shrink-0" />
+            <div className="p-4 mb-8 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono flex items-center gap-3 shadow-sm">
+              <AlertCircle size={16} className="shrink-0 text-amber-600" />
               <span>
                 <strong>CRITICAL NOTICE:</strong> Aadhaar to PAN lookup is <strong>strictly excluded</strong> from all Unlimited Plans due to third-party server costs. Aadhaar to PAN searches require credit balances (150 Credits per lookup).
               </span>
@@ -338,25 +338,25 @@ export default function BuyCredits() {
                   <motion.div
                     key={plan.id}
                     whileHover={{ y: -4 }}
-                    className="p-8 rounded-[32px] bg-white/[0.02] border border-white/5 hover:border-purple-500/30 hover:bg-white/[0.04] transition-all relative overflow-hidden group flex flex-col justify-between"
+                    className="p-8 rounded-[32px] bg-slate-50/80 border border-sky-100 hover:border-sky-300 hover:bg-sky-50/50 transition-all relative overflow-hidden group flex flex-col justify-between shadow-sm"
                   >
-                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                      <Zap size={80} className="text-purple-500" />
+                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Zap size={80} className="text-sky-600" />
                     </div>
 
                     <div className="relative z-10">
                       <div className="flex items-center gap-2 flex-wrap mb-4">
-                        <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[9px] font-bold text-purple-400 uppercase tracking-widest">
+                        <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
                           UNLIMITED SEARCH
                         </span>
                       </div>
 
-                      <h3 className="text-2xl font-bold text-white mb-2">{plan.name}</h3>
-                      <p className="text-zinc-500 text-xs mb-6">Unlimited lookup routing for 100% complete intelligence access.</p>
+                      <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
+                      <p className="text-slate-600 text-xs mb-6 font-medium">Unlimited lookup routing for 100% complete intelligence access.</p>
 
                       <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-4xl font-bold text-white">₹{plan.price}</span>
-                        <span className="text-zinc-500 font-mono text-xs">/ period</span>
+                        <span className="text-4xl font-black text-slate-900">₹{plan.price}</span>
+                        <span className="text-slate-500 font-mono text-xs font-bold">/ period</span>
                       </div>
 
                       <ul className="space-y-3 mb-8">
@@ -367,8 +367,8 @@ export default function BuyCredits() {
                           'No per-query charge, 24/7 priority routing',
                           'Excludes Aadhaar to PAN (Requires Credits)'
                         ].map((feat, fIdx) => (
-                          <li key={fIdx} className={`flex items-center gap-2.5 text-xs ${feat.includes('Excludes') ? 'text-amber-400 font-semibold' : 'text-zinc-400'}`}>
-                            <CheckCircle2 size={14} className={`${feat.includes('Excludes') ? 'text-amber-500' : 'text-purple-400'} shrink-0`} />
+                          <li key={fIdx} className={`flex items-center gap-2.5 text-xs font-medium ${feat.includes('Excludes') ? 'text-amber-800 font-extrabold' : 'text-slate-700'}`}>
+                            <CheckCircle2 size={14} className={`${feat.includes('Excludes') ? 'text-amber-600' : 'text-sky-600'} shrink-0`} />
                             <span>{feat}</span>
                           </li>
                         ))}
@@ -378,7 +378,7 @@ export default function BuyCredits() {
                     <button
                       disabled={isProcessing}
                       onClick={() => handlePurchase(plan)}
-                      className="w-full py-4 rounded-2xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-500 uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10"
+                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold text-xs hover:from-sky-600 hover:to-blue-700 uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10 shadow-md cursor-pointer"
                     >
                       {isProcessing ? <Loader2 size={14} className="animate-spin" /> : 'Unlock Access Now'}
                     </button>
@@ -391,11 +391,11 @@ export default function BuyCredits() {
           {/* Section 2: Credit lookup plans */}
           <section>
             <div className="flex items-center gap-4 mb-8">
-              <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-[0.25em] text-[10px]">
+              <div className="flex items-center gap-2 text-sky-700 font-bold uppercase tracking-[0.25em] text-[10px]">
                 <CreditCard size={14} />
                 Lookup Credits (Pay as you go)
               </div>
-              <div className="h-px flex-1 bg-white/5" />
+              <div className="h-px flex-1 bg-sky-100" />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -404,28 +404,28 @@ export default function BuyCredits() {
                   <motion.div
                     key={plan.id}
                     whileHover={{ y: -4 }}
-                    className="p-8 rounded-[32px] bg-white/[0.02] border border-white/5 hover:border-cyan-500/30 hover:bg-white/[0.04] transition-all relative overflow-hidden group flex flex-col justify-between"
+                    className="p-8 rounded-[32px] bg-slate-50/80 border border-sky-100 hover:border-sky-300 hover:bg-sky-50/50 transition-all relative overflow-hidden group flex flex-col justify-between shadow-sm"
                   >
-                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                      <CreditCard size={80} className="text-cyan-500" />
+                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <CreditCard size={80} className="text-sky-600" />
                     </div>
 
                     <div className="relative z-10">
                       <div className="flex items-center gap-2 flex-wrap mb-4">
-                        <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
+                        <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
                           QUICK RECHARGE
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-extrabold text-emerald-400 uppercase tracking-widest animate-pulse">
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-extrabold text-emerald-800 uppercase tracking-widest animate-pulse">
                           1.5X MORE CREDITS OFFER
                         </span>
                       </div>
 
-                      <h3 className="text-2xl font-bold text-white mb-2">{plan.name}</h3>
-                      <p className="text-zinc-500 text-xs mb-6">Instantly reload search credits. Non-expiring high-performance lookups.</p>
+                      <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
+                      <p className="text-slate-600 text-xs mb-6 font-medium">Instantly reload search credits. Non-expiring high-performance lookups.</p>
 
                       <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-4xl font-bold text-white">₹{plan.price}</span>
-                        <span className="text-zinc-500 font-mono text-xs">/ {plan.value} lookups</span>
+                        <span className="text-4xl font-black text-slate-900">₹{plan.price}</span>
+                        <span className="text-slate-500 font-mono text-xs font-bold">/ {plan.value} lookups</span>
                       </div>
 
                       <ul className="space-y-3 mb-8">
@@ -435,8 +435,8 @@ export default function BuyCredits() {
                           'Standard routing priorities with high-speed query servers',
                           'Frictionless checkouts with automated balance loading'
                         ].map((feat, fIdx) => (
-                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-zinc-400">
-                            <CheckCircle2 size={14} className="text-cyan-500 shrink-0" />
+                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+                            <CheckCircle2 size={14} className="text-sky-600 shrink-0" />
                             <span>{feat}</span>
                           </li>
                         ))}
@@ -446,7 +446,7 @@ export default function BuyCredits() {
                     <button
                       disabled={isProcessing}
                       onClick={() => handlePurchase(plan)}
-                      className="w-full py-4 rounded-2xl bg-white/5 border border-white/10 group-hover:bg-cyan-500 hover:text-zinc-950 text-white hover:border-transparent font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10"
+                      className="w-full py-4 rounded-2xl bg-white border border-sky-200 group-hover:bg-sky-600 group-hover:text-white text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10 shadow-sm cursor-pointer"
                     >
                       {isProcessing ? <Loader2 size={14} className="animate-spin" /> : 'Buy Credits'}
                     </button>
@@ -459,20 +459,20 @@ export default function BuyCredits() {
         </div>
 
         {/* Anti-Flicker / Smart Self-Healing & Missing Credits Recovery Panel */}
-        <section className="mt-16 max-w-4xl mx-auto p-8 rounded-[32px] bg-gradient-to-br from-purple-500/5 via-black to-cyan-500/5 border border-purple-500/15 shadow-2xl relative z-10 overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <ShieldCheck size={120} className="text-purple-400" />
+        <section className="mt-16 max-w-4xl mx-auto p-8 rounded-[32px] bg-gradient-to-br from-sky-50 via-white to-blue-50 border border-sky-200 shadow-md relative z-10 overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            <ShieldCheck size={120} className="text-sky-600" />
           </div>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="max-w-md">
-              <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-bold text-cyan-400 uppercase tracking-widest block w-fit mb-3 font-sans">
+              <span className="px-3 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest block w-fit mb-3 font-sans">
                 Payment Reconciliation Gateway
               </span>
-              <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2 font-sans">
-                <ShieldCheck size={18} className="text-purple-400 animate-pulse" />
+              <h3 className="text-lg font-black text-slate-900 mb-2 flex items-center gap-2 font-sans">
+                <ShieldCheck size={18} className="text-sky-600 animate-pulse" />
                 Missing Credits? Self-Heal Verification
               </h3>
-              <p className="text-zinc-500 text-xs leading-relaxed font-sans">
+              <p className="text-slate-600 text-xs leading-relaxed font-sans font-medium">
                 If you completed a transaction but your account credits didn't post, enter your Cashfree **Order ID** below. The server will reconcile with Cashfree in real-time to credit your account immediately.
               </p>
             </div>
@@ -484,13 +484,13 @@ export default function BuyCredits() {
                   value={claimOrderId}
                   onChange={(e) => setClaimOrderId(e.target.value)}
                   placeholder="order_171881..."
-                  className="flex-grow h-11 bg-black/50 border border-white/10 rounded-xl px-4 outline-none text-xs text-white focus:border-purple-500/50 transition-all font-mono"
+                  className="flex-grow h-11 bg-white border border-sky-200 rounded-xl px-4 outline-none text-xs text-slate-900 focus:border-sky-500 transition-all font-mono shadow-sm"
                   disabled={claimLoading}
                 />
                 <button
                   type="submit"
                   disabled={claimLoading}
-                  className="h-11 px-5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 disabled:opacity-50 font-sans"
+                  className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 disabled:opacity-50 font-sans cursor-pointer shadow-sm"
                 >
                   {claimLoading ? <Loader2 size={13} className="animate-spin" /> : 'Reconcile'}
                 </button>
@@ -500,11 +500,11 @@ export default function BuyCredits() {
                 <div
                   className={`p-3 rounded-lg text-xs leading-relaxed border transition-all ${
                     claimResult.status === 'success'
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                      : 'bg-red-500/10 border-red-500/20 text-red-400 font-sans'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-medium'
+                      : 'bg-red-50 border-red-200 text-red-900 font-sans font-medium'
                   }`}
                 >
-                  <p className="font-semibold uppercase tracking-wider text-[9px] mb-1 font-sans">
+                  <p className="font-extrabold uppercase tracking-wider text-[9px] mb-1 font-sans">
                     {claimResult.status === 'success' ? 'Self-Heal Success' : 'Reconciliation Failed'}
                   </p>
                   {claimResult.message}
@@ -516,49 +516,49 @@ export default function BuyCredits() {
 
         {/* Security & Features Banner */}
         <section className="mt-24 max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="p-6 rounded-2xl bg-white/2 border border-white/5 flex flex-col gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-400">
+          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
               <ShieldCheck size={20} />
             </div>
-            <h4 className="font-bold text-white text-sm">Secure Merchant Gateway</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">Payments are fully secured via PCI-DSS compliant direct merchant gateways.</p>
+            <h4 className="font-extrabold text-slate-900 text-sm">Secure Merchant Gateway</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">Payments are fully secured via PCI-DSS compliant direct merchant gateways.</p>
           </div>
-          <div className="p-6 rounded-2xl bg-white/2 border border-white/5 flex flex-col gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
               <Zap size={20} />
             </div>
-            <h4 className="font-bold text-white text-sm">Instant Recharge Posting</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">Your lookups adjust instantly post-checkout. Refresh dashboard to see newly posted balances.</p>
+            <h4 className="font-extrabold text-slate-900 text-sm">Instant Recharge Posting</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">Your lookups adjust instantly post-checkout. Refresh dashboard to see newly posted balances.</p>
           </div>
-          <div className="p-6 rounded-2xl bg-white/2 border border-white/5 flex flex-col gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-green-500/10 flex items-center justify-center text-green-400">
+          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
               <Server size={20} />
             </div>
-            <h4 className="font-bold text-white text-sm">Priority Lookup Routing</h4>
-            <p className="text-zinc-500 text-xs leading-relaxed">Premium members consume secondary intelligence pipelines optimizing access speeds.</p>
+            <h4 className="font-extrabold text-slate-900 text-sm">Priority Lookup Routing</h4>
+            <p className="text-slate-600 text-xs leading-relaxed font-medium">Premium members consume secondary intelligence pipelines optimizing access speeds.</p>
           </div>
         </section>
 
         {/* Support link */}
         <section className="mt-20 text-center">
-          <p className="text-zinc-500 text-xs mb-3">Questions about transaction processing or customization?</p>
+          <p className="text-slate-600 text-xs mb-3 font-medium">Questions about transaction processing or customization?</p>
           <a
             href="https://t.me/Gaurav_beni_0001"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-bold text-zinc-300 transition-all"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 text-xs font-extrabold text-sky-800 transition-all shadow-sm"
           >
-            <MessageSquare size={14} className="text-purple-400" />
+            <MessageSquare size={14} className="text-sky-600" />
             <span>Chat support on Telegram</span>
           </a>
         </section>
       </div>
 
-      <footer className="py-20 text-center border-t border-white/5">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-4">Secured by TraceXData Infrastructure</p>
+      <footer className="py-20 text-center border-t border-sky-100 bg-sky-50/50">
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Secured by TraceXData Infrastructure</p>
         <div className="flex items-center justify-center gap-6">
-          <button onClick={() => navigate('/contactus')} className="text-zinc-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Support</button>
-          <button onClick={() => navigate('/')} className="text-zinc-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Trace Home</button>
+          <button onClick={() => navigate('/contactus')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Support</button>
+          <button onClick={() => navigate('/')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Trace Home</button>
         </div>
       </footer>
     </div>

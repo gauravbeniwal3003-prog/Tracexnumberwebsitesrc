@@ -249,29 +249,23 @@ export default function ScriptPurchase() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020204] text-zinc-100 selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden flex flex-col justify-between relative font-sans">
+    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between relative font-sans">
       <LiquidBackground />
-
-      {/* Decorative Orbs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden -z-20">
-        <div className="absolute top-[20%] left-[10%] w-72 h-72 rounded-full bg-gradient-to-br from-cyan-500/10 to-transparent blur-[80px]" />
-        <div className="absolute bottom-[25%] right-[10%] w-80 h-80 rounded-full bg-gradient-to-tr from-purple-500/10 to-transparent blur-[100px]" />
-      </div>
 
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 p-4 md:p-6 z-[60] flex items-center justify-between">
         <button 
           onClick={() => navigate('/')} 
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-xl transition-all hover:bg-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
+          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-sky-200 backdrop-blur-xl transition-all hover:bg-sky-50 shadow-sm cursor-pointer"
         >
-          <ArrowLeft size={14} className="text-cyan-400" />
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-zinc-300">Back to Lookup</span>
+          <ArrowLeft size={14} className="text-sky-600" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-800">Back to Lookup</span>
         </button>
 
-        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-500/5 border border-emerald-500/20 backdrop-blur-xl shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 backdrop-blur-xl shadow-sm">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-            <ShieldCheck size={12} className="text-emerald-400" /> SECURE DECRYPTION
+          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+            <ShieldCheck size={12} className="text-emerald-600" /> SECURE DECRYPTION
           </span>
         </div>
       </nav>
@@ -283,15 +277,15 @@ export default function ScriptPurchase() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 backdrop-blur-md"
+            className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-sky-100 border border-sky-200 backdrop-blur-md"
           >
-            <Zap size={12} className="text-cyan-400 animate-pulse" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-cyan-400 font-mono">Premium Digital Assets</span>
+            <Zap size={12} className="text-sky-600 animate-pulse" />
+            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-sky-800 font-mono">Premium Digital Assets</span>
           </motion.div>
-          <h1 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-2 uppercase italic bg-clip-text text-transparent bg-gradient-to-b from-white to-zinc-400">
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 mb-2 uppercase italic">
             Script Center
           </h1>
-          <p className="text-zinc-400 text-xs md:text-sm">
+          <p className="text-slate-600 text-xs md:text-sm font-medium">
             Acquire private tools and utilities verified under proper, automated license servers.
           </p>
         </header>
@@ -303,10 +297,9 @@ export default function ScriptPurchase() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="w-full max-w-2xl p-4 mb-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs md:text-sm flex items-start gap-3 relative overflow-hidden"
+              className="w-full max-w-2xl p-4 mb-6 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs md:text-sm flex items-start gap-3 relative overflow-hidden font-semibold shadow-sm"
             >
-              <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-red-500" />
-              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+              <AlertCircle size={18} className="shrink-0 mt-0.5 text-rose-600" />
               <span className="leading-relaxed font-semibold">{errorMsg}</span>
             </motion.div>
           )}
@@ -316,10 +309,9 @@ export default function ScriptPurchase() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="w-full max-w-2xl p-4 mb-6 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs md:text-sm flex items-start gap-3 relative overflow-hidden"
+              className="w-full max-w-2xl p-4 mb-6 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs md:text-sm flex items-start gap-3 relative overflow-hidden font-semibold shadow-sm"
             >
-              <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-emerald-500" />
-              <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
+              <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-emerald-600" />
               <span className="leading-relaxed font-semibold">{successMsg}</span>
             </motion.div>
           )}
@@ -327,39 +319,39 @@ export default function ScriptPurchase() {
 
         {/* Verifying Checkout Flow Overlay */}
         {isVerifying && (
-          <div className="w-full max-w-2xl glass-card p-10 mb-8 text-center space-y-6 border border-cyan-500/20 bg-cyan-500/5 backdrop-blur-2xl">
-            <RefreshCw className="text-cyan-400 animate-spin mx-auto" size={40} />
+          <div className="w-full max-w-2xl glass-card p-10 mb-8 text-center space-y-6 border border-sky-200 bg-white rounded-[32px] shadow-sm">
+            <RefreshCw className="text-sky-600 animate-spin mx-auto" size={40} />
             <div>
-              <h3 className="text-lg font-bold text-white uppercase tracking-wider">Verifying Receipt Signature</h3>
-              <p className="text-zinc-400 text-xs mt-1">Stand by while we confirm the automated payment gateway receipt...</p>
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider">Verifying Receipt Signature</h3>
+              <p className="text-slate-600 text-xs mt-1 font-medium">Stand by while we confirm the automated payment gateway receipt...</p>
             </div>
           </div>
         )}
 
         {loading ? (
-          <div className="w-full max-w-2xl glass-card p-12 text-center">
-            <Loader2 className="animate-spin text-cyan-400 mx-auto mb-4" size={32} />
-            <p className="text-zinc-400 text-xs uppercase tracking-widest font-mono">Fetching Private Ledger Status...</p>
+          <div className="w-full max-w-2xl glass-card p-12 text-center rounded-[32px] border border-sky-200 bg-white shadow-sm">
+            <Loader2 className="animate-spin text-sky-600 mx-auto mb-4" size={32} />
+            <p className="text-slate-600 text-xs uppercase tracking-widest font-black">Fetching Private Ledger Status...</p>
           </div>
         ) : !user ? (
           /* Authentication Lock UI */
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl glass-card p-8 text-center space-y-6 border-t-white/[0.12] border-b-white/[0.04] bg-gradient-to-b from-white/[0.04] to-transparent backdrop-blur-2xl rounded-3xl"
+            className="w-full max-w-2xl glass-card p-8 text-center space-y-6 border border-sky-200 bg-white rounded-[32px] shadow-sm"
           >
-            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 mx-auto flex items-center justify-center">
-              <CreditCard className="text-red-400" size={28} />
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 mx-auto flex items-center justify-center">
+              <CreditCard className="text-rose-600" size={28} />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">AUTHENTICATION REQUIRED</h2>
-              <p className="text-zinc-400 text-xs md:text-sm max-w-md mx-auto leading-relaxed">
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">AUTHENTICATION REQUIRED</h2>
+              <p className="text-slate-600 text-xs md:text-sm max-w-md mx-auto leading-relaxed font-medium">
                 You must be logged in to your secure TRACEXDATA account to purchase or access digital assets. Authenticated purchases secure your unique 10-minute license window.
               </p>
             </div>
             <button
               onClick={openLogin}
-              className="px-8 py-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-black tracking-wider uppercase text-xs transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:scale-[1.02] active:scale-[0.98]"
+              className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black tracking-wider uppercase text-xs transition-all shadow-md cursor-pointer"
             >
               Sign In to Continue
             </button>
@@ -369,40 +361,36 @@ export default function ScriptPurchase() {
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-2xl glass-card border-t-white/[0.15] border-x-white/[0.08] border-b-white/[0.04] bg-gradient-to-b from-zinc-950/40 via-white/[0.01] to-transparent p-6 md:p-8 rounded-3xl space-y-8 relative overflow-hidden"
+            className="w-full max-w-2xl glass-card border border-sky-200 bg-white p-6 md:p-8 rounded-[32px] space-y-8 relative overflow-hidden shadow-sm"
           >
-            {/* Top Status Gradient Strip */}
-            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-500" />
-            <div className="absolute -inset-4 bg-emerald-500/[0.02] rounded-[40px] blur-3xl -z-10 pointer-events-none" />
-
             {/* Timer visual header */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-white/5 pb-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-sky-100 pb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700">
                   <CheckCircle2 size={20} />
                 </div>
                 <div className="text-left">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-emerald-400 font-extrabold">LICENSE VERIFIED</span>
-                  <h3 className="text-lg font-black text-white leading-tight">ACTIVE DOWNLOAD WINDOW</h3>
+                  <span className="text-[9px] uppercase font-mono tracking-widest text-emerald-800 font-black">LICENSE VERIFIED</span>
+                  <h3 className="text-lg font-black text-slate-900 leading-tight">ACTIVE DOWNLOAD WINDOW</h3>
                 </div>
               </div>
               
               {/* Countdown badge */}
-              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/25 px-4 py-2 rounded-2xl">
-                <Timer size={16} className="text-red-400 animate-pulse" />
-                <span className="font-mono text-sm font-black text-red-400">{formatTime(timeLeft)}</span>
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 px-4 py-2 rounded-2xl">
+                <Timer size={16} className="text-rose-600 animate-pulse" />
+                <span className="font-mono text-sm font-black text-rose-700">{formatTime(timeLeft)}</span>
               </div>
             </div>
 
             {/* Product specifications and file info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1 text-left">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase font-mono tracking-wider">Product ID / Order Reference</span>
-                <p className="text-zinc-200 font-mono text-xs truncate" title={activePurchase.order_id}>{activePurchase.order_id}</p>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-sky-100 space-y-1 text-left">
+                <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider">Product ID / Order Reference</span>
+                <p className="text-slate-900 font-mono text-xs truncate font-bold" title={activePurchase.order_id}>{activePurchase.order_id}</p>
               </div>
-              <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1 text-left">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase font-mono tracking-wider">File Specifications</span>
-                <p className="text-zinc-200 text-xs">Python Script • 18.49 KB • Last Updated: Yesterday</p>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-sky-100 space-y-1 text-left">
+                <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider">File Specifications</span>
+                <p className="text-slate-800 text-xs font-semibold">Python Script • 18.49 KB • Last Updated: Yesterday</p>
               </div>
             </div>
 
@@ -411,35 +399,35 @@ export default function ScriptPurchase() {
               <button
                 onClick={handleDownloadFile}
                 disabled={isDownloading}
-                className="w-full md:w-auto px-10 py-4.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-500 hover:opacity-95 text-zinc-950 font-black tracking-wider uppercase text-xs transition-all flex items-center justify-center gap-2 shadow-[0_15px_30px_rgba(16,185,129,0.2)] hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                className="w-full md:w-auto px-10 py-4.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black tracking-wider uppercase text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
                 {isDownloading ? (
-                  <RefreshCw className="animate-spin text-zinc-950" size={16} />
+                  <RefreshCw className="animate-spin text-white" size={16} />
                 ) : (
                   <FileDown size={16} />
                 )}
                 <span>{isDownloading ? 'FETCHING ENCRYPTED FILE...' : 'DOWNLOAD PYTHON SCRIPT NOW'}</span>
               </button>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">
                 Access will be automatically revoked upon timer expiration. Preserve your files locally.
               </p>
             </div>
 
             {/* STEP 2: INSTALLATION AND SETUP INSTRUCTIONS */}
-            <div className="rounded-2xl border border-white/5 bg-zinc-950/60 p-5 space-y-4 text-left">
-              <h4 className="text-xs uppercase font-extrabold tracking-widest text-cyan-400 font-mono flex items-center gap-2">
+            <div className="rounded-2xl border border-sky-200 bg-slate-50 p-5 space-y-4 text-left">
+              <h4 className="text-xs uppercase font-black tracking-widest text-sky-700 font-mono flex items-center gap-2">
                 <Terminal size={14} /> STEP 2: INSTALLATION &amp; SETUP
               </h4>
-              <p className="text-zinc-400 text-xs leading-relaxed">
+              <p className="text-slate-600 text-xs leading-relaxed font-medium">
                 Run the following setup command in your terminal (Termux, Linux, or command prompt) to install the necessary modules and dependencies:
               </p>
               <div className="relative group">
-                <pre className="p-4 rounded-xl bg-[#030305] border border-white/5 font-mono text-[10px] md:text-xs text-emerald-400 overflow-x-auto whitespace-pre-wrap pr-16 select-all">
+                <pre className="p-4 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[10px] md:text-xs text-emerald-400 overflow-x-auto whitespace-pre-wrap pr-16 select-all">
                   pkg update && pkg upgrade -y && pkg install python python-pip git openssl-tool termux-exec -y && pip install requests urllib3
                 </pre>
                 <button
                   onClick={copyCommand}
-                  className="absolute right-3 top-3 p-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer border border-white/5"
+                  className="absolute right-3 top-3 p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer border border-slate-700"
                   title="Copy command"
                 >
                   {copiedCommand ? <Check size={14} className="text-emerald-400" /> : <Clipboard size={14} />}
@@ -448,18 +436,18 @@ export default function ScriptPurchase() {
             </div>
 
             {/* STEP 3: TUTORIAL VIDEO REFERENCES */}
-            <div className="rounded-2xl border border-white/5 bg-zinc-950/60 p-5 space-y-3 text-left">
-              <h4 className="text-xs uppercase font-extrabold tracking-widest text-cyan-400 font-mono flex items-center gap-2">
+            <div className="rounded-2xl border border-sky-200 bg-slate-50 p-5 space-y-3 text-left">
+              <h4 className="text-xs uppercase font-black tracking-widest text-sky-700 font-mono flex items-center gap-2">
                 <PlayCircle size={14} /> STEP 3: TUTORIAL REFERENCES
               </h4>
-              <p className="text-zinc-400 text-xs leading-relaxed">
+              <p className="text-slate-600 text-xs leading-relaxed font-medium">
                 Watch the detailed setup and terminal integration tutorial video to configure your script commands accurately:
               </p>
               <a 
                 href="https://youtu.be/f85X1gvPGmg?si=6gG35k9VR_bAvOgi" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-cyan-400 hover:text-cyan-300 hover:underline text-xs font-semibold"
+                className="inline-flex items-center gap-2 text-sky-700 hover:text-sky-900 hover:underline text-xs font-bold"
               >
                 <PlayCircle size={14} />
                 <span>Watch YouTube Configuration Tutorial</span>
@@ -472,44 +460,40 @@ export default function ScriptPurchase() {
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl glass-card border-t-white/[0.15] border-x-white/[0.08] border-b-white/[0.04] bg-gradient-to-b from-white/[0.04] to-zinc-950/[0.4] backdrop-blur-[24px] shadow-[0_45px_90px_rgba(0,0,0,0.7)] p-6 md:p-10 rounded-3xl flex flex-col relative"
+            className="w-full max-w-2xl glass-card border border-sky-200 bg-white shadow-sm p-6 md:p-10 rounded-[32px] flex flex-col relative"
           >
-            {/* Outer Glow */}
-            <div className="absolute -inset-4 bg-cyan-500/[0.02] rounded-[40px] blur-3xl -z-10 pointer-events-none" />
-            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-cyan-500/50 via-purple-500/50 to-cyan-500/50" />
-
             {/* Product card presentation in the form */}
-            <div className="p-5 md:p-6 mb-8 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="p-5 md:p-6 mb-8 rounded-2xl bg-slate-50 border border-sky-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
               <div className="text-left space-y-2">
                 <div className="flex items-center gap-2">
-                  <Terminal size={14} className="text-cyan-400 animate-pulse" />
-                  <span className="text-[9px] font-bold tracking-widest text-zinc-500 uppercase font-mono">Digital script</span>
+                  <Terminal size={14} className="text-sky-600 animate-pulse" />
+                  <span className="text-[9px] font-black tracking-widest text-slate-500 uppercase">Digital script</span>
                 </div>
-                <h3 className="text-xl font-extrabold text-white tracking-tight uppercase">Gaurav PVT Python Script</h3>
-                <p className="text-zinc-400 text-xs">Coded By Gaurav Beniwal • 100% Working &amp; Last Updated Yesterday</p>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase">Gaurav PVT Python Script</h3>
+                <p className="text-slate-600 text-xs font-medium">Coded By Gaurav Beniwal • 100% Working &amp; Last Updated Yesterday</p>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[9px] font-mono text-zinc-400">File Size: 18.49KB</span>
-                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/10 text-[9px] font-mono text-cyan-400 animate-pulse">Updated Yesterday</span>
+                  <span className="px-2 py-0.5 rounded-md bg-white border border-sky-200 text-[9px] font-extrabold text-slate-700">File Size: 18.49KB</span>
+                  <span className="px-2 py-0.5 rounded-md bg-sky-100 border border-sky-200 text-[9px] font-black text-sky-800 animate-pulse">Updated Yesterday</span>
                 </div>
               </div>
 
               {/* Price section */}
-              <div className="bg-cyan-500/10 border border-cyan-500/25 px-5 py-3.5 rounded-2xl text-center self-stretch md:self-auto flex md:flex-col justify-between md:justify-center items-center gap-1 min-w-[120px]">
-                <span className="text-[10px] text-cyan-400 uppercase font-mono tracking-widest font-black">PRICE</span>
-                <span className="text-2xl font-black text-white font-mono flex items-center justify-center">
-                  <IndianRupee size={18} className="text-cyan-400 shrink-0" />400
+              <div className="bg-sky-100 border border-sky-200 px-5 py-3.5 rounded-2xl text-center self-stretch md:self-auto flex md:flex-col justify-between md:justify-center items-center gap-1 min-w-[120px]">
+                <span className="text-[10px] text-sky-800 uppercase font-black tracking-widest">PRICE</span>
+                <span className="text-2xl font-black text-slate-900 font-mono flex items-center justify-center">
+                  <IndianRupee size={18} className="text-sky-600 shrink-0" />400
                 </span>
               </div>
             </div>
 
             {/* Inputs label */}
             <div className="space-y-4 mb-6">
-              <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-widest text-left font-mono">BILLING INFORMATION</h4>
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest text-left">BILLING INFORMATION</h4>
               
               <form onSubmit={handlePay} className="grid grid-cols-1 md:grid-cols-2 gap-5 text-left">
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wider font-extrabold text-zinc-400 flex items-center gap-1.5 font-mono">
-                    <User size={12} className="text-zinc-500" /> FULL NAME
+                  <label className="text-[10px] uppercase tracking-wider font-black text-slate-700 flex items-center gap-1.5">
+                    <User size={12} className="text-slate-500" /> FULL NAME
                   </label>
                   <input
                     type="text"
@@ -518,14 +502,14 @@ export default function ScriptPurchase() {
                     value={payerName}
                     disabled={isProcessing}
                     onChange={(e) => setPayerName(e.target.value)}
-                    className="w-full bg-white/[0.02] hover:bg-white/[0.04] focus:bg-white/[0.07] border border-white/10 focus:border-[#22d3ee] outline-none transition-all px-5 py-3.5 text-sm text-white rounded-2xl"
+                    className="w-full bg-slate-50 border border-sky-200 focus:border-sky-500 outline-none transition-all px-5 py-3.5 text-sm text-slate-900 rounded-2xl font-medium"
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-wider font-extrabold text-zinc-400 flex items-center gap-1.5 font-mono">
-                    <Mail size={12} className="text-zinc-500" /> EMAIL ADDRESS
+                  <label className="text-[10px] uppercase tracking-wider font-black text-slate-700 flex items-center gap-1.5">
+                    <Mail size={12} className="text-slate-500" /> EMAIL ADDRESS
                   </label>
                   <input
                     type="email"
@@ -533,14 +517,14 @@ export default function ScriptPurchase() {
                     value={payerEmail}
                     disabled={isProcessing}
                     onChange={(e) => setPayerEmail(e.target.value)}
-                    className="w-full bg-white/[0.02] hover:bg-white/[0.04] focus:bg-white/[0.07] border border-white/10 focus:border-[#22d3ee] outline-none transition-all px-5 py-3.5 text-sm text-white rounded-2xl"
+                    className="w-full bg-slate-50 border border-sky-200 focus:border-sky-500 outline-none transition-all px-5 py-3.5 text-sm text-slate-900 rounded-2xl font-medium"
                     required
                   />
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] uppercase tracking-wider font-extrabold text-zinc-400 flex items-center gap-1.5 font-mono">
-                    <Phone size={12} className="text-zinc-500" /> MOBILE NUMBER (FOR TELEGRAM/OTP DELIVERY)
+                  <label className="text-[10px] uppercase tracking-wider font-black text-slate-700 flex items-center gap-1.5">
+                    <Phone size={12} className="text-slate-500" /> MOBILE NUMBER (FOR TELEGRAM/OTP DELIVERY)
                   </label>
                   <input
                     type="tel"
@@ -548,7 +532,7 @@ export default function ScriptPurchase() {
                     value={payerPhone}
                     disabled={isProcessing}
                     onChange={(e) => setPayerPhone(cleanIndianPhoneNumber(e.target.value))}
-                    className="w-full bg-white/[0.02] hover:bg-white/[0.04] focus:bg-white/[0.07] border border-white/10 focus:border-[#22d3ee] outline-none transition-all px-5 py-3.5 text-sm font-mono text-white rounded-2xl"
+                    className="w-full bg-slate-50 border border-sky-200 focus:border-sky-500 outline-none transition-all px-5 py-3.5 text-sm font-mono text-slate-900 rounded-2xl font-semibold"
                     required
                   />
                 </div>
@@ -557,13 +541,13 @@ export default function ScriptPurchase() {
                 <button
                   type="submit"
                   disabled={isProcessing}
-                  className="md:col-span-2 w-full h-14 mt-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-cyan-400 to-cyan-500 hover:opacity-95 text-zinc-950 font-black tracking-widest uppercase text-xs transition-all flex items-center justify-center gap-2 shadow-[0_12px_24px_rgba(6,182,212,0.15)] disabled:opacity-40 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                  className="md:col-span-2 w-full h-14 mt-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black tracking-widest uppercase text-xs transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-40 cursor-pointer"
                 >
                   {isProcessing ? (
-                    <Loader2 className="animate-spin text-zinc-950" size={18} />
+                    <Loader2 className="animate-spin text-white" size={18} />
                   ) : (
                     <>
-                      <Zap size={14} className="fill-zinc-950" />
+                      <Zap size={14} className="fill-white" />
                       <span>UNLOCK SCRIPT NOW • PAY ₹400</span>
                       <ChevronRight size={14} />
                     </>
@@ -581,48 +565,48 @@ export default function ScriptPurchase() {
             animate={{ opacity: 1 }}
             className="w-full max-w-2xl mt-12 space-y-4 text-left"
           >
-            <div className="flex items-center gap-2 border-b border-white/5 pb-3">
-              <History size={16} className="text-zinc-500" />
-              <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 font-mono">My Purchase History Ledger</h4>
+            <div className="flex items-center gap-2 border-b border-sky-100 pb-3">
+              <History size={16} className="text-slate-500" />
+              <h4 className="text-xs font-black uppercase tracking-widest text-slate-700 font-mono">My Purchase History Ledger</h4>
             </div>
 
-            <div className="rounded-2xl border border-white/5 bg-[#030305]/60 overflow-hidden backdrop-blur-md">
+            <div className="rounded-2xl border border-sky-200 bg-white overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs font-mono text-left">
                   <thead>
-                    <tr className="bg-white/[0.01] border-b border-white/5 text-zinc-500 uppercase tracking-wider text-[10px] font-bold">
+                    <tr className="bg-slate-50 border-b border-sky-100 text-slate-600 uppercase tracking-wider text-[10px] font-black">
                       <th className="px-5 py-3.5">Order Reference</th>
                       <th className="px-5 py-3.5 text-center">Amount</th>
                       <th className="px-5 py-3.5">Purchase Date &amp; Time</th>
                       <th className="px-5 py-3.5 text-center">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
+                  <tbody className="divide-y divide-sky-100">
                     {purchases.map((p) => (
-                      <tr key={p.order_id} className="hover:bg-white/[0.01] transition-colors">
-                        <td className="px-5 py-4 font-mono select-all text-zinc-300 text-[11px] truncate max-w-[120px]" title={p.order_id}>
+                      <tr key={p.order_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-4 font-mono select-all text-slate-800 text-[11px] truncate max-w-[120px] font-semibold" title={p.order_id}>
                           {p.order_id}
                         </td>
-                        <td className="px-5 py-4 text-center text-zinc-200">
+                        <td className="px-5 py-4 text-center text-slate-900 font-bold">
                           ₹{p.amount}
                         </td>
-                        <td className="px-5 py-4 text-zinc-400">
+                        <td className="px-5 py-4 text-slate-600 font-medium">
                           {new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }) + ' (IST)'}
                         </td>
                         <td className="px-5 py-4 text-center">
                           {p.status === 'active' ? (
                             <button
                               onClick={fetchStatus}
-                              className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold text-[9px] uppercase tracking-wider animate-pulse"
+                              className="px-2 py-1 rounded bg-emerald-100 border border-emerald-200 text-emerald-800 font-black text-[9px] uppercase tracking-wider animate-pulse cursor-pointer"
                             >
                               Active
                             </button>
                           ) : p.status === 'expired' ? (
-                            <span className="px-2 py-1 rounded bg-zinc-500/10 border border-zinc-500/10 text-zinc-500 text-[9px] uppercase tracking-wider">
+                            <span className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-bold uppercase tracking-wider">
                               Expired
                             </span>
                           ) : (
-                            <span className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[9px] uppercase tracking-wider">
+                            <span className="px-2 py-1 rounded bg-amber-100 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-wider">
                               {p.status}
                             </span>
                           )}
@@ -639,8 +623,8 @@ export default function ScriptPurchase() {
       </div>
 
       {/* Footer */}
-      <footer className="w-full py-6 text-center select-none pointer-events-none relative z-10 border-t border-white/5 bg-black/20">
-        <span className="text-zinc-600 text-[9px] uppercase tracking-[0.25em] font-extrabold font-mono">
+      <footer className="w-full py-6 text-center select-none pointer-events-none relative z-10 border-t border-sky-100 bg-sky-50/50">
+        <span className="text-slate-500 text-[9px] uppercase tracking-[0.25em] font-black font-mono">
           TRACEXDATA Security Systems • License Decryption Node
         </span>
       </footer>

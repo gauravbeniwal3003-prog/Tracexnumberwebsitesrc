@@ -223,29 +223,29 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 30 }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="glass-card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative z-10 border-white/10 shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]"
+        className="glass-card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative z-10 border-sky-200 bg-white shadow-[0_20px_60px_rgba(14,165,233,0.15)]"
       >
         {/* Animated Background Elements */}
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 animate-gradient-x" />
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-sky-500 via-blue-600 to-cyan-500 animate-gradient-x" />
         
-        <div className="p-6 md:p-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+        <div className="p-6 md:p-8 border-b border-sky-100 flex items-center justify-between bg-sky-50/50">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
-              <Zap className="text-cyan-400" size={24} />
+            <div className="w-12 h-12 rounded-2xl bg-sky-100 flex items-center justify-center border border-sky-200">
+              <Zap className="text-sky-600" size={24} />
             </div>
             <div>
-              <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">Upgrade Intelligence</h2>
-              <p className="text-zinc-500 text-xs md:text-sm">Power your searches with premium data throughput</p>
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Upgrade Intelligence</h2>
+              <p className="text-slate-600 text-xs md:text-sm font-medium">Power your searches with premium data throughput</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/20 items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Secure Gateway Active</span>
+            <div className="hidden md:flex px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 items-center gap-2 shadow-sm">
+              <div className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Secure Gateway Active</span>
             </div>
             <button 
               onClick={onClose} 
-              className="p-2.5 hover:bg-white/10 rounded-xl text-zinc-500 hover:text-white transition-all border border-transparent hover:border-white/10"
+              className="p-2.5 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 transition-all border border-slate-200 cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -253,13 +253,13 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
         </div>
 
         <div className="px-8 pt-4 md:hidden">
-          <div className="px-4 py-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shrink-0" />
-            <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-[0.1em]">Secure payment gateway active. Fast processing.</span>
+          <div className="px-4 py-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-sky-600 animate-pulse shrink-0" />
+            <span className="text-[9px] font-bold text-sky-800 uppercase tracking-[0.1em]">Secure payment gateway active. Fast processing.</span>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-10 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-10 custom-scrollbar bg-white">
           {/* Status Messages */}
           <AnimatePresence>
             {paymentStatus.status !== 'idle' && (
@@ -267,18 +267,18 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className={`p-6 rounded-2xl border flex flex-col gap-4 overflow-hidden ${
+                className={`p-6 rounded-2xl border flex flex-col gap-4 overflow-hidden shadow-sm ${
                   paymentStatus.status === 'success' 
-                    ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                    : 'bg-red-50 border-red-200 text-red-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} />
+                    <CheckCircle2 size={16} className="text-emerald-600" />
                     <span className="font-bold uppercase tracking-wider text-[10px]">{paymentStatus.message}</span>
                   </div>
-                  <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-white/10 rounded-full">
+                  <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-black/5 rounded-full">
                     <X size={14} />
                   </button>
                 </div>
@@ -287,12 +287,12 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                   <motion.div 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-4 rounded-xl bg-zinc-950/50 border border-white/5 space-y-4"
+                    className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 space-y-4 shadow-md"
                   >
                     <div>
-                      <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-2">Your Private API Key</div>
+                      <div className="text-[10px] uppercase font-bold text-sky-400 tracking-widest mb-2">Your Private API Key</div>
                       <div className="flex items-center gap-3">
-                        <code className="flex-1 p-3 rounded-lg bg-black text-cyan-400 font-mono text-sm border border-cyan-500/20 break-all">
+                        <code className="flex-1 p-3 rounded-lg bg-slate-950 text-emerald-400 font-mono text-sm border border-slate-800 break-all">
                           {purchasedApiKey}
                         </code>
                         <button 
@@ -300,7 +300,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             navigator.clipboard.writeText(purchasedApiKey);
                             alert('API Key copied to clipboard!');
                           }}
-                          className="px-4 py-3 rounded-lg bg-cyan-500 text-zinc-950 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400 transition-all shrink-0"
+                          className="px-4 py-3 rounded-lg bg-sky-500 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-sky-600 transition-all shrink-0 cursor-pointer shadow-sm"
                         >
                           Copy Key
                         </button>
@@ -308,9 +308,9 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                     </div>
 
                     <div>
-                      <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-2">Endpoint Example</div>
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2">Endpoint Example</div>
                       <div className="flex items-center gap-3">
-                        <code className="flex-1 p-3 rounded-lg bg-black text-zinc-400 font-mono text-[10px] border border-white/5 break-all">
+                        <code className="flex-1 p-3 rounded-lg bg-slate-950 text-slate-300 font-mono text-[10px] border border-slate-800 break-all">
                           {(() => {
                             const planUpper = String(purchasedPlanName || "").toUpperCase();
                             if (planUpper.includes("TELEGRAM")) {
@@ -356,15 +356,15 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             navigator.clipboard.writeText(targetUrl);
                             alert('Example URL copied to clipboard!');
                           }}
-                          className="px-4 py-3 rounded-lg bg-white/5 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10 shrink-0"
+                          className="px-4 py-3 rounded-lg bg-slate-800 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-slate-700 transition-all border border-slate-700 shrink-0 cursor-pointer"
                         >
                           Copy URL
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-zinc-500 text-[10px] pt-1">
-                      <ShieldCheck size={12} />
+                    <div className="flex items-center gap-2 text-slate-400 text-[10px] pt-1">
+                      <ShieldCheck size={12} className="text-sky-400" />
                       Keep this key secure. It provides direct access to TraceX Intelligence.
                     </div>
                   </motion.div>
@@ -375,15 +375,15 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
           {/* Credit Plans */}
           <section>
             <div className="flex items-center justify-between mb-4 md:mb-6">
-              <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-[0.2em] text-[10px]">
+              <div className="flex items-center gap-2 text-sky-700 font-bold uppercase tracking-[0.2em] text-[10px]">
                 <CreditCard size={12} className="md:w-3.5 md:h-3.5" />
                 Precision Credits
               </div>
-              <div className="h-px flex-1 bg-white/5 ml-4" />
+              <div className="h-px flex-1 bg-sky-100 ml-4" />
             </div>
 
-            <div className="p-3 mb-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-[10px] md:text-xs font-mono flex items-center gap-2.5">
-              <Server size={14} className="shrink-0 animate-pulse" />
+            <div className="p-3 mb-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[10px] md:text-xs font-mono flex items-center gap-2.5 shadow-sm">
+              <Server size={14} className="shrink-0 animate-pulse text-amber-600" />
               <span>
                 <strong>VPS &amp; MAINTENANCE COST NOTICE:</strong> These credit costs purely cover our high performance website hosting, VPS, and API data maintenance costs, not for earning profit.
               </span>
@@ -395,27 +395,27 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                   <motion.div 
                     key={plan.id} 
                     whileHover={{ y: -5 }}
-                    className="p-3 md:p-6 rounded-2xl md:rounded-3xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/40 hover:bg-white/[0.05] transition-all group relative overflow-hidden flex flex-col"
+                    className="p-3 md:p-6 rounded-2xl md:rounded-3xl bg-slate-50/80 border border-sky-100 hover:border-sky-300 hover:bg-sky-50/50 transition-all group relative overflow-hidden flex flex-col shadow-sm"
                   >
-                    <div className="absolute top-0 right-0 p-2 md:p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                      <CreditCard size={32} className="md:w-16 md:h-16 text-cyan-500" />
+                    <div className="absolute top-0 right-0 p-2 md:p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <CreditCard size={32} className="md:w-16 md:h-16 text-sky-600" />
                     </div>
 
-                    <div className="absolute top-1.5 right-1.5 bg-emerald-500/20 text-[6px] md:text-[8px] font-extrabold uppercase text-emerald-400 px-1 py-0.5 rounded border border-emerald-500/30 tracking-widest animate-pulse">
+                    <div className="absolute top-1.5 right-1.5 bg-emerald-100 text-[6px] md:text-[8px] font-extrabold uppercase text-emerald-800 px-1 py-0.5 rounded border border-emerald-300 tracking-widest animate-pulse">
                       OFFER
                     </div>
                     
                     <div className="mb-3 md:mb-6">
-                      <h3 className="text-[10px] md:text-sm font-bold text-zinc-400 mb-0.5 md:mb-1 uppercase tracking-wider truncate">{plan.name}</h3>
+                      <h3 className="text-[10px] md:text-sm font-bold text-slate-600 mb-0.5 md:mb-1 uppercase tracking-wider truncate">{plan.name}</h3>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-xl md:text-3xl font-bold text-white">₹{plan.price}</span>
-                        <span className="text-[8px] md:text-xs text-zinc-500 font-mono ml-1">/ {plan.value}c</span>
+                        <span className="text-xl md:text-3xl font-black text-slate-900">₹{plan.price}</span>
+                        <span className="text-[8px] md:text-xs text-slate-500 font-mono ml-1 font-bold">/ {plan.value}c</span>
                       </div>
                     </div>
 
                     <div className="space-y-1.5 md:space-y-3 mb-4 md:mb-8 hidden xs:block">
-                      <div className="flex items-center gap-1.5 md:gap-2 text-[9px] md:text-xs text-zinc-300">
-                        <CheckCircle2 size={10} className="md:w-3.5 md:h-3.5 text-cyan-500" />
+                      <div className="flex items-center gap-1.5 md:gap-2 text-[9px] md:text-xs text-slate-700 font-medium">
+                        <CheckCircle2 size={10} className="md:w-3.5 md:h-3.5 text-sky-600" />
                         <span className="truncate">{plan.value} Searches</span>
                       </div>
                     </div>
@@ -423,7 +423,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                     <button 
                       disabled={isProcessing}
                       onClick={() => handlePurchase(plan)}
-                      className="mt-auto w-full py-2 md:py-3 bg-white/5 border border-white/10 group-hover:bg-cyan-500 transition-all rounded-xl md:rounded-2xl text-[9px] md:text-xs font-bold text-zinc-300 group-hover:text-zinc-950 group-hover:border-transparent tracking-widest uppercase flex items-center justify-center gap-2"
+                      className="mt-auto w-full py-2 md:py-3 bg-white border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition-all rounded-xl md:rounded-2xl text-[9px] md:text-xs font-extrabold text-slate-800 group-hover:border-transparent tracking-widest uppercase flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                     >
                       {isProcessing ? <Loader2 size={14} className="animate-spin" /> : 'Select'}
                     </button>
@@ -436,15 +436,15 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
           {/* Unlimited Plans */}
           <section>
             <div className="flex items-center justify-between mb-2 md:mb-4">
-              <div className="flex items-center gap-2 text-purple-400 font-bold uppercase tracking-[0.2em] text-[10px]">
+              <div className="flex items-center gap-2 text-blue-700 font-bold uppercase tracking-[0.2em] text-[10px]">
                 <Zap size={12} className="md:w-3.5 md:h-3.5" />
                 Elite Subscriptions
               </div>
-              <div className="h-px flex-1 bg-white/5 ml-4" />
+              <div className="h-px flex-1 bg-sky-100 ml-4" />
             </div>
 
-            <div className="p-3 mb-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-400 text-[10px] md:text-xs font-mono flex items-center gap-2.5">
-              <AlertCircle size={14} className="shrink-0" />
+            <div className="p-3 mb-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[10px] md:text-xs font-mono flex items-center gap-2.5 shadow-sm">
+              <AlertCircle size={14} className="shrink-0 text-amber-600" />
               <span>
                 <strong>CRITICAL NOTICE:</strong> Aadhaar to PAN lookup is <strong>strictly excluded</strong> from all Unlimited Plans. Aadhaar to PAN lookup costs 150 Credits per query.
               </span>
@@ -456,49 +456,47 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                   <motion.div 
                     key={plan.id} 
                     whileHover={{ scale: 1.02 }}
-                    className={`p-5 md:p-8 rounded-2xl md:rounded-[32px] relative overflow-hidden group transition-all duration-500 ${
+                    className={`p-5 md:p-8 rounded-2xl md:rounded-[32px] relative overflow-hidden group transition-all duration-500 shadow-sm ${
                       plan.id === 'unlimited_24h' 
-                        ? 'bg-gradient-to-br from-purple-500/20 to-indigo-500/10 border border-purple-500/30' 
-                        : 'bg-white/[0.03] border border-white/5 hover:border-purple-500/40 hover:bg-white/[0.05]'
+                        ? 'bg-gradient-to-br from-sky-50 to-blue-100/60 border border-sky-300' 
+                        : 'bg-slate-50/80 border border-sky-100 hover:border-sky-300'
                     }`}
                   >
-                    <div className="absolute -top-10 -right-10 md:-top-20 md:-right-20 w-24 h-24 md:w-40 md:h-40 bg-purple-500/20 rounded-full blur-2xl md:blur-3xl group-hover:bg-purple-500/30 transition-all duration-700" />
-                    
                     <div className="relative z-10 flex flex-col h-full">
                       <div className="flex justify-between items-start mb-4 md:mb-8">
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/20 text-[8px] md:text-[10px] font-bold text-purple-400 uppercase tracking-widest">
+                            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-sky-100 border border-sky-300 text-[8px] md:text-[10px] font-extrabold text-sky-800 uppercase tracking-widest">
                               {plan.id === 'unlimited_24h' ? 'Popular' : 'Elite'}
                             </div>
                           </div>
-                          <h3 className="text-lg md:text-2xl font-bold text-white mb-0.5 md:mb-1 tracking-tight">{plan.name}</h3>
+                          <h3 className="text-lg md:text-2xl font-black text-slate-900 mb-0.5 md:mb-1 tracking-tight">{plan.name}</h3>
                           <div className="flex items-baseline gap-1">
-                            <span className="text-2xl md:text-4xl font-bold text-white">₹{plan.price}</span>
-                            <span className="text-zinc-500 text-[10px] md:text-sm">/ period</span>
+                            <span className="text-2xl md:text-4xl font-black text-slate-900">₹{plan.price}</span>
+                            <span className="text-slate-500 text-[10px] md:text-sm font-semibold">/ period</span>
                           </div>
                         </div>
-                        <div className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
-                          <Zap className={`${plan.id === 'unlimited_24h' ? 'text-amber-400' : 'text-purple-400'} w-5 h-5 md:w-7 md:h-7`} />
+                        <div className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-white flex items-center justify-center border border-sky-200 shadow-sm">
+                          <Zap className={`${plan.id === 'unlimited_24h' ? 'text-amber-500' : 'text-sky-600'} w-5 h-5 md:w-7 md:h-7`} />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-1 gap-2 md:gap-4 mb-6 md:mb-10">
-                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-zinc-200">
-                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/20 shrink-0">
-                            <CheckCircle2 size={10} className="md:w-3 text-purple-400" />
+                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-slate-800 font-semibold">
+                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-sky-100 flex items-center justify-center border border-sky-200 shrink-0">
+                            <CheckCircle2 size={10} className="md:w-3 text-sky-600" />
                           </div>
                           <span className="truncate">Unlimited Search</span>
                         </div>
-                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-zinc-200">
-                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/20 shrink-0">
-                            <CheckCircle2 size={10} className="md:w-3 text-purple-400" />
+                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-slate-800 font-semibold">
+                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-sky-100 flex items-center justify-center border border-sky-200 shrink-0">
+                            <CheckCircle2 size={10} className="md:w-3 text-sky-600" />
                           </div>
                           <span className="truncate">Full Record Visibility</span>
                         </div>
-                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-amber-400 font-medium">
-                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-amber-500/20 flex items-center justify-center border border-amber-500/20 shrink-0">
-                            <AlertCircle size={10} className="md:w-3 text-amber-400" />
+                        <div className="flex items-center gap-2 md:gap-3 text-xs md:text-sm text-amber-800 font-extrabold">
+                          <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-amber-100 flex items-center justify-center border border-amber-200 shrink-0">
+                            <AlertCircle size={10} className="md:w-3 text-amber-600" />
                           </div>
                           <span className="truncate">Excludes Aadhaar to PAN</span>
                         </div>
@@ -507,10 +505,10 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                       <button 
                         disabled={isProcessing}
                         onClick={() => handlePurchase(plan)}
-                        className={`mt-auto w-full py-3 md:py-4 rounded-xl md:rounded-2xl text-[10px] md:text-sm font-bold tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center justify-center gap-2 ${
+                        className={`mt-auto w-full py-3 md:py-4 rounded-xl md:rounded-2xl text-[10px] md:text-sm font-black tracking-widest uppercase transition-all duration-300 shadow-md flex items-center justify-center gap-2 cursor-pointer ${
                           plan.id === 'unlimited_24h'
-                            ? 'bg-white text-zinc-950 hover:bg-zinc-200 active:scale-[0.98]'
-                            : 'bg-white/5 border border-white/10 text-white hover:bg-purple-500 hover:border-transparent active:scale-[0.98]'
+                            ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white hover:from-sky-600 hover:to-blue-700 active:scale-[0.98]'
+                            : 'bg-white border border-sky-200 text-slate-800 hover:bg-sky-600 hover:text-white active:scale-[0.98]'
                         }`}
                       >
                         {isProcessing ? <Loader2 size={18} className="animate-spin" /> : 'Unlock Access'}
@@ -526,28 +524,28 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
           {initialPayment?.type === 'api' && (
             <section>
               <div className="flex items-center justify-between mb-4 md:mb-6">
-                <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-[0.2em] text-[10px]">
+                <div className="flex items-center gap-2 text-sky-700 font-bold uppercase tracking-[0.2em] text-[10px]">
                   <ShieldCheck size={12} className="md:w-3.5 md:h-3.5" />
                   API Gateway License
                 </div>
-                <div className="h-px flex-1 bg-white/5 ml-4" />
+                <div className="h-px flex-1 bg-sky-100 ml-4" />
               </div>
 
-              <div className="p-6 md:p-10 rounded-[32px] bg-gradient-to-br from-cyan-500/10 to-purple-500/5 border border-cyan-500/20 relative overflow-hidden group">
+              <div className="p-6 md:p-10 rounded-[32px] bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 relative overflow-hidden group shadow-sm">
                 <div className="absolute top-0 right-0 p-8 opacity-10">
-                  <Zap size={120} className="text-cyan-400" />
+                  <Zap size={120} className="text-sky-600" />
                 </div>
                 
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
                   <div>
-                    <h3 className="text-2xl font-bold text-white mb-2">
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">
                       {API_PLANS.find(p => p.id === initialPayment.planId)?.name || 'Selected API Plan'}
                     </h3>
-                    <p className="text-zinc-500 text-sm mb-6 max-w-md">You are purchasing a secure API gateway key. Fulfillment is instant after verification.</p>
+                    <p className="text-slate-600 text-sm mb-6 max-w-md font-medium">You are purchasing a secure API gateway key. Fulfillment is instant after verification.</p>
                     <div className="flex flex-wrap gap-4">
                       {['High Throughput', '99.9% Uptime', 'JSON Results'].map(f => (
-                        <div key={f} className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-zinc-400">
-                           <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                        <div key={f} className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-extrabold text-slate-700">
+                           <div className="w-2 h-2 rounded-full bg-sky-600" />
                            {f}
                         </div>
                       ))}
@@ -555,15 +553,15 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                   </div>
                   
                   <div className="text-center md:text-right">
-                    <div className="text-4xl font-bold text-white mb-1">₹{initialPayment.amount}</div>
-                    <div className="text-zinc-500 text-xs mb-6 uppercase tracking-widest font-bold">One-time payment</div>
+                    <div className="text-4xl font-black text-slate-900 mb-1">₹{initialPayment.amount}</div>
+                    <div className="text-slate-500 text-xs mb-6 uppercase tracking-widest font-bold">One-time payment</div>
                     <button
                       disabled={isProcessing}
                       onClick={() => {
                         const plan = API_PLANS.find(p => p.id === initialPayment.planId);
                         if (plan) handlePurchase(plan);
                       }}
-                      className="px-12 py-4 rounded-2xl bg-cyan-500 text-zinc-950 font-bold text-sm hover:bg-cyan-400 transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center gap-2"
+                      className="px-12 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold text-sm hover:from-sky-600 hover:to-blue-700 transition-all shadow-md flex items-center gap-2 cursor-pointer"
                     >
                       {isProcessing ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Order'}
                     </button>
@@ -575,8 +573,8 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
         </div>
         
         {/* Footer Info */}
-        <div className="p-4 bg-black/40 border-t border-white/5 text-center">
-          <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold">Secure Encrypted Checkout • Power by TRACEXDATA</p>
+        <div className="p-4 bg-sky-50 border-t border-sky-100 text-center">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Secure Encrypted Checkout • Power by TRACEXDATA</p>
         </div>
       </motion.div>
     </div>

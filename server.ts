@@ -752,6 +752,183 @@ app.post("/api/check-protected", async (req, res) => {
   }
 });
 
+// PCKING07 Unlimited Number Lookup (Public, No Login Required)
+app.get("/api/pcking07-lookup", async (req, res) => {
+  const { query } = req.query;
+  if (!query || typeof query !== 'string') {
+    return res.status(200).json({
+      status: false,
+      error: "Missing or invalid phone number query."
+    });
+  }
+
+  const cleanedQuery = String(query).replace(/\D/g, '').trim();
+  if (cleanedQuery.length < 10) {
+    return res.status(200).json({
+      status: false,
+      error: "Please enter a valid 10-digit mobile number."
+    });
+  }
+
+  try {
+    const db = supabaseAdmin || supabase;
+    
+    // Check Privacy Protection
+    if (db) {
+      try {
+        const { data: protectedData } = await db
+          .from('protected_numbers')
+          .select('phone_number')
+          .eq('phone_number', cleanedQuery)
+          .maybeSingle();
+        if (protectedData) {
+          return res.status(200).json({
+            status: false,
+            error: "This number is protected with TRACEXDATA Protection feature. 🛡️"
+          });
+        }
+
+        // Check Cache
+        const { data: cachedData, error: cacheError } = await db
+          .from('search_results')
+          .select('raw_data')
+          .eq('mobile_number', cleanedQuery)
+          .maybeSingle();
+
+        if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
+          console.log('[PCKING07] Serving from cache...');
+          const cleanedData = cleanBrandingObject(cachedData.raw_data);
+          await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'success', db);
+          return res.status(200).json({
+            status: "success",
+            results: cleanedData,
+            cached: true
+          });
+        }
+      } catch (e) {
+        console.warn("[PCKING07] Protection/cache check error:", e);
+      }
+    }
+
+    // Query external phone API
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json,text/plain,*/*'
+    };
+
+    let responseData: any = null;
+    let activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+    if (supabaseAdmin) {
+      try {
+        const { data: keys } = await supabaseAdmin
+          .from("api_keys")
+          .select("api_key")
+          .eq("status", "active")
+          .limit(1);
+        if (keys && keys.length > 0) {
+          activeKey = keys[0].api_key;
+        }
+      } catch (e) {}
+    }
+
+    const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
+    const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
+
+    try {
+      console.log(`[PCKING07] Querying phone API: ${newApiUrl}`);
+      const response = await fetch(newApiUrl, { headers });
+      if (response.ok) {
+        const text = await response.text();
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (e) {
+          parsed = parsePhonePlainText(text);
+        }
+        if (parsed && typeof parsed === 'object') {
+          let records = parsed.results || parsed.data || parsed.records;
+          if (!records) {
+            if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
+              records = { "1": parsed };
+            } else {
+              const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
+              if (hasNestedObject) {
+                records = parsed;
+              }
+            }
+          }
+          if (records) {
+            if (Array.isArray(records)) {
+              const map: Record<string, any> = {};
+              records.forEach((rec, idx) => {
+                if (rec && typeof rec === 'object') {
+                  map[`Result ${idx + 1}`] = rec;
+                }
+              });
+              responseData = { results: map };
+            } else {
+              responseData = { results: records };
+            }
+          } else {
+            responseData = parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[PCKING07] Primary phone API failed, trying fallback target:", err);
+    }
+
+    if (!responseData) {
+      try {
+        console.log(`[PCKING07] Falling back to target: ${target}`);
+        const response = await fetch(target, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          responseData = data.results || data.data || data;
+        }
+      } catch (err) {
+        console.error("[PCKING07] Fallback target failed:", err);
+      }
+    }
+
+    if (responseData) {
+      const cleanedResults = cleanBrandingObject(responseData.results || responseData);
+      
+      // Save cache if valid
+      if (db && cleanedResults && Object.keys(cleanedResults).length > 0) {
+        try {
+          await db.from('search_results').upsert({
+            mobile_number: cleanedQuery,
+            raw_data: cleanedResults,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'mobile_number' });
+        } catch (e) {
+          console.error("[PCKING07] Cache write error:", e);
+        }
+      }
+
+      await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'success', db);
+      return res.status(200).json({
+        status: "success",
+        results: cleanedResults
+      });
+    }
+
+    await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'not_found', db);
+    return res.status(200).json({
+      status: false,
+      error: "No records found for this mobile number."
+    });
+
+  } catch (err: any) {
+    console.error("[PCKING07] Lookup error:", err);
+    return res.status(500).json({
+      status: false,
+      error: err.message || "An error occurred during lookup."
+    });
+  }
+});
+
 // Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;

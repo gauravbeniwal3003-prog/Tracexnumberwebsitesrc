@@ -43,14 +43,14 @@ export default function LoginScreen({ isModal = false }: { isModal?: boolean }) 
     <motion.div
       initial={isModal ? {} : { opacity: 0, scale: 0.95 }}
       animate={isModal ? {} : { opacity: 1, scale: 1 }}
-      className={`glass-card w-full max-w-md p-8 relative z-10 ${isModal ? 'shadow-2xl border-white/10' : ''}`}
+      className={`glass-card w-full max-w-md p-8 relative z-10 bg-white/95 border-sky-200 ${isModal ? 'shadow-[0_20px_50px_rgba(14,165,233,0.15)] border-sky-200' : 'shadow-xl'}`}
     >
       <div className="text-center mb-8">
-        <div className="w-16 h-16 rounded-3xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30 mx-auto mb-4">
-          <ShieldAlert className="text-cyan-400" size={32} />
+        <div className="w-16 h-16 rounded-3xl bg-sky-100 flex items-center justify-center border border-sky-200 mx-auto mb-4 shadow-sm">
+          <ShieldAlert className="text-sky-600" size={32} />
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight uppercase">TRACEXDATA</h1>
-        <p className="text-zinc-500 text-xs mt-2 uppercase tracking-widest font-mono">Mobile Intelligence Engine</p>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">TRACEXDATA</h1>
+        <p className="text-slate-500 text-xs mt-2 uppercase tracking-widest font-bold">Mobile Intelligence Engine</p>
       </div>
 
       <motion.div
@@ -61,19 +61,19 @@ export default function LoginScreen({ isModal = false }: { isModal?: boolean }) 
       >
         <button
           onClick={signInWithGoogle}
-          className="w-full py-4 px-6 rounded-2xl bg-white text-zinc-950 font-bold flex items-center justify-center gap-3 hover:bg-zinc-200 transition-all shadow-xl active:scale-95"
+          className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold flex items-center justify-center gap-3 transition-all shadow-md active:scale-95 cursor-pointer"
         >
-          <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" referrerPolicy="no-referrer" />
+          <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5 bg-white rounded-full p-0.5" referrerPolicy="no-referrer" />
           Continue with Google Account
         </button>
         
-        <p className="text-center text-[10px] text-zinc-500 uppercase tracking-widest leading-relaxed">
+        <p className="text-center text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
           One-tap secure access via Google Cloud Auth.<br />
           No password required for TRACEXDATA VIP.
         </p>
       </motion.div>
 
-      <p className="mt-12 text-center text-[10px] text-zinc-600 uppercase tracking-[0.2em] font-bold">
+      <p className="mt-12 text-center text-[10px] text-slate-400 uppercase tracking-[0.2em] font-bold">
         Secured by TRACEXDATA Enterprise
       </p>
     </motion.div>
