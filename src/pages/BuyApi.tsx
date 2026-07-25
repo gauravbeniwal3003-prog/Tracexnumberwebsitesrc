@@ -320,6 +320,7 @@ export default function BuyApi() {
             >
               {activeService.plans.map((plan, idx) => {
                 const isPopular = plan.popular;
+                const discountedPrice = getPlanPrice(plan);
                 return (
                   <div
                     key={plan.id}
@@ -336,13 +337,19 @@ export default function BuyApi() {
                     )}
 
                     <div>
-                      <h3 className="text-lg font-black text-slate-900 mb-1">{plan.name}</h3>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="text-lg font-black text-slate-900">{plan.name}</h3>
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black uppercase tracking-wider animate-pulse">50% OFF</span>
+                      </div>
                       <p className="text-sky-800 text-[10px] font-extrabold uppercase tracking-widest mb-6">
                         {plan.limit} • {plan.duration}
                       </p>
 
-                      <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-3xl font-black text-slate-900">₹{plan.price}</span>
+                      <div className="flex items-baseline gap-2 mb-8 flex-wrap">
+                        <span className="text-3xl font-black text-slate-900">₹{discountedPrice}</span>
+                        {discountedPrice !== plan.price && (
+                          <span className="text-sm text-slate-400 line-through font-semibold">₹{plan.price}</span>
+                        )}
                         <span className="text-slate-500 text-xs font-bold">/ plan cost</span>
                       </div>
 

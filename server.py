@@ -1404,6 +1404,158 @@ async def index():
         "version": "2.8.0-STABLE"
     }
 
+@app.get("/api/pcking07-lookup")
+async def pcking07_lookup(request: Request, query: Optional[str] = Query(None)):
+    if not query:
+        return {
+            "status": False,
+            "error": "Missing or invalid phone number query."
+        }
+
+    import re
+    cleaned_query = re.sub(r'\D', '', str(query)).strip()
+    if len(cleaned_query) < 10:
+        return {
+            "status": False,
+            "error": "Please enter a valid 10-digit mobile number."
+        }
+
+    try:
+        db = get_supabase()
+
+        if db:
+            try:
+                # Check Privacy Protection
+                prot_res = db.table('protected_numbers').select('phone_number').eq('phone_number', cleaned_query).execute()
+                if prot_res.data:
+                    return {
+                        "status": False,
+                        "error": "This number is protected with TRACEXDATA Protection feature. 🛡️"
+                    }
+
+                # Check Cache
+                cache_res = db.table('search_results').select('raw_data').eq('mobile_number', cleaned_query).execute()
+                if cache_res.data and cache_res.data[0].get('raw_data'):
+                    cached_data = cache_res.data[0]['raw_data']
+                    if cached_data and isinstance(cached_data, dict) and len(cached_data) > 0:
+                        print('[PCKING07] Serving from cache in Python...')
+                        cleaned_data = clean_branding_recursive(cached_data)
+                        try:
+                            db.table("search_history").insert({
+                                "search_type": "pcking07_phone",
+                                "query": cleaned_query,
+                                "status": "success"
+                            }).execute()
+                        except Exception: pass
+                        return {
+                            "status": "success",
+                            "results": cleaned_data,
+                            "cached": True
+                        }
+            except Exception as e:
+                print(f"[PCKING07] Protection/cache check error in Python: {e}")
+
+        # Query external phone API
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json,text/plain,*/*'
+        }
+
+        response_data = None
+        new_api_url = f"https://exploitsindia.site//osint-api/number.php?exploits={urllib.parse.quote(cleaned_query)}"
+
+        try:
+            print(f"[PCKING07] Querying phone API in Python: {new_api_url}")
+            resp = requests.get(new_api_url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                text = resp.text.strip()
+                try:
+                    parsed = resp.json()
+                except Exception:
+                    parsed = parse_raw_text_to_records(text, cleaned_query)
+
+                if parsed and isinstance(parsed, dict):
+                    records = parsed.get("results") or parsed.get("data") or parsed.get("records")
+                    if not records:
+                        if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
+                            records = {"1": parsed}
+                        else:
+                            has_nested = any(isinstance(v, dict) for v in parsed.values())
+                            if has_nested:
+                                records = parsed
+                    if records:
+                        if isinstance(records, list):
+                            records_map = {}
+                            for idx, rec in enumerate(records):
+                                if isinstance(rec, dict):
+                                    records_map[f"Result {idx + 1}"] = rec
+                            response_data = {"results": records_map}
+                        else:
+                            response_data = {"results": records}
+                    else:
+                        response_data = parsed
+        except Exception as err:
+            print(f"[PCKING07] Primary phone API failed in Python: {err}")
+
+        if not response_data:
+            try:
+                print("[PCKING07] Falling back to saas_lookup in Python...")
+                res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, number=cleaned_query)
+                if res and isinstance(res, dict):
+                    response_data = res.get("results") or res.get("data") or res
+            except Exception as fb_err:
+                print(f"[PCKING07] Fallback failed in Python: {fb_err}")
+
+        if response_data:
+            results_obj = response_data.get("results") if isinstance(response_data, dict) and "results" in response_data else response_data
+            cleaned_results = clean_branding_recursive(results_obj)
+
+            # Save cache if valid
+            if db and cleaned_results and isinstance(cleaned_results, dict) and len(cleaned_results) > 0:
+                try:
+                    db.table('search_results').upsert({
+                        'mobile_number': cleaned_query,
+                        'raw_data': cleaned_results,
+                        'updated_at': datetime.utcnow().isoformat() + "Z"
+                    }, on_conflict='mobile_number').execute()
+                except Exception as e:
+                    print(f"[PCKING07] Cache write error in Python: {e}")
+
+            if db:
+                try:
+                    db.table("search_history").insert({
+                        "search_type": "pcking07_phone",
+                        "query": cleaned_query,
+                        "status": "success"
+                    }).execute()
+                except Exception: pass
+
+            return {
+                "status": "success",
+                "results": cleaned_results
+            }
+
+        if db:
+            try:
+                db.table("search_history").insert({
+                    "search_type": "pcking07_phone",
+                    "query": cleaned_query,
+                    "status": "not_found"
+                }).execute()
+            except Exception: pass
+
+        return {
+            "status": False,
+            "error": "No records found for this mobile number."
+        }
+
+    except Exception as err:
+        print(f"[PCKING07] Lookup error in Python: {err}")
+        return {
+            "status": False,
+            "error": str(err) if str(err) else "An error occurred during lookup."
+        }
+
 @app.get("/api/user-lookup")
 async def user_lookup(
     request: Request,

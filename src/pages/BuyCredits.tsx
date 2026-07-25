@@ -334,6 +334,7 @@ export default function BuyCredits() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {UNLIMITED_PLANS.map((plan) => {
+                const discountedPrice = getPlanPrice(plan);
                 return (
                   <motion.div
                     key={plan.id}
@@ -349,13 +350,19 @@ export default function BuyCredits() {
                         <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
                           UNLIMITED SEARCH
                         </span>
+                        <span className="px-2.5 py-1 rounded-full bg-red-100 border border-red-300 text-[9px] font-extrabold text-red-800 uppercase tracking-widest animate-pulse">
+                          50% OFF SPECIAL OFFER
+                        </span>
                       </div>
 
                       <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
                       <p className="text-slate-600 text-xs mb-6 font-medium">Unlimited lookup routing for 100% complete intelligence access.</p>
 
-                      <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-4xl font-black text-slate-900">₹{plan.price}</span>
+                      <div className="flex items-baseline gap-2 mb-8 flex-wrap">
+                        <span className="text-4xl font-black text-slate-900">₹{discountedPrice}</span>
+                        {discountedPrice !== plan.price && (
+                          <span className="text-lg text-slate-400 line-through font-semibold">₹{plan.price}</span>
+                        )}
                         <span className="text-slate-500 font-mono text-xs font-bold">/ period</span>
                       </div>
 
@@ -400,6 +407,7 @@ export default function BuyCredits() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {CREDIT_PLANS.map((plan) => {
+                const discountedPrice = getPlanPrice(plan);
                 return (
                   <motion.div
                     key={plan.id}
@@ -415,16 +423,19 @@ export default function BuyCredits() {
                         <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
                           QUICK RECHARGE
                         </span>
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-extrabold text-emerald-800 uppercase tracking-widest animate-pulse">
-                          1.5X MORE CREDITS OFFER
+                        <span className="px-2.5 py-1 rounded-full bg-red-100 border border-red-300 text-[9px] font-extrabold text-red-800 uppercase tracking-widest animate-pulse">
+                          50% OFF SPECIAL OFFER
                         </span>
                       </div>
 
                       <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
                       <p className="text-slate-600 text-xs mb-6 font-medium">Instantly reload search credits. Non-expiring high-performance lookups.</p>
 
-                      <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-4xl font-black text-slate-900">₹{plan.price}</span>
+                      <div className="flex items-baseline gap-2 mb-8 flex-wrap">
+                        <span className="text-4xl font-black text-slate-900">₹{discountedPrice}</span>
+                        {discountedPrice !== plan.price && (
+                          <span className="text-lg text-slate-400 line-through font-semibold">₹{plan.price}</span>
+                        )}
                         <span className="text-slate-500 font-mono text-xs font-bold">/ {plan.value} lookups</span>
                       </div>
 

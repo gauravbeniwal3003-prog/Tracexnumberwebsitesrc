@@ -391,6 +391,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
             
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-5">
               {CREDIT_PLANS.map((plan) => {
+                const discountedPrice = getPlanPrice(plan);
                 return (
                   <motion.div 
                     key={plan.id} 
@@ -401,14 +402,17 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                       <CreditCard size={32} className="md:w-16 md:h-16 text-sky-600" />
                     </div>
 
-                    <div className="absolute top-1.5 right-1.5 bg-emerald-100 text-[6px] md:text-[8px] font-extrabold uppercase text-emerald-800 px-1 py-0.5 rounded border border-emerald-300 tracking-widest animate-pulse">
-                      OFFER
+                    <div className="absolute top-1.5 right-1.5 bg-red-100 text-[6px] md:text-[8px] font-extrabold uppercase text-red-800 px-1 py-0.5 rounded border border-red-300 tracking-widest animate-pulse">
+                      50% OFF
                     </div>
                     
                     <div className="mb-3 md:mb-6">
                       <h3 className="text-[10px] md:text-sm font-bold text-slate-600 mb-0.5 md:mb-1 uppercase tracking-wider truncate">{plan.name}</h3>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xl md:text-3xl font-black text-slate-900">₹{plan.price}</span>
+                      <div className="flex items-baseline gap-1 flex-wrap">
+                        <span className="text-xl md:text-3xl font-black text-slate-900">₹{discountedPrice}</span>
+                        {discountedPrice !== plan.price && (
+                          <span className="text-xs text-slate-400 line-through font-semibold">₹{plan.price}</span>
+                        )}
                         <span className="text-[8px] md:text-xs text-slate-500 font-mono ml-1 font-bold">/ {plan.value}c</span>
                       </div>
                     </div>
@@ -452,6 +456,7 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
               {UNLIMITED_PLANS.map((plan) => {
+                const discountedPrice = getPlanPrice(plan);
                 return (
                   <motion.div 
                     key={plan.id} 
@@ -469,10 +474,16 @@ export default function SubscriptionModal({ onClose, initialPayment }: Subscript
                             <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-sky-100 border border-sky-300 text-[8px] md:text-[10px] font-extrabold text-sky-800 uppercase tracking-widest">
                               {plan.id === 'unlimited_24h' ? 'Popular' : 'Elite'}
                             </div>
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 border border-red-300 text-[8px] md:text-[10px] font-extrabold text-red-700 uppercase tracking-widest animate-pulse">
+                              50% OFF
+                            </div>
                           </div>
                           <h3 className="text-lg md:text-2xl font-black text-slate-900 mb-0.5 md:mb-1 tracking-tight">{plan.name}</h3>
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-2xl md:text-4xl font-black text-slate-900">₹{plan.price}</span>
+                          <div className="flex items-baseline gap-1 flex-wrap">
+                            <span className="text-2xl md:text-4xl font-black text-slate-900">₹{discountedPrice}</span>
+                            {discountedPrice !== plan.price && (
+                              <span className="text-sm text-slate-400 line-through font-semibold">₹{plan.price}</span>
+                            )}
                             <span className="text-slate-500 text-[10px] md:text-sm font-semibold">/ period</span>
                           </div>
                         </div>

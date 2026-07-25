@@ -917,17 +917,11 @@ export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse>
     }
   } catch (err: any) {
     console.error("PCKING07 lookup error:", err);
-    // Fallback attempt with lookupNumber
-    try {
-      const fallbackRes = await lookupNumber(number);
-      return fallbackRes;
-    } catch (e) {
-      return {
-        status: false,
-        results: {},
-        error: err.message || "Failed to search record. Please try again."
-      };
-    }
+    return {
+      status: false,
+      results: {},
+      error: err.message || "Failed to search record. Please try again."
+    };
   }
 };
 
