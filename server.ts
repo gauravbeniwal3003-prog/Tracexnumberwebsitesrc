@@ -27,7 +27,7 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
-const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || 'tracex_master_key_2025';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
@@ -353,7 +353,7 @@ function formatUnifiedSaaSResponse({
   requestsUsed,
   records
 }: {
-  type: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' | 'veh_owner_num' | 'email';
+  type: string;
   query: string;
   expiresAt: string;
   planName: string;
@@ -361,38 +361,40 @@ function formatUnifiedSaaSResponse({
   records: any[];
 }) {
   const cleanedData: any[] = [];
+  const scrubbedRecords = scrubAllBranding(records);
+  const itemsList = Array.isArray(scrubbedRecords) ? scrubbedRecords : [scrubbedRecords];
 
-  records.forEach((item, idx) => {
+  itemsList.forEach((item, idx) => {
     if (!item || typeof item !== 'object') return;
 
     const filteredItem: any = { ...item, result_no: idx + 1 };
-    
-    if (type === 'phone') {
-      filteredItem.name = (item.name || item.full_name || "N/A").toString().toUpperCase();
-      filteredItem.mobile = item.mobile || item.number || query || "N/A";
-      filteredItem.alt_mobile = item.alt_mobile || item.alt_number || "N/A";
-      filteredItem.operator = (item.operator || item.carrier || "N/A").toString().toUpperCase();
-      filteredItem.circle = (item.state_circle || item.circle || item.state || "N/A").toString().toUpperCase();
-      filteredItem.address = item.address || item.location || "N/A";
-    } else if (type === 'telegram') {
-      filteredItem.name = (item.name || "Telegram Registered Profile").toString().toUpperCase();
-      filteredItem.telegram_id = item.telegram_id || query;
-      filteredItem.username = item.username || "N/A";
-      filteredItem.mobile = item.mobile || "N/A";
-    } else {
-      // Dynamic mapping for Aadhar, Bank (IFSC), and Ration Card lookups
-      Object.entries(item).forEach(([key, val]) => {
-        if (key === 'result_no') return;
-        const normalizedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
-        let cleanedVal = val;
-        if (typeof val === 'string') {
-          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim().toUpperCase();
-        }
-        filteredItem[normalizedKey] = cleanedVal;
-      });
+
+    // Standardize & Alias common fields so buyers receive expected properties without missing any original fields
+    if (item.name || item.full_name) {
+      filteredItem.name = String(item.name || item.full_name).trim();
+      filteredItem.full_name = filteredItem.name;
+    }
+    if (item.fname || item.father_name) {
+      filteredItem.fname = String(item.fname || item.father_name).trim();
+      filteredItem.father_name = filteredItem.fname;
+    }
+    if (item.mobile || item.number || item.phone) {
+      filteredItem.mobile = String(item.mobile || item.number || item.phone).trim();
+    }
+    if (item.alt || item.alt_mobile || item.alt_number) {
+      filteredItem.alt = String(item.alt || item.alt_mobile || item.alt_number).trim();
+      filteredItem.alt_mobile = filteredItem.alt;
+    }
+    if (item.id || item.aadhaar_number || item.aadhar) {
+      filteredItem.id = String(item.id || item.aadhaar_number || item.aadhar).trim();
+      filteredItem.aadhaar_number = filteredItem.id;
+    }
+    if (item.circle || item.state_circle || item.state) {
+      filteredItem.circle = String(item.circle || item.state_circle || item.state).trim();
+      filteredItem.state_circle = filteredItem.circle;
     }
 
-    // Clean N/A values and format keys elegantly
+    // Clean N/A / null / undefined values elegantly
     Object.keys(filteredItem).forEach(k => {
       const v = filteredItem[k];
       if (v === undefined || v === null || v === 'null' || v === 'n-a' || v === 'NA' || String(v).trim() === '') {
@@ -416,12 +418,14 @@ function formatUnifiedSaaSResponse({
     status: cleanedData.length > 0 ? "success" : "not_found",
     buy_api: "https://tracexdata.online/buy-api",
     website: "https://tracexdata.online",
+    developer: "TraceXData Intelligence",
+    owner_telegram: "@gaurav_beniwal_0001",
     query: query,
     api_status: {
-      plan: planName,
-      expires_at: expiresAt,
+      plan: planName || "Active Plan",
+      expires_at: expiresAt || "Lifetime",
       time_left: expiresAt ? `${hoursLeft}h ${minsLeft}m` : "Active",
-      requests_used: requestsUsed
+      requests_used: requestsUsed || 0
     },
     results_found: cleanedData.length,
     results: resultsObj,
@@ -1885,250 +1889,74 @@ app.get("/api/lookup", async (req, res) => {
       return res.status(200).json(responsePayload);
     }
 
-    // Forwarding logic based on target lookup Type
-    if (lookupType === 'phone') {
-      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      const searchParams = new URLSearchParams();
-      searchParams.set("key", String(key)); 
-      searchParams.set("query", targetQuery);
+    // Forwarding logic based on target lookup Type - All query types forward to new Cloudflare OSINT Gateway
+    const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    console.log(`[SaaS API Lookup] Querying new Cloudflare OSINT Gateway for ${lookupType}: ${targetQuery}`);
 
-      const target = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      let rawData: any = null;
-      let responseStatus = 200;
-
-      // Try new phone API first
-      try {
-        console.log(`SaaS lookup querying new phone API: ${newApiUrl}`);
-        const response = await fetch(newApiUrl, {
-          headers: { 
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json"
-          }
-        });
-        if (response.ok) {
-          const text = await response.text();
-          let parsed: any = null;
-          try {
-            parsed = JSON.parse(text);
-          } catch (e) {
-            console.log("SaaS phone lookup text is not JSON, parsing plain text...");
-            parsed = parsePhonePlainText(text);
-          }
-          if (parsed && typeof parsed === 'object') {
-            const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records || parsed.status === true || (parsed.status === undefined && Object.keys(parsed).length > 0) || parsed.message;
-            if (hasData) {
-              rawData = parsed;
-              responseStatus = response.status;
-            }
-          }
-        }
-      } catch (err) {
-        console.error("SaaS new phone API failed, falling back:", err);
-      }
-
-      // Fallback if new API didn't return data
-      if (!rawData) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        try {
-          console.log(`SaaS lookup falling back to old target: ${target}`);
-          const response = await fetch(target, {
-            headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            rawData = await response.json();
-            responseStatus = response.status;
-          }
-        } catch (fetchErr: any) {
-          clearTimeout(timeoutId);
-          console.error("SaaS old phone fallback failed:", fetchErr);
-        }
-      }
-
-      if (rawData) {
-        const newCount = (keyRecord.requests_used || 0) + 1;
-        if (!isMaster && keyRecord.id) {
-          try {
-            await supabaseAdmin.from("api_keys").update({ 
-              requests_used: newCount,
-              last_used_at: new Date().toISOString()
-            }).eq("id", keyRecord.id);
-          } catch (dbErr) {
-            console.error("Failed to update api_keys requests_used:", dbErr);
-          }
-        }
-
-        let recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
-        if (!recordsRaw || (typeof recordsRaw === 'object' && Object.keys(recordsRaw).length === 0)) {
-          if (rawData.name || rawData.mobile || rawData.father_name) {
-            recordsRaw = [rawData];
-          }
-        }
-
-        let parsedRecords: any[] = [];
-        if (Array.isArray(recordsRaw)) {
-          parsedRecords = recordsRaw;
-        } else if (recordsRaw && typeof recordsRaw === 'object') {
-          if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
-            parsedRecords = [recordsRaw];
-          } else {
-            parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
-          }
-        }
-
-        const filtered = formatUnifiedSaaSResponse({
-          type: 'phone',
-          query: targetQuery,
-          expiresAt: keyRecord.expires_at,
-          planName: keyRecord.plan_name,
-          requestsUsed: newCount,
-          records: parsedRecords
-        });
-        
-        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
-        return res.status(responseStatus).json(filtered);
-      } else {
-        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
-        return res.status(502).json({ 
-          status: "error", 
-          message: "Downstream Provider: Unresponsive or Invalid JSON Response"
-        });
-      }
-    } else if ((lookupType as string) === 'telegram') {
-      const target_username = targetQuery.replace(/^@/, "");
-      const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
-      const response = await fetch(api_url);
-      if (!response.ok) {
-        throw new Error(`Telegram Engine Offline: Status ${response.status}`);
-      }
-
-      const text = await response.text();
-      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
-      const lowerText = cleanedText.toLowerCase();
-
-      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
-         await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-         return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
-      }
-
-      let recordsList: any[] = [];
-      let isParsedAsJson = false;
-
-      try {
-        const parsed = JSON.parse(text);
-        const cleaned_json = scrubAllBranding(parsed);
-        if (cleaned_json && (cleaned_json.results || cleaned_json.data || cleaned_json.records)) {
-          const items = cleaned_json.results || cleaned_json.data || cleaned_json.records;
-          recordsList = Array.isArray(items) ? items : [items];
-          isParsedAsJson = true;
-        } else if (cleaned_json && typeof cleaned_json === 'object') {
-          recordsList = [cleaned_json];
-          isParsedAsJson = true;
-        }
-      } catch (e) {
-        // Fallback to text parsing
-      }
-
-      if (!isParsedAsJson) {
-        const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
-        const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-        const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-
-        const username = usernameMatch ? usernameMatch[1].trim() : target_username;
-        const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-        const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
-
-        if (telegram_id === "N/A" && phone === "N/A") {
-           await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-           return res.status(404).json({ status: "error", message: "Lookup matched but profile contains no traceable ID or phone." });
-        }
-
-        recordsList = [{
-          name: "Telegram Registered Profile",
-          telegram_id: telegram_id,
-          username: username,
-          mobile: phone || "N/A"
-        }];
-      }
-
-      const newCount = (keyRecord.requests_used || 0) + 1;
-      if (!isMaster && keyRecord?.id) {
-        await supabaseAdmin.from("api_keys").update({ 
-          requests_used: newCount,
-          last_used_at: new Date().toISOString()
-        }).eq("id", keyRecord.id);
-      }
-
-      await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "success", Date.now() - startTime);
-
-      const filtered = formatUnifiedSaaSResponse({
-        type: 'telegram',
-        query: targetQuery,
-        expiresAt: keyRecord.expires_at,
-        planName: keyRecord.plan_name,
-        requestsUsed: newCount,
-        records: recordsList
-      });
-
-      return res.json(filtered);
-    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan') {
-      const logPrefix = lookupType.toUpperCase();
-      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-
-      const response = await fetch(api_url, {
+    try {
+      const response = await fetch(newApiUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json'
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "application/json"
         }
       });
+
       if (!response.ok) {
-        throw new Error(`OSINT Provider Offline: ${lookupType.toUpperCase()} status ${response.status}`);
+        await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+        return res.status(502).json({
+          status: "error",
+          message: `Downstream OSINT Provider Offline (Status ${response.status})`
+        });
       }
 
       const text = await response.text();
-      let parsedData: any;
-
+      let parsedData: any = null;
       try {
         parsedData = JSON.parse(text);
       } catch (e) {
-        parsedData = parsePlainTextLookup(text, 'aadhar');
+        parsedData = parsePhonePlainText(text);
       }
 
       const parsedResult = parseCloudflareApiResponse(parsedData);
 
-      if (!parsedResult.success || parsedResult.records.length === 0) {
-        await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "failed", Date.now() - startTime);
-        return res.status(404).json({ status: "error", message: parsedResult.error || `No identity records found in ${logPrefix} database for ${targetQuery}` });
+      if (!parsedResult.success || !parsedResult.records || parsedResult.records.length === 0) {
+        await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+        return res.status(404).json({
+          status: "error",
+          message: `No records found for ${targetQuery}`
+        });
       }
-
-      const cleanedData = scrubAllBranding(parsedResult.records);
 
       const newCount = (keyRecord.requests_used || 0) + 1;
       if (!isMaster && keyRecord?.id) {
-        await supabaseAdmin.from("api_keys").update({ 
-          requests_used: newCount,
-          last_used_at: new Date().toISOString()
-        }).eq("id", keyRecord.id);
+        try {
+          await supabaseAdmin.from("api_keys").update({ 
+            requests_used: newCount,
+            last_used_at: new Date().toISOString()
+          }).eq("id", keyRecord.id);
+        } catch (dbErr) {
+          console.error("Failed to update api_keys requests_used:", dbErr);
+        }
       }
 
-      await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
-
       const filtered = formatUnifiedSaaSResponse({
-        type: lookupType as any,
+        type: lookupType,
         query: targetQuery,
         expiresAt: keyRecord.expires_at,
         planName: keyRecord.plan_name,
         requestsUsed: newCount,
-        records: Array.isArray(cleanedData) ? cleanedData : [cleanedData]
+        records: parsedResult.records
       });
 
-      return res.json(filtered);
-    } else {
-      return res.status(400).json({ status: "error", message: "Lookup option unsupported or disabled" });
+      await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "success", Date.now() - startTime);
+      return res.status(200).json(filtered);
+    } catch (err: any) {
+      console.error("SaaS lookup fetch failed:", err);
+      await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+      return res.status(502).json({
+        status: "error",
+        message: err.message || "OSINT Gateway Fetch Error"
+      });
     }
   } catch (error: any) {
     console.error("[PROXY_ERROR]", error);
@@ -2842,7 +2670,7 @@ app.get("/api/telegram", async (req, res) => {
       console.error("[Telegram Cache Read Error]", cacheErr);
     }
 
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(target_username)}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds timeout
 
@@ -3493,7 +3321,7 @@ app.get("/api/vehicle", async (req, res) => {
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
@@ -3684,7 +3512,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
@@ -3844,7 +3672,7 @@ app.get("/api/email", async (req, res) => {
     }
 
     // Fetch from the external provider
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',

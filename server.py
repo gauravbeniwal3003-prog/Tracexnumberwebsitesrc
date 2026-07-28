@@ -3588,7 +3588,7 @@ async def vehicle_lookup(
             print(f"[CACHE_ERR] Vehicle cache check error in Python: {cache_err}")
 
         # Proxy fetch
-        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
+        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
