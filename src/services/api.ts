@@ -481,6 +481,7 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
+      .replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "")
       .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -496,10 +497,11 @@ const scrubBranding = (obj: any): any => {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy'].includes(lowerKey)) {
+      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy', 'darkdeveloper02', '@darkdeveloper02', 'darkdeveloper'].includes(lowerKey)) {
         continue;
       }
-      cleaned[key] = scrubBranding(val);
+      const cleanKey = key.replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "").trim() || key;
+      cleaned[cleanKey] = scrubBranding(val);
     }
     return cleaned;
   }
@@ -508,7 +510,7 @@ const scrubBranding = (obj: any): any => {
 
 export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
   const result: any = {};
-  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "").trim();
+  const cleanText = text.replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "").replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;
@@ -773,41 +775,11 @@ export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse>
 };
 
 export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => {
-  const cleanPancardNo = pancardNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  
-  console.log('Searching TRACEXDATA PN Card Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
-
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
-
-    const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this PN Card.'
-      };
-    }
-  } catch (error: any) {
-    console.error(`PN Card lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
-    };
-  }
+  return {
+    status: false,
+    results: {},
+    error: 'PN / PAN Card lookup is currently under maintenance. Please try again later.'
+  };
 };
 
 export const lookupEmail = async (email: string): Promise<ApiResponse> => {
@@ -916,11 +888,111 @@ export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse>
       };
     }
   } catch (err: any) {
-    console.error("PCKING07 lookup error:", err);
+    console.error("Free lookup error:", err);
     return {
       status: false,
       results: {},
       error: err.message || "Failed to search record. Please try again."
+    };
+  }
+};
+
+/**
+ * Public Free Unlimited Lookup for Support Gaurav Beniwal page.
+ * Requires Access Code "GBOSINTGOD" to unlock server-side.
+ * Uses stealth relative proxy /api/support-lookup so no provider APIs are exposed to browser network tools.
+ */
+export const lookupSupportFree = async (query: string, service: string = 'phone', accessCode: string = ''): Promise<ApiResponse> => {
+  try {
+    const cleanQ = query.trim();
+    if (!cleanQ) {
+      return {
+        status: false,
+        results: {},
+        error: "Please enter a valid search query."
+      };
+    }
+
+    if (service === 'aadhaar_to_pan' || service === 'pan_find') {
+      return {
+        status: false,
+        results: {},
+        error: "Aadhaar to PAN lookup is excluded from free public search."
+      };
+    }
+
+    const cleanCode = (accessCode || '').trim().toUpperCase();
+    if (!cleanCode) {
+      return {
+        status: false,
+        results: {},
+        error: "Coupon / Access Code required! Please enter 'GBOSINTGOD' to unlock."
+      };
+    }
+
+    const baseUrl = getApiBaseUrl();
+    const endpoint = `${baseUrl}/api/support-lookup?service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanQ)}&access_code=${encodeURIComponent(cleanCode)}`;
+
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'TRACEXDATA-WebClient',
+        'X-Access-Code': cleanCode
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 403 || response.status === 401) {
+        return {
+          status: false,
+          results: {},
+          error: "Invalid or expired Access Code! Please enter code 'GBOSINTGOD'."
+        };
+      }
+      if (response.status === 429) {
+        return {
+          status: false,
+          results: {},
+          error: "Rate limit exceeded or IP locked due to failed attempts. Please try again later."
+        };
+      }
+      throw new Error(`Server returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data && (data.status === 'success' || data.status === true) && data.results) {
+      const cleanResults = scrubBranding(data.results);
+      return {
+        status: true,
+        results: cleanResults
+      };
+    } else if (data && (data.status === false || data.status === 'error') && data.error) {
+      return {
+        status: false,
+        results: {},
+        error: data.error
+      };
+    } else if (data && data.results && Object.keys(data.results).length > 0) {
+      const cleanResults = scrubBranding(data.results);
+      return {
+        status: true,
+        results: cleanResults
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: data?.error || data?.message || "No records found for this query."
+      };
+    }
+  } catch (err: any) {
+    console.error("Free support lookup error:", err);
+    return {
+      status: false,
+      results: {},
+      error: err.message || "Failed to process free lookup. Please try again."
     };
   }
 };

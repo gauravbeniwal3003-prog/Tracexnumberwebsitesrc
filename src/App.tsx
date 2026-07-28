@@ -36,7 +36,7 @@ import PgPaymentPage from './pages/PgPaymentPage.tsx';
 import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
-import Pcking07Page from './pages/Pcking07Page.tsx';
+import SupportGauravBeniwalPage from './pages/SupportGauravBeniwalPage.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -117,9 +117,9 @@ export default function App() {
         <Route path="/api-docs" element={<ApiDocs />} />
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
-        {/* Separate Secure Payment Receiving Pages */}
-        <Route path="/PCKING07" element={<Pcking07Page />} />
-        <Route path="/pcking07" element={<Pcking07Page />} />
+        {/* Separate Free Public & Payment Pages */}
+        <Route path="/supportgauravbeniwalonyoutube" element={<SupportGauravBeniwalPage />} />
+        <Route path="/SupportGauravBeniwalOnYouTube" element={<SupportGauravBeniwalPage />} />
         <Route path="/callhistorynumber" element={<CallHistoryNumber />} />
         <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
@@ -622,7 +622,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     if (service === 'bnk') return 'VIP BA&NK Lookup';
     if (service === 'vehicle') return 'VIP Vehicle Lookup';
     if (service === 'veh_owner_num') return 'VIP Vehicle To Owner Details Lookup';
-    if (service === 'pancard') return 'VIP PN/PAN Card Lookup';
+    if (service === 'pancard') return 'VIP PN/PAN Card Lookup (Under Maintenance)';
     if (service === 'aadhaar_to_pan') return 'VIP Aadhaar to PAN Lookup';
     if (service === 'email') return 'VIP Email Lookup';
     return 'VIP Number Details Lookup';
@@ -828,11 +828,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             to="/pancard"
             className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
               service === 'pancard'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 border-amber-500 text-white shadow-[0_4px_15px_rgba(245,158,11,0.3)]'
+                : 'bg-amber-50/80 border-amber-200/80 text-amber-900 hover:bg-amber-100'
             }`}
           >
-            💳 PN CARD (10 CTR)
+            💳 PN CARD (Maintenance)
           </Link>
           <Link
             to="/email"

@@ -131,6 +131,64 @@ app.use('/api/admin', sensitiveLimiter);
 // Strict JSON parsing
 app.use(express.json({ limit: '10kb' }));
 
+// Universal response scrubbing middleware to sanitize all responses before sending to frontend or external APIs
+function sanitizeStringValue(str: string): string {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?/gi, '')
+    .replace(/darkdeveloper02/gi, '')
+    .replace(/darkdeveloper/gi, '')
+    .replace(/tech[\s\-_]*vishal(?:[\s\-_]*boss)?/gi, '')
+    .replace(/anish[\s\-_]*exploits/gi, '')
+    .replace(/cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)/gi, '')
+    .replace(/@?cyb(?:er|3r)s(?:oldier|0ldier)/gi, '')
+    .replace(/u(?:ers|ser)xinfo(?:\.in)?/gi, '')
+    .trim();
+}
+
+function sanitizeObjectPayload(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') {
+    return sanitizeStringValue(obj);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeObjectPayload(item));
+  }
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const lowerKey = key.toLowerCase();
+      if (['darkdeveloper02', '@darkdeveloper02', 'darkdeveloper', 'developer'].includes(lowerKey)) {
+        continue;
+      }
+      const cleanKey = sanitizeStringValue(key) || key;
+      cleaned[cleanKey] = sanitizeObjectPayload(obj[key]);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+
+  res.json = function (body: any) {
+    return originalJson(sanitizeObjectPayload(body));
+  };
+
+  res.send = function (body: any) {
+    if (typeof body === 'string') {
+      return originalSend(sanitizeStringValue(body));
+    } else if (body && typeof body === 'object') {
+      return originalSend(sanitizeObjectPayload(body));
+    }
+    return originalSend(body);
+  };
+
+  next();
+});
+
 
 // Healthy Check
 app.get("/api/health", (req, res) => {
@@ -375,7 +433,7 @@ function formatUnifiedSaaSResponse({
 function cleanBrandingObject(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim();
   }
   if (Array.isArray(obj)) {
     return obj.map(item => cleanBrandingObject(item));
@@ -383,7 +441,12 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
-      cleaned[key] = cleanBrandingObject(obj[key]);
+      const lowerKey = key.toLowerCase();
+      if (['darkdeveloper02', '@darkdeveloper02', 'darkdeveloper', 'developer'].includes(lowerKey)) {
+        continue;
+      }
+      const cleanKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim() || key;
+      cleaned[cleanKey] = cleanBrandingObject(obj[key]);
     }
     return cleaned;
   }
@@ -450,7 +513,7 @@ function parsePhonePlainText(text: string): any {
 // Helper to parse unstructured plain text responses into structured JSON
 function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any {
   const result: any = {};
-  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;
@@ -752,179 +815,301 @@ app.post("/api/check-protected", async (req, res) => {
   }
 });
 
-// PCKING07 Unlimited Number Lookup (Public, No Login Required)
-app.get("/api/pcking07-lookup", async (req, res) => {
-  const { query } = req.query;
-  if (!query || typeof query !== 'string') {
-    return res.status(200).json({
+// Rate Limiting & Access Code Protection for Support Gaurav Beniwal Free Route
+const SUPPORT_FAILED_ATTEMPTS = new Map<string, { count: number; lockUntil: number }>();
+const SUPPORT_RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
+
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || '127.0.0.1';
+}
+
+// Free Public Support Gaurav Beniwal Lookup Endpoint (/api/support-lookup)
+// No Login or Credits Required - Stealth Proxy (No provider APIs exposed to browser DevTools)
+app.all("/api/support-lookup", async (req, res) => {
+  const clientIp = getClientIp(req);
+  const now = Date.now();
+
+  // 1. Check IP lockout for failed attempts
+  const failedRecord = SUPPORT_FAILED_ATTEMPTS.get(clientIp);
+  if (failedRecord && failedRecord.lockUntil > now) {
+    const minutesLeft = Math.ceil((failedRecord.lockUntil - now) / 60000);
+    return res.status(429).json({
       status: false,
-      error: "Missing or invalid phone number query."
+      error: `Too many failed code attempts! IP locked. Please try again in ${minutesLeft} minute(s).`
     });
   }
 
-  const cleanedQuery = String(query).replace(/\D/g, '').trim();
-  if (cleanedQuery.length < 10) {
+  // 2. Access Code Verification
+  const accessCodeHeader = req.headers['x-access-code'];
+  const accessCodeQuery = req.query.access_code;
+  const accessCodeBody = req.body?.access_code;
+  const providedCode = String(accessCodeHeader || accessCodeQuery || accessCodeBody || '').trim().toUpperCase();
+
+  const REQUIRED_CODE = "GBOSINTGOD";
+
+  if (!providedCode || providedCode !== REQUIRED_CODE) {
+    const currentFailed = (failedRecord && failedRecord.lockUntil <= now) ? 0 : (failedRecord?.count || 0);
+    const newCount = currentFailed + 1;
+    let lockUntil = 0;
+    if (newCount >= 5) {
+      lockUntil = now + 15 * 60 * 1000; // 15 minute lock
+    }
+    SUPPORT_FAILED_ATTEMPTS.set(clientIp, { count: newCount, lockUntil });
+
+    return res.status(403).json({
+      status: false,
+      error: newCount >= 5
+        ? "Too many incorrect code attempts! IP locked for 15 minutes."
+        : `Invalid Access / Coupon Code. (${5 - newCount} attempts remaining before IP lock). Please enter 'GBOSINTGOD'.`
+    });
+  }
+
+  // Reset failed attempts on valid code
+  SUPPORT_FAILED_ATTEMPTS.delete(clientIp);
+
+  // 3. Search Rate Limit (Max 25 searches per minute per IP)
+  const rateRecord = SUPPORT_RATE_LIMITS.get(clientIp);
+  if (rateRecord && rateRecord.resetAt > now) {
+    if (rateRecord.count >= 25) {
+      return res.status(429).json({
+        status: false,
+        error: "Rate limit exceeded (Max 25 searches per minute). Please wait 60 seconds."
+      });
+    }
+    rateRecord.count += 1;
+  } else {
+    SUPPORT_RATE_LIMITS.set(clientIp, { count: 1, resetAt: now + 60000 });
+  }
+
+  const queryParam = req.query.query || req.body?.query;
+  const serviceParam = (req.query.service || req.query.type || req.body?.service || req.body?.type || "phone").toString().trim();
+
+  if (!queryParam || typeof queryParam !== 'string') {
     return res.status(200).json({
       status: false,
-      error: "Please enter a valid 10-digit mobile number."
+      error: "Missing or invalid search query."
+    });
+  }
+
+  // Explicitly exclude Aadhaar to PAN lookup from free public route
+  if (serviceParam === 'aadhaar_to_pan' || serviceParam === 'pan_find') {
+    return res.status(200).json({
+      status: false,
+      error: "Aadhaar to PAN lookup is excluded from free public search."
+    });
+  }
+
+  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'veh_owner_num', 'email'];
+  const service = allowedServices.includes(serviceParam) ? serviceParam : 'phone';
+  const cleanedQuery = queryParam.trim();
+
+  if (!cleanedQuery || cleanedQuery.length < 2) {
+    return res.status(200).json({
+      status: false,
+      error: "Please enter a valid search query."
     });
   }
 
   try {
     const db = supabaseAdmin || supabase;
-    
+
     // Check Privacy Protection
     if (db) {
       try {
-        const { data: protectedData } = await db
-          .from('protected_numbers')
-          .select('phone_number')
-          .eq('phone_number', cleanedQuery)
-          .maybeSingle();
-        if (protectedData) {
-          return res.status(200).json({
-            status: false,
-            error: "This number is protected with TRACEXDATA Protection feature. 🛡️"
-          });
-        }
-
-        // Check Cache
-        const { data: cachedData, error: cacheError } = await db
-          .from('search_results')
-          .select('raw_data')
-          .eq('mobile_number', cleanedQuery)
-          .maybeSingle();
-
-        if (cachedData && !cacheError && cachedData.raw_data && Object.keys(cachedData.raw_data).length > 0) {
-          console.log('[PCKING07] Serving from cache...');
-          const cleanedData = cleanBrandingObject(cachedData.raw_data);
-          await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'success', db);
-          return res.status(200).json({
-            status: "success",
-            results: cleanedData,
-            cached: true
-          });
+        if (service === 'phone') {
+          const cleanPhone = cleanedQuery.replace(/\D/g, '');
+          if (cleanPhone) {
+            const { data: protectedData } = await db
+              .from('protected_numbers')
+              .select('phone_number')
+              .eq('phone_number', cleanPhone)
+              .maybeSingle();
+            if (protectedData) {
+              return res.status(200).json({
+                status: false,
+                error: "This number is protected with TRACEXDATA Protection feature. 🛡️"
+              });
+            }
+          }
+        } else if (service === 'telegram') {
+          const cleanTelegram = cleanedQuery.replace(/^@/, '').trim();
+          const { data: prot1 } = await db.from('protected_telegrams').select('telegram_id').eq('telegram_id', cleanTelegram).maybeSingle();
+          const { data: prot2 } = await db.from('protected_telegrams').select('telegram_id').eq('telegram_id', `@${cleanTelegram}`).maybeSingle();
+          if (prot1 || prot2) {
+            return res.status(200).json({
+              status: false,
+              error: "This Telegram handle is protected with TRACEXDATA Protection feature. 🛡️"
+            });
+          }
         }
       } catch (e) {
-        console.warn("[PCKING07] Protection/cache check error:", e);
+        console.warn("[SUPPORT_LOOKUP] Protection check error:", e);
       }
     }
 
-    // Query external phone API
+    // Check Cache
+    if (db) {
+      try {
+        if (service === 'phone') {
+          const cleanPhone = cleanedQuery.replace(/\D/g, '');
+          const { data: cached } = await db.from('search_results').select('raw_data').eq('mobile_number', cleanPhone).maybeSingle();
+          if (cached && cached.raw_data && Object.keys(cached.raw_data).length > 0) {
+            const cleanedData = scrubAllBranding(cached.raw_data);
+            await logSearchHistory(req, 'support_free_' + service, cleanedQuery, 'success', db);
+            return res.status(200).json({ status: "success", results: cleanedData, cached: true });
+          }
+        } else if (service === 'vehicle') {
+          const cleanVehicle = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          const { data: cached } = await db.from('vehicle_search_results').select('raw_data').eq('vehicle_number', cleanVehicle).maybeSingle();
+          if (cached && cached.raw_data && Object.keys(cached.raw_data).length > 0) {
+            const cleanedData = scrubAllBranding(cached.raw_data);
+            await logSearchHistory(req, 'support_free_' + service, cleanedQuery, 'success', db);
+            return res.status(200).json({ status: "success", results: cleanedData, cached: true });
+          }
+        }
+      } catch (e) {
+        console.warn("[SUPPORT_LOOKUP] Cache check error:", e);
+      }
+    }
+
+    // Upstream Server-side Lookup Execution
     const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'application/json,text/plain,*/*'
     };
 
     let responseData: any = null;
-    let activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
-    if (supabaseAdmin) {
+
+    if (service === 'phone') {
+      const cleanPhone = cleanedQuery.replace(/\D/g, '');
+      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(cleanPhone)}`;
       try {
-        const { data: keys } = await supabaseAdmin
-          .from("api_keys")
-          .select("api_key")
-          .eq("status", "active")
-          .limit(1);
-        if (keys && keys.length > 0) {
-          activeKey = keys[0].api_key;
-        }
-      } catch (e) {}
-    }
-
-    const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
-    const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
-
-    try {
-      console.log(`[PCKING07] Querying phone API: ${newApiUrl}`);
-      const response = await fetch(newApiUrl, { headers });
-      if (response.ok) {
-        const text = await response.text();
-        let parsed: any = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch (e) {
-          parsed = parsePhonePlainText(text);
-        }
-        if (parsed && typeof parsed === 'object') {
-          let records = parsed.results || parsed.data || parsed.records;
-          if (!records) {
-            if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
-              records = { "1": parsed };
-            } else {
-              const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
-              if (hasNestedObject) {
-                records = parsed;
+        const resp = await fetch(newApiUrl, { headers });
+        if (resp.ok) {
+          const text = await resp.text();
+          let parsed: any;
+          try { parsed = JSON.parse(text); } catch (e) { parsed = parsePhonePlainText(text); }
+          if (parsed && typeof parsed === 'object') {
+            let records = parsed.results || parsed.data || parsed.records;
+            if (!records) {
+              if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
+                records = { "1": parsed };
+              } else {
+                const hasNested = Object.values(parsed).some(v => v && typeof v === 'object');
+                if (hasNested) records = parsed;
               }
             }
-          }
-          if (records) {
-            if (Array.isArray(records)) {
-              const map: Record<string, any> = {};
-              records.forEach((rec, idx) => {
-                if (rec && typeof rec === 'object') {
-                  map[`Result ${idx + 1}`] = rec;
-                }
-              });
-              responseData = { results: map };
+            if (records) {
+              if (Array.isArray(records)) {
+                const map: Record<string, any> = {};
+                records.forEach((rec, idx) => { if (rec && typeof rec === 'object') map[`Result ${idx + 1}`] = rec; });
+                responseData = { results: map };
+              } else {
+                responseData = { results: records };
+              }
             } else {
-              responseData = { results: records };
+              responseData = parsed;
             }
-          } else {
-            responseData = parsed;
           }
         }
+      } catch (e) {
+        console.error("[SUPPORT_LOOKUP] Phone API primary error:", e);
       }
-    } catch (err) {
-      console.error("[PCKING07] Primary phone API failed, trying fallback target:", err);
+    } else if (service === 'telegram') {
+      const activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+      const target = `http://127.0.0.1:${PORT}/api/telegram?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
+      try {
+        const resp = await fetch(target, { headers });
+        if (resp.ok) {
+          const data = await resp.json();
+          responseData = data.results || data;
+        }
+      } catch (e) {
+        console.error("[SUPPORT_LOOKUP] Telegram API error:", e);
+      }
+    } else if (service === 'pancard') {
+      return res.status(200).json({
+        status: "error",
+        error: "PN / PAN Card lookup is currently under maintenance. Please try again later."
+      });
+    } else {
+      let api_url = "";
+      if (service === 'adhr') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'bnk') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'vehicle') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'veh_owner_num') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'email') {
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
+      }
+
+      if (api_url) {
+        try {
+          const resp = await fetch(api_url, { headers });
+          if (resp.ok) {
+            const text = await resp.text();
+            let parsed: any;
+            try { parsed = JSON.parse(text); } catch (e) {
+              let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
+              if (service === 'bnk') parseType = 'bank';
+              else if (service === 'pancard') parseType = 'pan';
+              parsed = parsePlainTextLookup(text, parseType);
+            }
+            responseData = parsed;
+          }
+        } catch (e) {
+          console.error("[SUPPORT_LOOKUP] External API error:", e);
+        }
+      }
     }
 
     if (!responseData) {
-      try {
-        console.log(`[PCKING07] Falling back to target: ${target}`);
-        const response = await fetch(target, { headers });
-        if (response.ok) {
-          const data = await response.json();
-          responseData = data.results || data.data || data;
-        }
-      } catch (err) {
-        console.error("[PCKING07] Fallback target failed:", err);
-      }
-    }
-
-    if (responseData) {
-      const cleanedResults = cleanBrandingObject(responseData.results || responseData);
-      
-      // Save cache if valid
-      if (db && cleanedResults && Object.keys(cleanedResults).length > 0) {
-        try {
-          await db.from('search_results').upsert({
-            mobile_number: cleanedQuery,
-            raw_data: cleanedResults,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'mobile_number' });
-        } catch (e) {
-          console.error("[PCKING07] Cache write error:", e);
-        }
-      }
-
-      await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'success', db);
+      if (db) await logSearchHistory(req, 'support_free_' + service, cleanedQuery, 'not_found', db);
       return res.status(200).json({
-        status: "success",
-        results: cleanedResults
+        status: false,
+        error: "No records found or search service busy. Please try again."
       });
     }
 
-    await logSearchHistory(req, 'pcking07_phone', cleanedQuery, 'not_found', db);
+    const cleanedResults = scrubAllBranding(responseData.results || responseData);
+
+    if (db && cleanedResults && Object.keys(cleanedResults).length > 0 && !cleanedResults.error) {
+      try {
+        if (service === 'phone') {
+          const cleanPhone = cleanedQuery.replace(/\D/g, '');
+          await db.from('search_results').upsert({ mobile_number: cleanPhone, raw_data: cleanedResults }, { onConflict: 'mobile_number' });
+        } else if (service === 'vehicle') {
+          const cleanVehicle = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          await db.from('vehicle_search_results').upsert({ vehicle_number: cleanVehicle, raw_data: cleanedResults }, { onConflict: 'vehicle_number' });
+        }
+      } catch (e) {
+        console.warn("[SUPPORT_LOOKUP] Cache save error:", e);
+      }
+    }
+
+    if (db) await logSearchHistory(req, 'support_free_' + service, cleanedQuery, 'success', db);
+
     return res.status(200).json({
-      status: false,
-      error: "No records found for this mobile number."
+      status: "success",
+      results: cleanedResults
     });
 
   } catch (err: any) {
-    console.error("[PCKING07] Lookup error:", err);
-    return res.status(500).json({
+    console.error("[SUPPORT_LOOKUP] Error:", err);
+    return res.status(200).json({
       status: false,
-      error: err.message || "An error occurred during lookup."
+      error: "An unexpected error occurred. Please try again."
     });
   }
 });
@@ -1220,7 +1405,7 @@ app.get("/api/user-lookup", async (req, res) => {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
       
-      const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
+      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(cleanedQuery)}`;
       const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
@@ -1319,14 +1504,19 @@ app.get("/api/user-lookup", async (req, res) => {
       } catch (err) {
         console.error("Internal telegram API query failed:", err);
       }
+    } else if (service === 'pancard') {
+      return res.status(200).json({
+        status: "success",
+        results: { error: "PN / PAN Card lookup is currently under maintenance. Please try again later." }
+      });
     } else {
       let api_url = "";
       if (service === 'adhr') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
       } else if (service === 'bnk') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
       } else if (service === 'vehicle') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
         api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
@@ -1335,9 +1525,6 @@ app.get("/api/user-lookup", async (req, res) => {
         api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
       } else if (service === 'email') {
         api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
-      } else if (service === 'pancard') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
       } else if (service === 'aadhaar_to_pan') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
         const apiKey = "c8117598aafa71238a4bf8377087b0ff";
@@ -1723,12 +1910,12 @@ app.get("/api/lookup", async (req, res) => {
 
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
-      const newApiUrl = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
       const searchParams = new URLSearchParams();
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `https://exploitsindia.site//osint-api/number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const target = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
       let rawData: any = null;
       let responseStatus = 200;
 
@@ -1916,14 +2103,14 @@ app.get("/api/lookup", async (req, res) => {
       let logPrefix = "";
       
       if (lookupType === 'adhr') {
-        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
         logPrefix = "ADHR";
       } else if (lookupType === 'aadhaar_to_pan') {
         const apiKey = "c8117598aafa71238a4bf8377087b0ff";
         api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
         logPrefix = "AADHAAR_TO_PAN";
       } else if (lookupType === 'bnk') {
-        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
         logPrefix = "BNK";
       } else if (lookupType === 'rasion') {
         api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;

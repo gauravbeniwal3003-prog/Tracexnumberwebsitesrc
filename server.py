@@ -1127,7 +1127,8 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
         "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
         "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo",
-        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx"
+        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx",
+        "darkdeveloper", "darkdeveloper02", "dark_developer"
     ]
     for line in lines:
         line_lower = line.lower().strip()
@@ -1137,7 +1138,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
             continue
         # Strip some inline patterns
         line = re.sub(
-            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
             '',
             line,
             flags=re.IGNORECASE
@@ -1292,7 +1293,7 @@ def clean_branding_recursive(obj):
         import re
         # Aggressive regular expression matching all forms of supplier branding
         pattern = re.compile(
-            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
             re.IGNORECASE
         )
         val = pattern.sub("", obj)
@@ -1404,153 +1405,252 @@ async def index():
         "version": "2.8.0-STABLE"
     }
 
-@app.get("/api/pcking07-lookup")
-async def pcking07_lookup(request: Request, query: Optional[str] = Query(None)):
-    if not query:
+SUPPORT_FAILED_ATTEMPTS = {}
+SUPPORT_RATE_LIMITS = {}
+
+@app.api_route("/api/support-lookup", methods=["GET", "POST"])
+async def support_lookup(
+    request: Request,
+    query: Optional[str] = Query(None),
+    service: Optional[str] = Query(None),
+    type: Optional[str] = Query(None),
+    access_code: Optional[str] = Query(None)
+):
+    import re
+    import urllib.parse
+    import json
+    import time
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "127.0.0.1")
+    now_ts = time.time()
+
+    # 1. Check IP Lockout for failed code attempts
+    failed_rec = SUPPORT_FAILED_ATTEMPTS.get(client_ip, {"count": 0, "lock_until": 0})
+    if failed_rec.get("lock_until", 0) > now_ts:
+        mins_left = int((failed_rec["lock_until"] - now_ts) // 60) + 1
+        return JSONResponse(status_code=429, content={
+            "status": False,
+            "error": f"Too many failed code attempts! IP locked. Please try again in {mins_left} minute(s)."
+        })
+
+    # Get parameters from query, body or headers
+    req_body = {}
+    if request.method == "POST":
+        try:
+            req_body = await request.json()
+        except Exception: pass
+
+    header_code = request.headers.get("x-access-code")
+    provided_code = str(access_code or header_code or req_body.get("access_code") or "").strip().upper()
+
+    REQUIRED_CODE = "GBOSINTGOD"
+
+    if not provided_code or provided_code != REQUIRED_CODE:
+        current_failed = 0 if failed_rec.get("lock_until", 0) <= now_ts else failed_rec.get("count", 0)
+        new_count = current_failed + 1
+        lock_until = 0
+        if new_count >= 5:
+            lock_until = now_ts + 15 * 60  # 15 minute lock
+        SUPPORT_FAILED_ATTEMPTS[client_ip] = {"count": new_count, "lock_until": lock_until}
+
+        err_msg = "Too many incorrect code attempts! IP locked for 15 minutes." if new_count >= 5 else f"Invalid Access / Coupon Code. ({5 - new_count} attempts remaining before IP lock). Please enter 'GBOSINTGOD'."
+        return JSONResponse(status_code=403, content={"status": False, "error": err_msg})
+
+    # Reset failed attempts
+    SUPPORT_FAILED_ATTEMPTS.pop(client_ip, None)
+
+    # 2. Rate limiting (Max 25 searches per minute per IP)
+    rate_rec = SUPPORT_RATE_LIMITS.get(client_ip, {"count": 0, "reset_at": 0})
+    if rate_rec.get("reset_at", 0) > now_ts:
+        if rate_rec.get("count", 0) >= 25:
+            return JSONResponse(status_code=429, content={
+                "status": False,
+                "error": "Rate limit exceeded (Max 25 searches per minute). Please wait 60 seconds."
+            })
+        rate_rec["count"] += 1
+    else:
+        SUPPORT_RATE_LIMITS[client_ip] = {"count": 1, "reset_at": now_ts + 60}
+
+    target_query = query or req_body.get("query")
+    target_service = service or type or req_body.get("service") or req_body.get("type") or "phone"
+
+    if not target_query or not str(target_query).strip():
         return {
             "status": False,
-            "error": "Missing or invalid phone number query."
+            "error": "Missing or invalid search query."
         }
 
-    import re
-    cleaned_query = re.sub(r'\D', '', str(query)).strip()
-    if len(cleaned_query) < 10:
+    cleaned_query = str(target_query).strip()
+
+    # Explicitly block Aadhaar to PAN search on free route
+    if target_service in ["aadhaar_to_pan", "pan_find"]:
         return {
             "status": False,
-            "error": "Please enter a valid 10-digit mobile number."
+            "error": "Aadhaar to PAN lookup is excluded from free public search."
         }
+
+    allowed_services = ["phone", "telegram", "adhr", "bnk", "vehicle", "pancard", "veh_owner_num", "email"]
+    selected_service = target_service if target_service in allowed_services else "phone"
 
     try:
         db = get_supabase()
 
         if db:
             try:
-                # Check Privacy Protection
-                prot_res = db.table('protected_numbers').select('phone_number').eq('phone_number', cleaned_query).execute()
-                if prot_res.data:
-                    return {
-                        "status": False,
-                        "error": "This number is protected with TRACEXDATA Protection feature. 🛡️"
-                    }
-
-                # Check Cache
-                cache_res = db.table('search_results').select('raw_data').eq('mobile_number', cleaned_query).execute()
-                if cache_res.data and cache_res.data[0].get('raw_data'):
-                    cached_data = cache_res.data[0]['raw_data']
-                    if cached_data and isinstance(cached_data, dict) and len(cached_data) > 0:
-                        print('[PCKING07] Serving from cache in Python...')
-                        cleaned_data = clean_branding_recursive(cached_data)
-                        try:
-                            db.table("search_history").insert({
-                                "search_type": "pcking07_phone",
-                                "query": cleaned_query,
-                                "status": "success"
-                            }).execute()
-                        except Exception: pass
+                if selected_service == "phone":
+                    clean_phone = re.sub(r'\D', '', cleaned_query)
+                    if clean_phone:
+                        prot_res = db.table('protected_numbers').select('phone_number').eq('phone_number', clean_phone).execute()
+                        if prot_res.data:
+                            return {
+                                "status": False,
+                                "error": "This number is protected with TRACEXDATA Protection feature. 🛡️"
+                            }
+                elif selected_service == "telegram":
+                    clean_tg = re.sub(r'^@', '', cleaned_query).strip()
+                    prot1 = db.table('protected_telegrams').select('telegram_id').eq('telegram_id', clean_tg).execute()
+                    prot2 = db.table('protected_telegrams').select('telegram_id').eq('telegram_id', f"@{clean_tg}").execute()
+                    if prot1.data or prot2.data:
                         return {
-                            "status": "success",
-                            "results": cleaned_data,
-                            "cached": True
+                            "status": False,
+                            "error": "This Telegram handle is protected with TRACEXDATA Protection feature. 🛡️"
                         }
             except Exception as e:
-                print(f"[PCKING07] Protection/cache check error in Python: {e}")
+                print(f"[SUPPORT_LOOKUP] Protection check error in Python: {e}")
 
-        # Query external phone API
+        # Check Cache
+        if db:
+            try:
+                if selected_service == "phone":
+                    clean_phone = re.sub(r'\D', '', cleaned_query)
+                    cache_res = db.table('search_results').select('raw_data').eq('mobile_number', clean_phone).execute()
+                    if cache_res.data and cache_res.data[0].get('raw_data'):
+                        cached_data = cache_res.data[0]['raw_data']
+                        if cached_data and isinstance(cached_data, dict) and len(cached_data) > 0:
+                            cleaned_data = clean_branding_recursive(cached_data)
+                            return {
+                                "status": "success",
+                                "results": cleaned_data,
+                                "cached": True
+                            }
+            except Exception as e:
+                print(f"[SUPPORT_LOOKUP] Cache check error in Python: {e}")
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json,text/plain,*/*'
         }
 
         response_data = None
-        new_api_url = f"https://exploitsindia.site//osint-api/number.php?exploits={urllib.parse.quote(cleaned_query)}"
 
-        try:
-            print(f"[PCKING07] Querying phone API in Python: {new_api_url}")
-            resp = requests.get(new_api_url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                text = resp.text.strip()
-                try:
-                    parsed = resp.json()
-                except Exception:
-                    parsed = parse_raw_text_to_records(text, cleaned_query)
-
-                if parsed and isinstance(parsed, dict):
-                    records = parsed.get("results") or parsed.get("data") or parsed.get("records")
-                    if not records:
-                        if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
-                            records = {"1": parsed}
-                        else:
-                            has_nested = any(isinstance(v, dict) for v in parsed.values())
-                            if has_nested:
-                                records = parsed
-                    if records:
-                        if isinstance(records, list):
-                            records_map = {}
-                            for idx, rec in enumerate(records):
-                                if isinstance(rec, dict):
-                                    records_map[f"Result {idx + 1}"] = rec
-                            response_data = {"results": records_map}
-                        else:
-                            response_data = {"results": records}
-                    else:
-                        response_data = parsed
-        except Exception as err:
-            print(f"[PCKING07] Primary phone API failed in Python: {err}")
-
-        if not response_data:
+        if selected_service == "phone":
+            clean_phone = re.sub(r'\D', '', cleaned_query)
+            new_api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_phone)}"
             try:
-                print("[PCKING07] Falling back to saas_lookup in Python...")
-                res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, number=cleaned_query)
+                resp = requests.get(new_api_url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    text = resp.text.strip()
+                    try:
+                        parsed = resp.json()
+                    except Exception:
+                        parsed = parse_raw_text_to_records(text, clean_phone)
+
+                    if parsed and isinstance(parsed, dict):
+                        records = parsed.get("results") or parsed.get("data") or parsed.get("records")
+                        if not records:
+                            if any(parsed.get(k) for k in ["name", "mobile", "father_name", "full_name"]):
+                                records = {"1": parsed}
+                            else:
+                                has_nested = any(isinstance(v, dict) for v in parsed.values())
+                                if has_nested: records = parsed
+                        if records:
+                            if isinstance(records, list):
+                                records_map = {}
+                                for idx, rec in enumerate(records):
+                                    if isinstance(rec, dict):
+                                        records_map[f"Result {idx + 1}"] = rec
+                                response_data = {"results": records_map}
+                            else:
+                                response_data = {"results": records}
+                        else:
+                            response_data = parsed
+            except Exception as err:
+                print(f"[SUPPORT_LOOKUP] Phone API error in Python: {err}")
+
+        elif selected_service == "telegram":
+            try:
+                res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, telegram=cleaned_query)
                 if res and isinstance(res, dict):
                     response_data = res.get("results") or res.get("data") or res
-            except Exception as fb_err:
-                print(f"[PCKING07] Fallback failed in Python: {fb_err}")
+            except Exception as err:
+                print(f"[SUPPORT_LOOKUP] Telegram lookup error in Python: {err}")
+
+        elif selected_service == "pancard":
+            return {
+                "status": "error",
+                "error": "PN / PAN Card lookup is currently under maintenance. Please try again later."
+            }
+
+        else:
+            api_url = ""
+            if selected_service == "adhr":
+                clean_digits = re.sub(r'[^0-9]', '', cleaned_query)
+                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_digits)}"
+            elif selected_service == "bnk":
+                clean_ifsc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_ifsc)}"
+            elif selected_service == "vehicle":
+                clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(clean_rc)}"
+            elif selected_service == "veh_owner_num":
+                clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(clean_rc)}"
+            elif selected_service == "email":
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+
+            if api_url:
+                try:
+                    resp = requests.get(api_url, headers=headers, timeout=15)
+                    if resp.status_code == 200:
+                        text = resp.text.strip()
+                        try:
+                            parsed = resp.json()
+                        except Exception:
+                            parsed = parse_raw_text_to_records(text, cleaned_query)
+                        response_data = parsed
+                except Exception as err:
+                    print(f"[SUPPORT_LOOKUP] External API error in Python: {err}")
 
         if response_data:
             results_obj = response_data.get("results") if isinstance(response_data, dict) and "results" in response_data else response_data
             cleaned_results = clean_branding_recursive(results_obj)
 
-            # Save cache if valid
             if db and cleaned_results and isinstance(cleaned_results, dict) and len(cleaned_results) > 0:
                 try:
-                    db.table('search_results').upsert({
-                        'mobile_number': cleaned_query,
-                        'raw_data': cleaned_results,
-                        'updated_at': datetime.utcnow().isoformat() + "Z"
-                    }, on_conflict='mobile_number').execute()
+                    if selected_service == "phone":
+                        clean_phone = re.sub(r'\D', '', cleaned_query)
+                        db.table('search_results').upsert({
+                            'mobile_number': clean_phone,
+                            'raw_data': cleaned_results,
+                            'updated_at': datetime.utcnow().isoformat() + "Z"
+                        }, on_conflict='mobile_number').execute()
                 except Exception as e:
-                    print(f"[PCKING07] Cache write error in Python: {e}")
-
-            if db:
-                try:
-                    db.table("search_history").insert({
-                        "search_type": "pcking07_phone",
-                        "query": cleaned_query,
-                        "status": "success"
-                    }).execute()
-                except Exception: pass
+                    print(f"[SUPPORT_LOOKUP] Cache write error in Python: {e}")
 
             return {
                 "status": "success",
                 "results": cleaned_results
             }
 
-        if db:
-            try:
-                db.table("search_history").insert({
-                    "search_type": "pcking07_phone",
-                    "query": cleaned_query,
-                    "status": "not_found"
-                }).execute()
-            except Exception: pass
-
         return {
             "status": False,
-            "error": "No records found for this mobile number."
+            "error": "No records found or search service busy. Please try again."
         }
 
     except Exception as err:
-        print(f"[PCKING07] Lookup error in Python: {err}")
+        print(f"[SUPPORT_LOOKUP] Error in Python: {err}")
         return {
             "status": False,
             "error": str(err) if str(err) else "An error occurred during lookup."
@@ -2374,13 +2474,13 @@ async def saas_lookup(
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
         # Hardcoded primary engine source as requested to avoid environment variable dependency
-        target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
+        target_template = "https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query="
         
         # Override to ensure only this API is always used
-        target_template = "https://exploitsindia.site//osint-api/number.php?exploits="
+        target_template = "https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query="
         
         # Execution
-        final_url = f"https://exploitsindia.site//osint-api/number.php?exploits={num}"
+        final_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={num}"
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
@@ -4117,7 +4217,7 @@ def scrub_all_branding(obj):
     if isinstance(obj, str):
         import re
         # Case-insensitive removal of any provider/developer related brand words
-        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
+        res = re.sub(r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
         res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
@@ -4131,10 +4231,11 @@ def scrub_all_branding(obj):
             if lower_k in [
                 "branding", "success", "status", "found", "message", "api_info", "powered_by", 
                 "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
-                "provider", "api_buy_link", "website_link", "buy"
+                "provider", "api_buy_link", "website_link", "buy", "darkdeveloper02", "@darkdeveloper02", "darkdeveloper"
             ]:
                 continue
-            cleaned[k] = scrub_all_branding(v)
+            clean_k = re.sub(r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)', '', k, flags=re.IGNORECASE).strip() or k
+            cleaned[clean_k] = scrub_all_branding(v)
         return cleaned
     return obj
 
