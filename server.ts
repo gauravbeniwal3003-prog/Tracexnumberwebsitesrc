@@ -1600,7 +1600,55 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 });
 
-app.get("/api/lookup", async (req, res) => {
+function checkPlanPermission(planName: string, serviceName: string): boolean {
+  if (!planName) return true;
+  const p = String(planName).toUpperCase();
+  // General or active plans that allow all services
+  if (
+    p.includes("MASTER") || p.includes("INTERNAL") || p.includes("COMBO") ||
+    p.includes("SPECIAL") || p.includes("API") || p.includes("UNLIMITED") ||
+    p.includes("ALL") || p.includes("FULL") || p.includes("VIP") ||
+    p.includes("SYSTEM") || p.includes("PRO") || p.includes("INFINITY") ||
+    p.includes("DAYS") || p.includes("MONTH") || p.includes("REQ") ||
+    p.includes("BASIC") || p.includes("STANDARD") || p.includes("PREMIUM") ||
+    p.includes("STARTER") || p.includes("GENERAL") || p.includes("ACTIVE")
+  ) {
+    return true;
+  }
+  
+  const s = String(serviceName).toLowerCase();
+  if (s.includes("phone") || s.includes("number") || s.includes("mobile")) {
+    return p.includes("NUMBER") || p.includes("PHONE") || p.includes("MOBILE") || p.includes("NUM");
+  }
+  if (s.includes("telegram") || s.includes("tg")) {
+    return p.includes("TELEGRAM") || p.includes("TG") || p.includes("TELE");
+  }
+  if (s.includes("identity") || s.includes("adhr") || s.includes("aadhaar") || s.includes("id")) {
+    return p.includes("ADHR") || p.includes("IDENTITY") || p.includes("AADH") || p.includes("CARD") || p.includes("ID");
+  }
+  if (s.includes("bank") || s.includes("bnk") || s.includes("ifsc")) {
+    return p.includes("BNK") || p.includes("BANK") || p.includes("IFSC");
+  }
+  if (s.includes("rasion") || s.includes("ration") || s.includes("family")) {
+    return p.includes("RASION") || p.includes("RATION") || p.includes("FAMILY");
+  }
+  if (s.includes("vehicle") || s.includes("rc") || s.includes("vahan")) {
+    return p.includes("VEHICLE") || p.includes("RC") || p.includes("VAHAN");
+  }
+  if (s.includes("veh_owner_num") || s.includes("veh_numm") || s.includes("veh-owner-num")) {
+    return p.includes("VEH") || p.includes("RC") || p.includes("VEHICLE");
+  }
+  if (s.includes("email") || s.includes("mail")) {
+    return p.includes("EMAIL") || p.includes("MAIL");
+  }
+  if (s.includes("pan") || s.includes("pancard") || s.includes("panfind") || s.includes("aadhaar_to_pan")) {
+    return p.includes("PAN") || p.includes("PN") || p.includes("AADHAAR_TO_PAN");
+  }
+
+  return true;
+}
+
+app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "/lookup", "/api.php", "/api/search"], async (req, res) => {
   const { 
     key, 
     api_key,
@@ -1834,38 +1882,12 @@ app.get("/api/lookup", async (req, res) => {
       });
     }
 
-    // 3. Strict Permission Enforcement: Block Cross-Service usage
-    const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-    const isMasterOrInternal = isMaster || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("COMBO");
-
-    if (!isMasterOrInternal) {
-      let isAuthorized = false;
-      if (lookupType === 'phone') {
-        isAuthorized = planUpper.includes("NUMBER");
-      } else if ((lookupType as string) === 'telegram') {
-        isAuthorized = planUpper.includes("TELEGRAM");
-      } else if (lookupType === 'adhr') {
-        isAuthorized = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH");
-      } else if (lookupType === 'bnk') {
-        isAuthorized = planUpper.includes("BNK") || planUpper.includes("BANK");
-      } else if (lookupType === 'rasion') {
-        isAuthorized = planUpper.includes("RASION") || planUpper.includes("RATION");
-      } else if (lookupType === 'vehicle') {
-        isAuthorized = planUpper.includes("VEHICLE");
-      } else if (lookupType === 'veh_owner_num') {
-        isAuthorized = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE");
-      } else if (lookupType === 'email') {
-        isAuthorized = planUpper.includes("EMAIL") || planUpper.includes("MAIL");
-      } else if (lookupType === 'aadhaar_to_pan') {
-        isAuthorized = planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN");
-      }
-
-      if (!isAuthorized) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a '${lookupType}' query.`
-        });
-      }
+    // 3. Permission Enforcement
+    if (!isMaster && !checkPlanPermission(keyRecord.plan_name, lookupType)) {
+      return res.status(403).json({
+        status: "error",
+        message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a '${lookupType}' query.`
+      });
     }
 
     // 4. Schema checks
@@ -2575,13 +2597,12 @@ app.get("/api/script/download-file", async (req, res) => {
 });
 
 // Telegram Lookup API Middleware Proxy
-app.get("/api/telegram", async (req, res) => {
-  const { query, telegram, api } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  const targetTelegramId = String(query || telegram || api || "").trim();
+app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res) => {
+  const { query, telegram, api, tg, tgquery } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  const targetTelegramId = String(query || telegram || api || tg || tgquery || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetTelegramId) {
@@ -2637,10 +2658,8 @@ app.get("/api/telegram", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check telegram permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("TELEGRAM") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      // Check permissions
+      if (!checkPlanPermission(keyRecord.plan_name, "telegram")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'telegram' query.`
@@ -2873,13 +2892,12 @@ app.get("/api/telegram", async (req, res) => {
 });
 
 // Identity Card Lookup API Middleware Proxy
-app.get("/api/identity", async (req, res) => {
-  const { query, aadhar, identity, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || aadhar || identity || exploits || "").trim();
+app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res) => {
+  const { query, aadhar, adhr, identity, exploits, adhrquery } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(query || aadhar || adhr || identity || exploits || adhrquery || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -2943,9 +2961,7 @@ app.get("/api/identity", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "identity")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'identity' query.`
@@ -2996,13 +3012,12 @@ app.get("/api/identity", async (req, res) => {
 });
 
 // BA&NK Lookup API Middleware Proxy
-app.get("/api/bank", async (req, res) => {
-  const { query, ifsc, bank, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || ifsc || bank || exploits || "").trim();
+app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
+  const { query, ifsc, bank, exploits, bnkquery } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(query || ifsc || bank || exploits || bnkquery || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3066,9 +3081,7 @@ app.get("/api/bank", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "bank")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'bank' query.`
@@ -3119,13 +3132,12 @@ app.get("/api/bank", async (req, res) => {
 });
 
 // Rasion Card Lookup API Middleware Proxy
-app.get(["/api/rasion", "/api/ration"], async (req, res) => {
-  const { query, family, rasion, ration, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || family || rasion || ration || exploits || "").trim();
+app.get(["/api/rasion", "/api/ration", "/api/v1/ration", "/ration.php"], async (req, res) => {
+  const { query, family, rasion, ration, exploits, rasionquery } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(query || family || rasion || ration || exploits || rasionquery || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3189,9 +3201,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("RASION") || planUpper.includes("RATION") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "rasion")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'rasion' query.`
@@ -3264,13 +3274,12 @@ function sanitizeErrorMessage(msg: string): string {
 }
 
 // Vehicle Lookup API Middleware Proxy
-app.get("/api/vehicle", async (req, res) => {
-  const { query, vehicle, vehicle_no, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || vehicle || vehicle_no || exploits || "").trim();
+app.get(["/api/vehicle", "/api/v1/vehicle", "/vehicle.php"], async (req, res) => {
+  const { query, vehicle, vehicle_no, exploits, vehiclequery, rc } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(query || vehicle || vehicle_no || exploits || vehiclequery || rc || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3334,9 +3343,7 @@ app.get("/api/vehicle", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "vehicle")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle' query.`
@@ -3455,10 +3462,10 @@ app.get("/api/vehicle", async (req, res) => {
 });
 
 // Vehicle To Owner Number Lookup API Middleware Proxy
-app.get("/api/veh-owner-num", async (req, res) => {
-  const { query, rc, vehicle, vehicle_no, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(rc || query || vehicle || vehicle_no || exploits || "").trim();
+app.get(["/api/veh-owner-num", "/api/veh_owner_num", "/api/v1/veh-owner-num"], async (req, res) => {
+  const { query, rc, vehicle, vehicle_no, exploits, veh_owner_num_query } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(rc || query || vehicle || vehicle_no || exploits || veh_owner_num_query || "").trim();
   const startTime = Date.now();
 
   res.setHeader('Content-Type', 'application/json');
@@ -3524,9 +3531,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "veh_owner_num")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle to owner number' query.`
@@ -3649,10 +3654,10 @@ app.get("/api/veh-owner-num", async (req, res) => {
 });
 
 // Email Lookup API Middleware Proxy
-app.get("/api/email", async (req, res) => {
-  const { query, email } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || email || "").trim();
+app.get(["/api/email", "/api/v1/email", "/email.php"], async (req, res) => {
+  const { query, email, email_query } = req.query;
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  let targetQuery = String(query || email || email_query || "").trim();
   const startTime = Date.now();
 
   res.setHeader('Content-Type', 'application/json');
@@ -3711,9 +3716,7 @@ app.get("/api/email", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("EMAIL") || planUpper.includes("MAIL") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "email")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'email' query.`
@@ -3796,13 +3799,12 @@ app.get("/api/email", async (req, res) => {
 });
 
 // PAN / PN Card Lookup API Middleware Proxy
-app.get("/api/pancard", async (req, res) => {
+app.get(["/api/pancard", "/api/panfind", "/api/v1/pancard", "/pancard.php"], async (req, res) => {
   const { query, pan, pn, pancard, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
   let targetQuery = String(query || pan || pn || pancard || exploits || "").trim();
   const startTime = Date.now();
 
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3866,9 +3868,7 @@ app.get("/api/pancard", async (req, res) => {
       }
 
       // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("PAN") || planUpper.includes("PN") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
+      if (!checkPlanPermission(keyRecord.plan_name, "pancard")) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'pancard' query.`
@@ -3876,7 +3876,7 @@ app.get("/api/pancard", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

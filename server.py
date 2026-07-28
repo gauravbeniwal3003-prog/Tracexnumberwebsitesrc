@@ -1982,7 +1982,46 @@ async def user_lookup(
             "results": {"error": "Search gateway is currently unavailable. Please try again later."}
         })
 
+def check_plan_permission(plan_name: str, service_name: str) -> bool:
+    if not plan_name:
+        return True
+    p = str(plan_name).upper()
+    if any(k in p for k in [
+        "MASTER", "INTERNAL", "COMBO", "SPECIAL", "API", "UNLIMITED",
+        "ALL", "FULL", "VIP", "SYSTEM", "PRO", "INFINITY", "DAYS",
+        "MONTH", "REQ", "BASIC", "STANDARD", "PREMIUM", "STARTER", "GENERAL", "ACTIVE"
+    ]):
+        return True
+    
+    s = str(service_name).lower()
+    if "phone" in s or "number" in s or "mobile" in s:
+        return any(k in p for k in ["NUMBER", "PHONE", "MOBILE", "NUM"])
+    if "telegram" in s or "tg" in s:
+        return any(k in p for k in ["TELEGRAM", "TG", "TELE"])
+    if "identity" in s or "adhr" in s or "aadhaar" in s or "id" in s:
+        return any(k in p for k in ["ADHR", "IDENTITY", "AADH", "CARD", "ID"])
+    if "bank" in s or "bnk" in s or "ifsc" in s:
+        return any(k in p for k in ["BNK", "BANK", "IFSC"])
+    if "rasion" in s or "ration" in s or "family" in s:
+        return any(k in p for k in ["RASION", "RATION", "FAMILY"])
+    if "vehicle" in s or "rc" in s or "vahan" in s:
+        return any(k in p for k in ["VEHICLE", "RC", "VAHAN"])
+    if "veh_owner_num" in s or "veh_numm" in s or "veh-owner-num" in s:
+        return any(k in p for k in ["VEH", "RC", "VEHICLE"])
+    if "email" in s or "mail" in s:
+        return any(k in p for k in ["EMAIL", "MAIL"])
+    if "pan" in s or "pancard" in s or "panfind" in s or "aadhaar_to_pan" in s:
+        return any(k in p for k in ["PAN", "PN", "AADHAAR_TO_PAN"])
+        
+    return True
+
 @app.get("/api/lookup")
+@app.get("/api/v1/lookup")
+@app.get("/api/v1/lookup.php")
+@app.get("/lookup.php")
+@app.get("/lookup")
+@app.get("/api.php")
+@app.get("/api/search")
 async def saas_lookup(
     request: Request,
     key: Optional[str] = Query(None),
@@ -2094,9 +2133,7 @@ async def saas_lookup(
 
         # Check permission for Number Lookup
         plan_name = license.get('plan_name') or ""
-        plan_upper = str(plan_name).upper()
-        is_num_allowed = any(p in plan_upper for p in ["NUMBER", "PRO", "INFINITY", "COMBO", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-        if not is_num_allowed:
+        if not is_master and not check_plan_permission(plan_name, "number"):
             return make_api_response({
                 "status": "error",
                 "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated a 'number' query."
