@@ -184,7 +184,7 @@ if data["status"] == "success":
               <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">6. Dedicated PN/PAN Card Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
+                  <span className="text-[9px] font-extrabold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Under Maintenance</span>
                 </div>
                 <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
                   <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/pancard?key=YOUR_KEY&query=NTEPK1628C</span>

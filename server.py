@@ -1871,7 +1871,7 @@ async def user_lookup(
     try:
         if service_clean == 'phone':
             # Query the primary phone API
-            new_api_url = f"https://exploitsindia.site//osint-api/number.php?exploits={urllib.parse.quote(cleaned_query)}"
+            new_api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(cleaned_query)}"
             try:
                 print(f"[user-lookup] Fetching phone API: {new_api_url}")
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
@@ -1920,31 +1920,13 @@ async def user_lookup(
                     print(f"[Phone API fallback failed]: {fb_err}")
                     
         else:
-            api_url = ""
-            if service_clean == 'adhr':
-                target_query = re.sub(r'[^0-9]', '', cleaned_query)
-                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(target_query)}"
-            elif service_clean == 'bnk':
-                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(target_query)}"
-            elif service_clean == 'vehicle':
-                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(target_query)}"
-            elif service_clean == 'pancard':
-                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(target_query)}"
-            elif service_clean == 'aadhaar_to_pan' or service_clean == 'aadhaar_pan':
-                target_query = re.sub(r'[^0-9]', '', cleaned_query)
-                api_key = "c8117598aafa71238a4bf8377087b0ff"
-                api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={urllib.parse.quote(target_query)}"
-            elif service_clean == 'telegram':
-                target_query = cleaned_query.lstrip('@')
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_query)}"
-            elif service_clean == 'email':
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
-            elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
-                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
+            if service_clean == 'pancard':
+                return jsonify({
+                    "status": "error",
+                    "message": "PN / PAN Card lookup is currently under maintenance. Please try again later."
+                }), 200
+
+            api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query or cleaned_query)}"
                 
             if api_url:
                 print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
@@ -3222,7 +3204,7 @@ async def identity_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://exploitsindia.site//osint-api/aadhar.php?exploits={target_query}"
+    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3394,7 +3376,7 @@ async def bank_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://exploitsindia.site//osint-api/ifsc.php?exploits={target_query}"
+    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -4065,8 +4047,10 @@ async def pancard_lookup(
                 print(f"[DB_ERR] {db_err}")
                 return make_api_response({"status": "error", "message": "api error"})
                 
-        # Proxy fetch
-        api_url = f"https://exploitsindia.site//osint-api/pancard.php?exploits={target_query}"
+        return jsonify({
+            "status": "error",
+            "message": "PN / PAN Card lookup is currently under maintenance. Please try again later."
+        }), 200
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"

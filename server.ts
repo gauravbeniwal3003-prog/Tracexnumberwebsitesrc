@@ -1037,40 +1037,31 @@ app.all("/api/support-lookup", async (req, res) => {
         error: "PN / PAN Card lookup is currently under maintenance. Please try again later."
       });
     } else {
-      let api_url = "";
-      if (service === 'adhr') {
-        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'bnk') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'vehicle') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'veh_owner_num') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
-      }
-
-      if (api_url) {
-        try {
-          const resp = await fetch(api_url, { headers });
-          if (resp.ok) {
-            const text = await resp.text();
-            let parsed: any;
-            try { parsed = JSON.parse(text); } catch (e) {
-              let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
-              if (service === 'bnk') parseType = 'bank';
-              else if (service === 'pancard') parseType = 'pan';
-              parsed = parsePlainTextLookup(text, parseType);
-            }
-            responseData = parsed;
+      let targetQuery = cleanedQuery.trim();
+      if (service === 'adhr') targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+      else if (service === 'bnk' || service === 'vehicle' || service === 'veh_owner_num') targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      
+      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+      
+      try {
+        const resp = await fetch(api_url, { headers });
+        if (resp.ok) {
+          const text = await resp.text();
+          let parsed: any;
+          try { parsed = JSON.parse(text); } catch (e) {
+            parsed = parsePlainTextLookup(text, 'aadhar');
           }
-        } catch (e) {
-          console.error("[SUPPORT_LOOKUP] External API error:", e);
+          const parsedResult = parseCloudflareApiResponse(parsed);
+          if (parsedResult.success && parsedResult.records.length > 0) {
+            const map: Record<string, any> = {};
+            parsedResult.records.forEach((rec, idx) => {
+              map[`Result ${idx + 1}`] = rec;
+            });
+            responseData = map;
+          }
         }
+      } catch (e) {
+        console.error("[SUPPORT_LOOKUP] External API error:", e);
       }
     }
 
@@ -1510,47 +1501,33 @@ app.get("/api/user-lookup", async (req, res) => {
         results: { error: "PN / PAN Card lookup is currently under maintenance. Please try again later." }
       });
     } else {
-      let api_url = "";
-      if (service === 'adhr') {
-        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'bnk') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'vehicle') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'veh_owner_num') {
-        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
-      } else if (service === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
-      } else if (service === 'aadhaar_to_pan') {
-        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
-      }
+      let targetQuery = cleanedQuery.trim();
+      if (service === 'adhr' || service === 'aadhaar_to_pan') targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+      else if (service === 'bnk' || service === 'vehicle' || service === 'veh_owner_num') targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
-      if (api_url) {
+      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+
+      try {
         const response = await fetch(api_url, { headers });
         if (response.ok) {
           const text = await response.text();
-          // Try to parse JSON first
           let parsed: any;
           try {
             parsed = JSON.parse(text);
           } catch (e) {
-            // Parse plain text
-            let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
-            if (service === 'bnk') parseType = 'bank';
-            else if (service === 'pancard') parseType = 'pan';
-            else if (service === 'aadhaar_to_pan') parseType = 'pan';
-            parsed = parsePlainTextLookup(text, parseType);
+            parsed = parsePlainTextLookup(text, 'aadhar');
           }
-          responseData = parsed;
-        } else {
-          throw new Error(`API status ${response.status}`);
+          const parsedResult = parseCloudflareApiResponse(parsed);
+          if (parsedResult.success && parsedResult.records.length > 0) {
+            const map: Record<string, any> = {};
+            parsedResult.records.forEach((rec, idx) => {
+              map[`Result ${idx + 1}`] = rec;
+            });
+            responseData = map;
+          }
         }
+      } catch (err) {
+        console.error("User lookup external API error:", err);
       }
     }
 
@@ -2099,114 +2076,13 @@ app.get("/api/lookup", async (req, res) => {
 
       return res.json(filtered);
     } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan') {
-      let api_url = "";
-      let logPrefix = "";
-      
-      if (lookupType === 'adhr') {
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-        logPrefix = "ADHR";
-      } else if (lookupType === 'aadhaar_to_pan') {
-        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
-        logPrefix = "AADHAAR_TO_PAN";
-      } else if (lookupType === 'bnk') {
-        api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-        logPrefix = "BNK";
-      } else if (lookupType === 'rasion') {
-        api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
-        logPrefix = "RASION";
-      } else if (lookupType === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
-        logPrefix = "EMAIL";
-      } else if (lookupType === 'veh_owner_num') {
-        logPrefix = "VEH_OWNER";
-        const cacheKey = `OWN_${targetQuery}`;
-        // Check database cache first for speed of response
-        try {
-          const { data: cachedRow } = await supabaseAdmin
-            .from("vehicle_search_results")
-            .select("raw_data")
-            .eq("vehicle_number", cacheKey)
-            .maybeSingle();
-
-          const isCacheValid = cachedRow && cachedRow.raw_data && 
-                               Object.keys(cachedRow.raw_data).length > 0 &&
-                               !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
-
-          if (isCacheValid) {
-            console.log(`[CACHE HIT] Serving Vehicle To Owner Number lookup ${targetQuery} via /api/lookup from DB Cache`);
-            const newCount = (keyRecord.requests_used || 0) + 1;
-            if (!isMaster && keyRecord?.id) {
-              await supabaseAdmin.from("api_keys").update({ 
-                requests_used: newCount,
-                last_used_at: new Date().toISOString()
-              }).eq("id", keyRecord.id);
-            }
-            await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
-
-            const filtered = formatUnifiedSaaSResponse({
-              type: 'veh_owner_num',
-              query: targetQuery,
-              expiresAt: keyRecord.expires_at,
-              planName: keyRecord.plan_name,
-              requestsUsed: newCount,
-              records: [cachedRow.raw_data]
-            });
-            return res.json(filtered);
-          }
-        } catch (cacheErr) {
-          console.error("Vehicle owner number Cache check error inside /api/lookup:", cacheErr);
-        }
-
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
-      } else if (lookupType === 'vehicle') {
-        logPrefix = "VEHICLE";
-        
-        // Check database cache first for speed of response
-        try {
-          const { data: cachedRow } = await supabaseAdmin
-            .from("vehicle_search_results")
-            .select("raw_data")
-            .eq("vehicle_number", targetQuery)
-            .maybeSingle();
-
-          const isCacheValid = cachedRow && cachedRow.raw_data && 
-                               Object.keys(cachedRow.raw_data).length > 0 &&
-                               !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
-
-          if (isCacheValid) {
-            console.log(`[CACHE HIT] Serving Vehicle lookup ${targetQuery} via /api/lookup from DB Cache`);
-            const newCount = (keyRecord.requests_used || 0) + 1;
-            if (!isMaster && keyRecord?.id) {
-              await supabaseAdmin.from("api_keys").update({ 
-                requests_used: newCount,
-                last_used_at: new Date().toISOString()
-              }).eq("id", keyRecord.id);
-            }
-            await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
-
-            const filtered = formatUnifiedSaaSResponse({
-              type: 'vehicle',
-              query: targetQuery,
-              expiresAt: keyRecord.expires_at,
-              planName: keyRecord.plan_name,
-              requestsUsed: newCount,
-              records: [cachedRow.raw_data]
-            });
-            return res.json(filtered);
-          }
-        } catch (cacheErr) {
-          console.error("Vehicle Cache check error inside /api/lookup:", cacheErr);
-        }
-
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
-      }
+      const logPrefix = lookupType.toUpperCase();
+      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
 
       const response = await fetch(api_url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json'
         }
       });
       if (!response.ok) {
@@ -2215,83 +2091,22 @@ app.get("/api/lookup", async (req, res) => {
 
       const text = await response.text();
       let parsedData: any;
-      let isJson = false;
 
       try {
         parsedData = JSON.parse(text);
-        isJson = true;
       } catch (e) {
-        const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-        try {
-          parsedData = JSON.parse(cleanedText);
-          isJson = true;
-        } catch (err) {
-          if (lookupType === 'adhr') {
-            parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
-          } else if (lookupType === 'aadhaar_to_pan') {
-            parsedData = parsePlainTextLookup(cleanedText, 'pan');
-          } else if (lookupType === 'bnk') {
-            parsedData = parsePlainTextLookup(cleanedText, 'bank');
-          } else if (lookupType === 'rasion') {
-            parsedData = parsePlainTextLookup(cleanedText, 'rasion');
-          } else {
-            parsedData = { raw_data: cleanedText };
-          }
-        }
+        parsedData = parsePlainTextLookup(text, 'aadhar');
       }
 
-      let isError = false;
-      if (isJson && parsedData) {
-        const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
-        const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
-        if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
-          isError = true;
-        }
-      } else {
-        const lowerText = text.toLowerCase();
-        if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim()) {
-          isError = true;
-        }
+      const parsedResult = parseCloudflareApiResponse(parsedData);
+
+      if (!parsedResult.success || parsedResult.records.length === 0) {
+        await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "failed", Date.now() - startTime);
+        return res.status(404).json({ status: "error", message: parsedResult.error || `No identity records found in ${logPrefix} database for ${targetQuery}` });
       }
 
-      if (isError) {
-         await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "failed", Date.now() - startTime);
-         return res.status(404).json({ status: "error", message: `No identity records found in ${logPrefix} database for ${targetQuery}` });
-      }
+      const cleanedData = scrubAllBranding(parsedResult.records);
 
-      if (lookupType === 'vehicle' && parsedData && parsedData.api_creator) {
-        delete parsedData.api_creator;
-      }
-      if (lookupType === 'veh_owner_num' && parsedData && parsedData.api_creator) {
-        delete parsedData.api_creator;
-      }
-
-      const cleanedData = cleanBrandingObject(parsedData);
-
-      // Save to database cache if it's a vehicle lookup
-      if (lookupType === 'vehicle' && cleanedData && Object.keys(cleanedData).length > 0) {
-        try {
-          await supabaseAdmin.from("vehicle_search_results").upsert({
-            vehicle_number: targetQuery,
-            raw_data: cleanedData
-          }, { onConflict: "vehicle_number" });
-          console.log(`[CACHE SAVE] Saved Vehicle lookup ${targetQuery} via /api/lookup to DB Cache`);
-        } catch (cacheSaveErr) {
-          console.error("Failed to save Vehicle result to database cache:", cacheSaveErr);
-        }
-      }
-      if (lookupType === 'veh_owner_num' && cleanedData && Object.keys(cleanedData).length > 0) {
-        try {
-          const cacheKey = `OWN_${targetQuery}`;
-          await supabaseAdmin.from("vehicle_search_results").upsert({
-            vehicle_number: cacheKey,
-            raw_data: cleanedData
-          }, { onConflict: "vehicle_number" });
-          console.log(`[CACHE SAVE] Saved Vehicle To Owner Number lookup ${targetQuery} via /api/lookup to DB Cache`);
-        } catch (cacheSaveErr) {
-          console.error("Failed to save Vehicle To Owner Number result to database cache:", cacheSaveErr);
-        }
-      }
       const newCount = (keyRecord.requests_used || 0) + 1;
       if (!isMaster && keyRecord?.id) {
         await supabaseAdmin.from("api_keys").update({ 
@@ -3260,12 +3075,11 @@ app.get("/api/identity", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
       }
     });
     if (!response.ok) {
@@ -3274,22 +3088,16 @@ app.get("/api/identity", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
+    let rawJson: any;
+    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'aadhar'); }
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+    const parsedResult = parseCloudflareApiResponse(rawJson);
+    if (!parsedResult.success) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
     }
 
-    let parsedData: any;
-    try {
-      parsedData = JSON.parse(cleanedText);
-    } catch (e) {
-      parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
-    }
-
-    const cleanedData = cleanBrandingObject(parsedData);
+    const cleanedData = scrubAllBranding(parsedResult.records);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -3390,12 +3198,11 @@ app.get("/api/bank", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
       }
     });
     if (!response.ok) {
@@ -3404,22 +3211,16 @@ app.get("/api/bank", async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
+    let rawJson: any;
+    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'bank'); }
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+    const parsedResult = parseCloudflareApiResponse(rawJson);
+    if (!parsedResult.success) {
        await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
     }
 
-    let parsedData: any;
-    try {
-      parsedData = JSON.parse(cleanedText);
-    } catch (e) {
-      parsedData = parsePlainTextLookup(cleanedText, 'bank');
-    }
-
-    const cleanedData = cleanBrandingObject(parsedData);
+    const cleanedData = scrubAllBranding(parsedResult.records);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -3520,12 +3321,11 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
       }
     });
     if (!response.ok) {
@@ -3534,22 +3334,16 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
+    let rawJson: any;
+    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'rasion'); }
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+    const parsedResult = parseCloudflareApiResponse(rawJson);
+    if (!parsedResult.success) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
     }
 
-    let parsedData: any;
-    try {
-      parsedData = JSON.parse(cleanedText);
-    } catch (e) {
-      parsedData = parsePlainTextLookup(cleanedText, 'rasion');
-    }
-
-    const cleanedData = cleanBrandingObject(parsedData);
+    const cleanedData = scrubAllBranding(parsedResult.records);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -4386,6 +4180,72 @@ function scrubAllBranding(obj: any): any {
   return obj;
 }
 
+// Helper to parse Cloudflare API response format reliably across all lookup services
+function parseCloudflareApiResponse(jsonObj: any): { success: boolean; records: any[]; error?: string } {
+  if (!jsonObj || typeof jsonObj !== 'object') {
+    return { success: false, records: [], error: 'Invalid response from search engine' };
+  }
+
+  // Explicit failure check
+  if (jsonObj.status === false || jsonObj.success === false) {
+    const err = jsonObj.error || jsonObj.message || 'No records found';
+    return { success: false, records: [], error: String(err) };
+  }
+
+  // Nested error in data object
+  if (jsonObj.data && typeof jsonObj.data === 'object' && jsonObj.data.error) {
+    return { success: false, records: [], error: String(jsonObj.data.error) };
+  }
+
+  if (jsonObj.error || jsonObj.message) {
+    const msg = String(jsonObj.error || jsonObj.message);
+    if (/no result|no record|not found|validation error|invalid/i.test(msg)) {
+      return { success: false, records: [], error: msg };
+    }
+  }
+
+  let rawList: any[] = [];
+
+  if (Array.isArray(jsonObj.results) && jsonObj.results.length > 0) {
+    rawList = jsonObj.results;
+  } else if (jsonObj.data && typeof jsonObj.data === 'object') {
+    if (Array.isArray(jsonObj.data.results) && jsonObj.data.results.length > 0) {
+      rawList = jsonObj.data.results;
+    } else if (Array.isArray(jsonObj.data) && jsonObj.data.length > 0) {
+      rawList = jsonObj.data;
+    } else if (jsonObj.data.total_found === 0 || (Array.isArray(jsonObj.data.results) && jsonObj.data.results.length === 0)) {
+      return { success: false, records: [], error: 'No records found for this query' };
+    } else {
+      const dataKeys = Object.keys(jsonObj.data).filter(k => !['data', 'total_found', 'results', 'chain_depth', 'processing_time_seconds', 'timestamp', 'developer'].includes(k));
+      if (dataKeys.length > 0) {
+        rawList = [jsonObj.data];
+      }
+    }
+  } else if (Array.isArray(jsonObj.records) && jsonObj.records.length > 0) {
+    rawList = jsonObj.records;
+  } else if (Array.isArray(jsonObj) && jsonObj.length > 0) {
+    rawList = jsonObj;
+  } else if (jsonObj.name || jsonObj.mobile || jsonObj.full_name || jsonObj.BRANCH || jsonObj.BANK || jsonObj.IFSC) {
+    rawList = [jsonObj];
+  } else if (typeof jsonObj === 'object') {
+    const vals = Object.values(jsonObj).filter(v => v && typeof v === 'object');
+    if (vals.length > 0) {
+      const hasRealData = vals.some((v: any) => v.name || v.mobile || v.full_name || v.BRANCH || v.BANK || v.IFSC || v.id || v.address);
+      if (hasRealData) {
+        rawList = vals;
+      }
+    }
+  }
+
+  const validRecords = rawList.filter(rec => rec && typeof rec === 'object' && Object.keys(rec).length > 0);
+
+  if (validRecords.length === 0) {
+    return { success: false, records: [], error: 'No matching records found' };
+  }
+
+  return { success: true, records: validRecords };
+}
+
 // Secure credits-based Aadhaar-to-PAN lookup
 app.post("/api/aadhaar-to-pan", async (req, res) => {
   const { aadhaar_number } = req.body;
@@ -4524,7 +4384,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
     }
 
-    // 5. Query External PAN Find API
+    // 5. Query External PAN Find API with Cloudflare Fallback
     const apiKey = "c8117598aafa71238a4bf8377087b0ff";
     const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
     
@@ -4538,8 +4398,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         const rawText = await apiResponse.text();
         try {
           apiData = JSON.parse(rawText);
-          if (apiData && typeof apiData === "object") {
-            // Scrub branding keys
+          if (apiData && typeof apiData === "object" && !apiData.error && apiData.status !== false && apiData.response_code !== 402) {
             apiData = scrubAllBranding(apiData);
             retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
             if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
@@ -4552,6 +4411,27 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
     } catch (apiErr) {
       console.error("External PAN Find request failed:", apiErr);
+    }
+
+    // Fallback to Cloudflare search if direct panfind endpoint failed
+    if (!panFound) {
+      try {
+        const cfUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
+        const cfResp = await fetch(cfUrl);
+        if (cfResp.ok) {
+          const cfText = await cfResp.text();
+          let cfParsed: any;
+          try { cfParsed = JSON.parse(cfText); } catch (e) { cfParsed = parsePlainTextLookup(cfText, 'pan'); }
+          const parsedResult = parseCloudflareApiResponse(cfParsed);
+          if (parsedResult.success && parsedResult.records.length > 0) {
+            apiData = parsedResult.records;
+            panFound = true;
+            retrievedPan = "PAN_FOUND";
+          }
+        }
+      } catch (cfErr) {
+        console.error("Aadhaar to PAN Cloudflare fallback error:", cfErr);
+      }
     }
 
     // 6. Log search to persistent history
