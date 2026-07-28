@@ -206,12 +206,12 @@ app.get("/api/health", (req, res) => {
 // --- API SaaS CORE FUNCTIONS ---
 
 const StandardMapping = {
-  name: (item: any) => (item.name || item.full_name || "N/A").toUpperCase(),
-  mobile: (item: any, q: string) => item.mobile || item.number || q || "N/A",
-  alt_mobile: (item: any) => item.alt_mobile || item.alt_number || "N/A",
-  operator: (item: any) => (item.operator || item.carrier || "N/A").toUpperCase(),
-  circle: (item: any) => (item.state_circle || item.circle || item.state || "N/A").toUpperCase(),
-  address: (item: any) => item.address || item.location || "N/A"
+  name: (item: any) => (item.name || item.full_name || "").toUpperCase(),
+  mobile: (item: any, q: string) => item.mobile || item.number || q || "",
+  alt_mobile: (item: any) => item.alt_mobile || item.alt_number || "",
+  operator: (item: any) => (item.operator || item.carrier || "").toUpperCase(),
+  circle: (item: any) => (item.state_circle || item.circle || item.state || "").toUpperCase(),
+  address: (item: any) => item.address || item.location || ""
 };
 
 function filterApiResponse(rawData: any, query: string, planName: string, expiresAt: string, requestsUsed: number) {
@@ -229,7 +229,7 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
     results.forEach((item: any, idx: number) => {
       if (!item || typeof item !== 'object') return;
       
-      const filteredItem: any = { result_no: idx + 1 };
+      const filteredItem: any = { ...item, result_no: idx + 1 };
       filteredItem.name = StandardMapping.name(item);
       filteredItem.mobile = StandardMapping.mobile(item, query);
       filteredItem.alt_mobile = StandardMapping.alt_mobile(item);
@@ -237,10 +237,10 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
       filteredItem.circle = StandardMapping.circle(item);
       filteredItem.address = StandardMapping.address(item);
 
-      // Clean N/A values
+      // Clean empty / null / N/A values to empty string instead of forced N/A
       Object.keys(filteredItem).forEach(k => {
         const v = filteredItem[k];
-        if (!v || v === 'null' || v === 'n-a' || v === 'NA' || String(v).trim() === '') filteredItem[k] = "N/A";
+        if (!v || v === 'null' || v === 'n-a' || v === 'NA' || v === 'N/A' || String(v).trim() === '') filteredItem[k] = "";
       });
 
       cleanedData.push(filteredItem);
@@ -394,11 +394,13 @@ function formatUnifiedSaaSResponse({
       filteredItem.state_circle = filteredItem.circle;
     }
 
-    // Clean N/A / null / undefined values elegantly
+    // Clean empty/null/N/A values to empty string instead of forced N/A
     Object.keys(filteredItem).forEach(k => {
       const v = filteredItem[k];
-      if (v === undefined || v === null || v === 'null' || v === 'n-a' || v === 'NA' || String(v).trim() === '') {
-        filteredItem[k] = "N/A";
+      if (v === undefined || v === null || v === 'null' || v === 'n-a' || v === 'NA' || v === 'N/A' || String(v).trim() === '') {
+        filteredItem[k] = "";
+      } else if (typeof v === 'string') {
+        filteredItem[k] = v.trim();
       }
     });
 
@@ -2788,12 +2790,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
       const cleaned_json = cleanBrandingObject(parsed);
       if (cleaned_json) {
         const telegram_id = cleaned_json.tg_id || cleaned_json.telegram_id || target_username;
-        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "N/A";
+        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "";
         const username = cleaned_json.username || cleaned_json.name || target_username;
-        const country = cleaned_json.country || "N/A";
-        const country_code = cleaned_json.country_code || "N/A";
+        const country = cleaned_json.country || "";
+        const country_code = cleaned_json.country_code || "";
 
-        if (telegram_id === "N/A" && phone === "N/A") {
+        if (!telegram_id && !phone) {
           // Fallback to text parser
         } else {
           results = {
@@ -2801,12 +2803,8 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
               name: username,
               telegram_id: telegram_id,
               mobile: phone,
-              father_name: "N/A",
               alt_mobile: country_code,
-              email: "N/A",
               operator: country,
-              state_circle: "N/A",
-              address: "N/A",
               platform: "Telegram Lookup"
             }
           };
@@ -2834,12 +2832,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
       if (!codeMatch) codeMatch = cleanedText.match(/"country_code"\s*:\s*"([^"]+)"/i);
 
       const username = usernameMatch ? usernameMatch[1].trim() : target_username;
-      const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-      const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
-      const country = countryMatch ? countryMatch[1].trim() : "N/A";
-      const country_code = codeMatch ? codeMatch[1].trim() : "N/A";
+      const telegram_id = idMatch ? idMatch[1].trim() : "";
+      const phone = phoneMatch ? phoneMatch[1].trim() : "";
+      const country = countryMatch ? countryMatch[1].trim() : "";
+      const country_code = codeMatch ? codeMatch[1].trim() : "";
 
-      if (telegram_id === "N/A" && phone === "N/A") {
+      if (!telegram_id && !phone) {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
          return res.status(200).json({ status: "success", results: {}, message: "no data found" });
       }
@@ -2849,12 +2847,8 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
           name: username,
           telegram_id: telegram_id,
           mobile: phone,
-          father_name: "N/A",
           alt_mobile: country_code,
-          email: "N/A",
           operator: country,
-          state_circle: "N/A",
-          address: "N/A",
           platform: "Telegram Lookup"
         }
       };
@@ -4023,7 +4017,7 @@ app.get("/api/panfind", async (req, res) => {
 function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
-    return obj
+    let res = obj
       .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -4031,6 +4025,10 @@ function scrubAllBranding(obj: any): any {
       .replace(/Contact/gi, "")
       .replace(/Buy_API/gi, "")
       .trim();
+    if (/^(N\/A|NA|N-A|NULL)$/i.test(res)) {
+      return "";
+    }
+    return res;
   }
   if (Array.isArray(obj)) {
     return obj.map(item => scrubAllBranding(item));

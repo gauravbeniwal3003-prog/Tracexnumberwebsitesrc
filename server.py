@@ -1301,8 +1301,8 @@ def clean_branding_recursive(obj):
         val = re.sub(r'\s+', ' ', val).strip()
         # Clean trailing and leading punctuation leftover from branding removal
         val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
-        if not val or val.upper() in ["", "BOSS"]:
-            return "N/A"
+        if not val or val.upper() in ["", "BOSS", "N/A", "NA", "N-A", "NULL"]:
+            return ""
         return val
     return obj
 
@@ -2442,15 +2442,11 @@ async def saas_lookup(
 
                 results = {
                     "Telegram Match": {
-                        "name": username,
-                        "telegram_id": telegram_id,
-                        "mobile": phone,
-                        "father_name": "N/A",
-                        "alt_mobile": country_code,
-                        "email": "N/A",
-                        "operator": country,
-                        "state_circle": "N/A",
-                        "address": "N/A",
+                        "name": username or "",
+                        "telegram_id": telegram_id if telegram_id != "N/A" else "",
+                        "mobile": phone if phone != "N/A" else "",
+                        "alt_mobile": country_code if country_code != "N/A" else "",
+                        "operator": country if country != "N/A" else "",
                         "platform": "Telegram Lookup"
                     }
                 }
@@ -2740,17 +2736,17 @@ async def telegram_lookup(
             cleaned_json = clean_branding_recursive(parsed)
             
             telegram_id = cleaned_json.get('tg_id') or cleaned_json.get('telegram_id') or target_username
-            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or "N/A"
+            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or ""
             username = cleaned_json.get('username') or cleaned_json.get('name') or target_username
-            country = cleaned_json.get('country') or "N/A"
-            country_code = cleaned_json.get('country_code') or "N/A"
+            country = cleaned_json.get('country') or ""
+            country_code = cleaned_json.get('country_code') or ""
 
-            if telegram_id == "N/A" and phone == "N/A":
+            if not telegram_id and not phone:
                 return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
             # Post-fetch validation to verify protection status (both for Telegram ID and username)
             post_protected = False
-            if telegram_id != "N/A":
+            if telegram_id:
                 try:
                     p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
                     if p_query_id and p_query_id.data:
@@ -2758,7 +2754,7 @@ async def telegram_lookup(
                 except Exception as e_post1:
                     print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
 
-            if not post_protected and username and username != "N/A":
+            if not post_protected and username:
                 clean_un = username.lstrip('@')
                 at_un = f"@{clean_un}"
                 try:
@@ -2783,7 +2779,7 @@ async def telegram_lookup(
                 protected_results = {
                     "Telegram Match": {
                         "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                        "telegram_id": telegram_id or targetTelegramId,
                         "mobile": "PROTECTED @ TRACEX SHIELD",
                         "father_name": "PROTECTED @ TRACEX SHIELD",
                         "alt_mobile": "PROTECTED @ TRACEX SHIELD",
@@ -2802,15 +2798,11 @@ async def telegram_lookup(
 
             results = {
                 "Telegram Match": {
-                    "name": username,
-                    "telegram_id": telegram_id,
-                    "mobile": phone,
-                    "father_name": "N/A",
-                    "alt_mobile": country_code,
-                    "email": "N/A",
-                    "operator": country,
-                    "state_circle": "N/A",
-                    "address": "N/A",
+                    "name": username or "",
+                    "telegram_id": telegram_id if telegram_id != "N/A" else "",
+                    "mobile": phone if phone != "N/A" else "",
+                    "alt_mobile": country_code if country_code != "N/A" else "",
+                    "operator": country if country != "N/A" else "",
                     "platform": "Telegram Lookup"
                 }
             }
@@ -2856,12 +2848,12 @@ async def telegram_lookup(
                 codeMatch = re.search(r"\"country_code\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
 
             username = usernameMatch.group(1).strip() if usernameMatch else targetTelegramId
-            telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
-            phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
-            country = countryMatch.group(1).strip() if countryMatch else "N/A"
-            country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
+            telegram_id = idMatch.group(1).strip() if idMatch else ""
+            phone = phoneMatch.group(1).strip() if phoneMatch else ""
+            country = countryMatch.group(1).strip() if countryMatch else ""
+            country_code = codeMatch.group(1).strip() if codeMatch else ""
 
-            if telegram_id == "N/A" and phone == "N/A":
+            if not telegram_id and not phone:
                 return make_api_response({
                     "status": "success", 
                     "results": {}, 
@@ -2870,7 +2862,7 @@ async def telegram_lookup(
 
             # Post-fetch validation to verify protection status (both for Telegram ID and username)
             post_protected = False
-            if telegram_id != "N/A":
+            if telegram_id:
                 try:
                     p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
                     if p_query_id and p_query_id.data:
@@ -2878,7 +2870,7 @@ async def telegram_lookup(
                 except Exception as e_post1:
                     print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
 
-            if not post_protected and username and username != "N/A":
+            if not post_protected and username:
                 clean_un = username.lstrip('@')
                 at_un = f"@{clean_un}"
                 try:
@@ -2903,7 +2895,7 @@ async def telegram_lookup(
                 protected_results = {
                     "Telegram Match": {
                         "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                        "telegram_id": telegram_id or targetTelegramId,
                         "mobile": "PROTECTED @ TRACEX SHIELD",
                         "father_name": "PROTECTED @ TRACEX SHIELD",
                         "alt_mobile": "PROTECTED @ TRACEX SHIELD",
@@ -2922,15 +2914,11 @@ async def telegram_lookup(
 
             results = {
                 "Telegram Match": {
-                    "name": username,
-                    "telegram_id": telegram_id,
-                    "mobile": phone,
-                    "father_name": "N/A",
-                    "alt_mobile": country_code,
-                    "email": "N/A",
-                    "operator": country,
-                    "state_circle": "N/A",
-                    "address": "N/A",
+                    "name": username or "",
+                    "telegram_id": telegram_id if telegram_id != "N/A" else "",
+                    "mobile": phone if phone != "N/A" else "",
+                    "alt_mobile": country_code if country_code != "N/A" else "",
+                    "operator": country if country != "N/A" else "",
                     "platform": "Telegram Lookup"
                 }
             }
@@ -4234,8 +4222,10 @@ def scrub_all_branding(obj):
         res = re.sub(r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
         res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
-        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
-        return res.strip()
+        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '').strip()
+        if res.upper() in ["N/A", "NA", "N-A", "NULL"]:
+            return ""
+        return res
     if isinstance(obj, list):
         return [scrub_all_branding(item) for item in obj]
     if isinstance(obj, dict):
