@@ -1603,32 +1603,49 @@ app.get("/api/user-lookup", async (req, res) => {
 app.get("/api/lookup", async (req, res) => {
   const { 
     key, 
+    api_key,
     query, 
     numquery, 
     tgquery, 
     vehiclequery, 
+    adhrquery,
+    bnkquery,
+    rasionquery,
+    veh_owner_num_query,
+    email_query,
+    aadhaar_to_pan_query,
+    adhr_to_pan_query,
     number, 
     rc, 
     vehicle, 
     telegram, 
     tg, 
     phone, 
-    service 
+    term,
+    ifsc,
+    aadhaar,
+    adhr,
+    family,
+    rasion,
+    service,
+    type
   } = req.query;
+
+  const apiKey = String(key || api_key || "").trim();
   const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
   const startTime = Date.now();
 
   // Basic CORS and Content-Type
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
-  if (!key) return res.status(401).json({ status: "error", message: "API key is required" });
+  if (!apiKey) return res.status(401).json({ status: "error", message: "API key is required" });
+
+  const reqService = String(service || type || "").toLowerCase().trim();
 
   // Input Validation
-  if (service && (typeof service !== 'string' || service.length > 50)) {
+  if (reqService && reqService.length > 50) {
     return res.status(400).json({ status: "error", message: "Invalid service requested" });
   }
-
 
   if (!supabaseAdmin) {
     return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
@@ -1640,7 +1657,7 @@ app.get("/api/lookup", async (req, res) => {
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = apiKey === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1655,7 +1672,7 @@ app.get("/api/lookup", async (req, res) => {
       const { data: keyRecords, error: keyErr } = await supabaseAdmin
         .from("api_keys")
         .select("*")
-        .eq("api_key", key);
+        .eq("api_key", apiKey);
 
       keyRecord = keyRecords?.[0];
 
@@ -1683,89 +1700,122 @@ app.get("/api/lookup", async (req, res) => {
       }
     }
 
+    // Combine raw candidate query inputs
+    const targetRaw = String(
+      numquery ||
+      tgquery ||
+      adhrquery ||
+      bnkquery ||
+      rasionquery ||
+      vehiclequery ||
+      veh_owner_num_query ||
+      email_query ||
+      aadhaar_to_pan_query ||
+      adhr_to_pan_query ||
+      query ||
+      number ||
+      phone ||
+      term ||
+      rc ||
+      vehicle ||
+      telegram ||
+      tg ||
+      ifsc ||
+      aadhaar ||
+      adhr ||
+      family ||
+      rasion ||
+      req.query.email ||
+      ""
+    ).trim();
+
     // 2. Identify Lookup Type and target query
-    // Priority 1: Explicit target parameters
-    if (numquery !== undefined) {
-      lookupType = 'phone';
-      targetQuery = String(numquery).trim();
-    } else if (tgquery !== undefined) {
-      lookupType = 'telegram';
-      targetQuery = String(tgquery).trim();
-    } else if (req.query.adhrquery !== undefined) {
-      lookupType = 'adhr';
-      targetQuery = String(req.query.adhrquery).trim();
-    } else if (req.query.bnkquery !== undefined) {
-      lookupType = 'bnk';
-      targetQuery = String(req.query.bnkquery).trim();
-    } else if (req.query.rasionquery !== undefined) {
-      lookupType = 'rasion';
-      targetQuery = String(req.query.rasionquery).trim();
-    } else if (req.query.vehiclequery !== undefined) {
-      lookupType = 'vehicle';
-      targetQuery = String(req.query.vehiclequery).trim();
-    } else if (req.query.veh_owner_num_query !== undefined) {
-      lookupType = 'veh_owner_num';
-      targetQuery = String(req.query.veh_owner_num_query).trim();
-    } else if (req.query.email_query !== undefined) {
-      lookupType = 'email';
-      targetQuery = String(req.query.email_query).trim();
-    } else if (req.query.aadhaar_to_pan_query !== undefined || req.query.adhr_to_pan_query !== undefined) {
-      lookupType = 'aadhaar_to_pan';
-      targetQuery = String(req.query.aadhaar_to_pan_query || req.query.adhr_to_pan_query).trim();
-    }
-    // Priority 2: Legacy or explicit service select
-    else if (telegram || tg || service === 'telegram') {
-      lookupType = 'telegram';
-      targetQuery = String(telegram || tg || query || "").trim();
-    } else if (service === 'aadhaar_to_pan') {
-      lookupType = 'aadhaar_to_pan';
-      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
-    } else if (service === 'adhr' || service === 'identity') {
-      lookupType = 'adhr';
-      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
-    } else if (service === 'bnk' || service === 'bank') {
-      lookupType = 'bnk';
-      targetQuery = String(query || req.query.ifsc || req.query.bnk || "").trim();
-    } else if (service === 'rasion' || service === 'ration') {
-      lookupType = 'rasion';
-      targetQuery = String(query || req.query.family || req.query.rasion || "").trim();
-    } else if (service === 'vehicle' || service === 'rc' || req.query.rc !== undefined || req.query.vehicle !== undefined) {
-      lookupType = 'vehicle';
-      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
-    } else if (service === 'veh_owner_num' || service === 'veh_numm') {
-      lookupType = 'veh_owner_num';
-      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
-    } else if (service === 'email' || service === 'mail') {
-      lookupType = 'email';
-      targetQuery = String(query || "").trim();
-    } else if (number || phone || service === 'phone' || service === 'number') {
-      lookupType = 'phone';
-      targetQuery = String(number || phone || query || "").trim();
-    }
-    // Priority 3: intelligent default
-    else if (query !== undefined) {
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      if (planUpper.includes("TELEGRAM")) {
-        lookupType = 'telegram';
-      } else if (planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN")) {
-        lookupType = 'aadhaar_to_pan';
-      } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY")) {
+    if (reqService) {
+      if (['phone', 'number', 'mobile'].includes(reqService)) {
+        lookupType = 'phone';
+      } else if (['adhr', 'identity', 'aadhaar', 'aadhar', 'id'].includes(reqService)) {
         lookupType = 'adhr';
-      } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
+      } else if (['bnk', 'bank', 'ifsc'].includes(reqService)) {
         lookupType = 'bnk';
-      } else if (planUpper.includes("RASION") || planUpper.includes("RATION")) {
-        lookupType = 'rasion';
-      } else if (planUpper.includes("VEHICLE")) {
+      } else if (['telegram', 'tg', 'tele'].includes(reqService)) {
+        lookupType = 'telegram';
+      } else if (['vehicle', 'rc', 'vahan'].includes(reqService)) {
         lookupType = 'vehicle';
-      } else {
-        const q = String(query).trim();
-        if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/.test(q)) lookupType = 'bnk';
-        else if (/^[A-Za-z0-9]{4,11}$/.test(q) && /[A-Za-z]/.test(q) && /[0-9]/.test(q)) lookupType = 'vehicle';
-        else if (q.startsWith('@') || (/[a-zA-Z_]/.test(q) && !/^\d+$/.test(q))) lookupType = 'telegram';
-        else if (/^\d{12}$/.test(q)) lookupType = 'adhr';
-        else lookupType = 'phone';
+      } else if (['veh_owner_num', 'veh-owner-num', 'veh_numm', 'veh-numm', 'vehicle_to_number'].includes(reqService)) {
+        lookupType = 'veh_owner_num';
+      } else if (['email', 'mail'].includes(reqService)) {
+        lookupType = 'email';
+      } else if (['aadhaar_to_pan', 'adhr_to_pan', 'aadhar_to_pan'].includes(reqService)) {
+        lookupType = 'aadhaar_to_pan';
+      } else if (['rasion', 'ration', 'family'].includes(reqService)) {
+        lookupType = 'rasion';
       }
-      targetQuery = String(query).trim();
+      targetQuery = targetRaw;
+    } else {
+      // Explicit specific query parameter checks
+      if (numquery !== undefined) {
+        lookupType = 'phone';
+        targetQuery = String(numquery).trim();
+      } else if (tgquery !== undefined) {
+        lookupType = 'telegram';
+        targetQuery = String(tgquery).trim();
+      } else if (adhrquery !== undefined) {
+        lookupType = 'adhr';
+        targetQuery = String(adhrquery).trim();
+      } else if (bnkquery !== undefined) {
+        lookupType = 'bnk';
+        targetQuery = String(bnkquery).trim();
+      } else if (rasionquery !== undefined) {
+        lookupType = 'rasion';
+        targetQuery = String(rasionquery).trim();
+      } else if (vehiclequery !== undefined) {
+        lookupType = 'vehicle';
+        targetQuery = String(vehiclequery).trim();
+      } else if (veh_owner_num_query !== undefined) {
+        lookupType = 'veh_owner_num';
+        targetQuery = String(veh_owner_num_query).trim();
+      } else if (email_query !== undefined) {
+        lookupType = 'email';
+        targetQuery = String(email_query).trim();
+      } else if (aadhaar_to_pan_query !== undefined || adhr_to_pan_query !== undefined) {
+        lookupType = 'aadhaar_to_pan';
+        targetQuery = String(aadhaar_to_pan_query || adhr_to_pan_query).trim();
+      } else if (telegram !== undefined || tg !== undefined) {
+        lookupType = 'telegram';
+        targetQuery = String(telegram || tg || targetRaw).trim();
+      } else if (rc !== undefined || vehicle !== undefined) {
+        lookupType = 'vehicle';
+        targetQuery = String(rc || vehicle || targetRaw).trim();
+      } else if (ifsc !== undefined) {
+        lookupType = 'bnk';
+        targetQuery = String(ifsc || targetRaw).trim();
+      } else if (aadhaar !== undefined || adhr !== undefined) {
+        lookupType = 'adhr';
+        targetQuery = String(aadhaar || adhr || targetRaw).trim();
+      } else if (targetRaw) {
+        const planUpper = String(keyRecord?.plan_name || "").toUpperCase();
+        if (planUpper.includes("TELEGRAM")) {
+          lookupType = 'telegram';
+        } else if (planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN")) {
+          lookupType = 'aadhaar_to_pan';
+        } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY")) {
+          lookupType = 'adhr';
+        } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
+          lookupType = 'bnk';
+        } else if (planUpper.includes("RASION") || planUpper.includes("RATION")) {
+          lookupType = 'rasion';
+        } else if (planUpper.includes("VEHICLE")) {
+          lookupType = 'vehicle';
+        } else {
+          if (targetRaw.includes('@') && targetRaw.includes('.')) lookupType = 'email';
+          else if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/i.test(targetRaw)) lookupType = 'bnk';
+          else if (/^[A-Za-z0-9]{4,11}$/.test(targetRaw) && /[A-Za-z]/.test(targetRaw) && /[0-9]/.test(targetRaw)) lookupType = 'vehicle';
+          else if (targetRaw.startsWith('@') || (/[a-zA-Z_]/.test(targetRaw) && !/^\d+$/.test(targetRaw))) lookupType = 'telegram';
+          else if (targetRaw.replace(/\D/g, '').length === 12) lookupType = 'adhr';
+          else lookupType = 'phone';
+        }
+        targetQuery = targetRaw;
+      }
     }
 
     // Normalize and clean queries depending on lookup service

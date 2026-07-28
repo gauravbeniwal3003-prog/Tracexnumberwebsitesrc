@@ -1986,76 +1986,69 @@ async def user_lookup(
 async def saas_lookup(
     request: Request,
     key: Optional[str] = Query(None),
+    api_key: Optional[str] = Query(None),
     number: Optional[str] = Query(None),
     query: Optional[str] = Query(None),
     numquery: Optional[str] = Query(None),
-    service: Optional[str] = Query(None)
+    service: Optional[str] = Query(None),
+    type: Optional[str] = Query(None)
 ):
     start_time = time.time()
     
-    # Route right away if service is passed
-    if service:
-        service_lower = service.lower()
-        if service_lower in ["adhr", "identity", "aadhaar", "aadhar"]:
-            return await identity_lookup(
-                request=request, 
-                key=key, 
-                query=query or number or numquery
-            )
-        elif service_lower in ["bnk", "bank", "ifsc"]:
-            return await bank_lookup(
-                request=request, 
-                key=key, 
-                query=query or number or numquery
-            )
-        elif service_lower in ["telegram", "tg", "tele"]:
-            return await telegram_lookup(
-                request=request, 
-                key=key, 
-                query=query or number or numquery
-            )
-        elif service_lower in ["vehicle", "rc", "vahan"]:
-            rc_arg = request.query_params.get("rc") or query or number or numquery
-            return await vehicle_lookup(
-                request=request,
-                key=key,
-                rc=rc_arg
-            )
-        elif service_lower in ["email", "mail"]:
-            return await email_lookup(
-                request=request,
-                key=key,
-                query=query or number or numquery
-            )
-        elif service_lower in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm"]:
-            rc_arg = request.query_params.get("rc") or query or number or numquery
-            return await veh_owner_num_lookup(
-                request=request,
-                key=key,
-                rc=rc_arg
-            )
+    api_key_val = key or api_key or request.query_params.get("api_key")
+    selected_service = (service or type or request.query_params.get("type") or "").lower().strip()
+    target_q = (
+        query or 
+        number or 
+        numquery or 
+        request.query_params.get("phone") or 
+        request.query_params.get("term") or 
+        request.query_params.get("tgquery") or 
+        request.query_params.get("adhrquery") or 
+        request.query_params.get("bnkquery") or 
+        request.query_params.get("vehiclequery") or 
+        request.query_params.get("rc") or 
+        ""
+    ).strip()
 
+    # Route right away if service/type is passed
+    if selected_service:
+        if selected_service in ["adhr", "identity", "aadhaar", "aadhar", "id"]:
+            return await identity_lookup(request=request, key=api_key_val, query=target_q)
+        elif selected_service in ["bnk", "bank", "ifsc"]:
+            return await bank_lookup(request=request, key=api_key_val, query=target_q)
+        elif selected_service in ["telegram", "tg", "tele"]:
+            return await telegram_lookup(request=request, key=api_key_val, query=target_q)
+        elif selected_service in ["vehicle", "rc", "vahan"]:
+            return await vehicle_lookup(request=request, key=api_key_val, rc=target_q)
+        elif selected_service in ["email", "mail"]:
+            return await email_lookup(request=request, key=api_key_val, query=target_q)
+        elif selected_service in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm", "vehicle_to_number"]:
+            return await veh_owner_num_lookup(request=request, key=api_key_val, rc=target_q)
+        elif selected_service in ["aadhaar_to_pan", "adhr_to_pan", "aadhar_to_pan"]:
+            return await aadhaar_to_pan_lookup(request=request, key=api_key_val, aadhaar_number=target_q)
 
-    num = (number or query or numquery or "").strip()
+    num = target_q
 
     import re
-    if not service and num:
+    if not selected_service and num:
         if "@" in num and "." in num:
-            return await email_lookup(request=request, key=key, query=num)
+            return await email_lookup(request=request, key=api_key_val, query=num)
         elif re.match(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', num):
-            return await bank_lookup(request=request, key=key, query=num)
+            return await bank_lookup(request=request, key=api_key_val, query=num)
         elif re.match(r'^[A-Za-z0-9]{4,11}$', num) and any(c.isalpha() for c in num) and any(c.isdigit() for c in num) and "_" not in num and not num.startswith("@"):
-            return await vehicle_lookup(request=request, key=key, rc=num)
+            return await vehicle_lookup(request=request, key=api_key_val, rc=num)
         elif num.isdigit() and len(num) == 12:
-            return await identity_lookup(request=request, key=key, query=num)
+            return await identity_lookup(request=request, key=api_key_val, query=num)
 
     try:
         # 1. Rate Limiting Check
         if not check_rate_limit(request):
             return make_api_response({"status": "error", "message": "Too many requests. Please slow down."})
 
+        effective_key = key or api_key_val or request.query_params.get("key") or request.query_params.get("api_key")
         # 2. Key Check (Parameter level check)
-        if not key:
+        if not effective_key:
             return make_api_response({"status": "error", "message": "Access Denied: Please provide your 'key' parameter"})
 
         db = get_supabase()
@@ -2063,7 +2056,7 @@ async def saas_lookup(
             return make_api_response({"status": "error", "message": "ServerDown: Database connection failure"})
 
         # Determine if master key is used
-        is_master = key == INTERNAL_MASTER_KEY
+        is_master = effective_key == INTERNAL_MASTER_KEY
 
         # 3. Authentication & Plan Validity (Must pass prior to checking target safety status to avoid enumeration attacks)
         license = None
@@ -2071,9 +2064,9 @@ async def saas_lookup(
         user_email = None
 
         if not is_master:
-            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+            auth_query = db.table("api_keys").select("*").eq("api_key", effective_key).execute()
             if not auth_query.data or len(auth_query.data) == 0:
-                print(f"[AUTH_FAIL] Key: {key}")
+                print(f"[AUTH_FAIL] Key: {effective_key}")
                 return make_api_response({"status": "error", "message": "Auth Failed: Invalid API key"})
             
             license = auth_query.data[0]
