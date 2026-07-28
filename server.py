@@ -1603,12 +1603,12 @@ async def support_lookup(
                 api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_ifsc)}"
             elif selected_service == "vehicle":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(clean_rc)}"
+                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_rc)}"
             elif selected_service == "veh_owner_num":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(clean_rc)}"
+                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_rc)}"
             elif selected_service == "email":
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(cleaned_query)}"
 
             if api_url:
                 try:
@@ -2257,7 +2257,7 @@ async def saas_lookup(
         if is_telegram_query:
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num.lstrip('@')
-            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
+            api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_username)}"
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2674,7 +2674,7 @@ async def telegram_lookup(
         except Exception as cache_err:
             print(f"[Telegram Cache Read Error] {cache_err}")
 
-        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
+        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_username)}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -3024,7 +3024,7 @@ async def email_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(target_query)}"
+    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query)}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3838,7 +3838,7 @@ async def veh_owner_num_lookup(
             print(f"[CACHE_ERR] Vehicle owner number cache check error: {cache_err}")
 
         # Proxy fetch
-        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
+        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query)}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -4170,8 +4170,7 @@ async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query
             return JSONResponse(status_code=402, content={"error": "Payment verification failed. Please complete the Rs. 150 payment."})
 
         # 2. Execute external API
-        api_key = "c8117598aafa71238a4bf8377087b0ff"
-        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_aadhaar)}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
@@ -4307,8 +4306,7 @@ async def aadhaar_to_pan_endpoint(request: Request):
         db.table("profiles").update({"credits": max(0, current_credits - cost)}).eq("id", user.id).execute()
 
         # 4. Query External PAN Find API
-        api_key = "c8117598aafa71238a4bf8377087b0ff"
-        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_aadhaar)}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"

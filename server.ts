@@ -3946,8 +3946,7 @@ app.get("/api/panfind", async (req, res) => {
     }
 
     // 2. Execute target API lookup
-    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
     
     const apiResponse = await fetch(api_url);
     if (!apiResponse.ok) {
@@ -3962,11 +3961,7 @@ app.get("/api/panfind", async (req, res) => {
       apiData = { error: "Failed to parse search output", raw: rawText };
     }
 
-    // 3. Remove "developer": "@techvishalboss" from the response object
-    if (apiData && typeof apiData === "object") {
-      delete apiData.developer;
-    }
-
+    apiData = scrubAllBranding(apiData);
     return res.json(apiData);
   } catch (error: any) {
     console.error("PAN Find error:", error);
@@ -4212,9 +4207,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
     }
 
-    // 5. Query External PAN Find API with Cloudflare Fallback
-    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    // 5. Query External PAN Find API
+    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
     
     let apiData: any = null;
     let panFound = false;
@@ -4226,13 +4220,9 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         const rawText = await apiResponse.text();
         try {
           apiData = JSON.parse(rawText);
-          if (apiData && typeof apiData === "object" && !apiData.error && apiData.status !== false && apiData.response_code !== 402) {
-            apiData = scrubAllBranding(apiData);
-            retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
-            if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
-              panFound = true;
-            }
-          }
+          apiData = scrubAllBranding(apiData);
+          panFound = true;
+          retrievedPan = "PAN_FOUND";
         } catch (e) {
           console.error("Failed to parse external API response:", rawText);
         }
