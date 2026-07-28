@@ -2133,6 +2133,7 @@ async def saas_lookup(
 
         # Check permission for Number Lookup
         plan_name = license.get('plan_name') or ""
+        plan_upper = str(plan_name).upper()
         if not is_master and not check_plan_permission(plan_name, "number"):
             return make_api_response({
                 "status": "error",
