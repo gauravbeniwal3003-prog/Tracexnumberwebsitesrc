@@ -1312,69 +1312,87 @@ def make_api_response(data: dict) -> dict:
     return data
 
 def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
-    # Detect items: could be a list or a dict (Result 1, Result 2, etc.)
-    items = raw_json.get('results') or raw_json.get('data') or raw_json.get('records')
-    
-    # Safely handle the case where raw_json is already the parsed results dictionary (e.g. from plain-text API responses)
-    if not items and isinstance(raw_json, dict):
-        has_nested = any(isinstance(v, dict) for v in raw_json.values())
-        if has_nested:
-            items = raw_json
-        elif any(k in raw_json for k in ["name", "mobile", "phone", "full_name"]):
-            items = {"Result 1": raw_json}
-            
+    if not isinstance(raw_json, (dict, list)):
+        raw_json = {}
+
+    items = []
+    if isinstance(raw_json, list):
+        items = raw_json
+    elif isinstance(raw_json, dict):
+        extracted = raw_json.get('results') or raw_json.get('data') or raw_json.get('records') or raw_json.get('result') or raw_json.get('response') or raw_json.get('output') or raw_json.get('items')
+        if isinstance(extracted, list):
+            items = extracted
+        elif isinstance(extracted, dict):
+            child_dicts = [v for v in extracted.values() if isinstance(v, dict)]
+            if child_dicts:
+                items = child_dicts
+            else:
+                items = [extracted]
+        else:
+            child_dicts = [v for v in raw_json.values() if isinstance(v, dict)]
+            if child_dicts and any(str(k).startswith(('Result', 'result', '0', '1', 'item', 'record')) for k in raw_json.keys()):
+                items = child_dicts
+            else:
+                non_meta = [k for k in raw_json.keys() if str(k).lower() not in ['status', 'success', 'message', 'msg', 'error', 'query', 'buy_api', 'website', 'owner_telegram', 'api_status', 'timestamp', 'developer', 'processing_time']]
+                if non_meta:
+                    items = [raw_json]
+
     clean_results = {}
-    
-    # CASE 1: Items is a Dictionary (e.g., {"Result 1": {...}})
-    if isinstance(items, dict):
-        for key, val in items.items():
-            if isinstance(val, dict):
-                clean_results[key] = {
-                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
-                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
-                    "mobile": str(val.get('mobile', val.get('number', query_num))),
-                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
-                    "email": str(val.get('email', 'N/A')),
-                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
-                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
-                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
-                    "address": str(val.get('address', val.get('location', 'N/A')))
-                }
-    
-    # CASE 2: Items is a List
-    elif isinstance(items, list):
-        for i, val in enumerate(items, 1):
-            if isinstance(val, dict):
-                clean_results[f"Result {i}"] = {
-                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
-                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
-                    "mobile": str(val.get('mobile', val.get('number', query_num))),
-                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
-                    "email": str(val.get('email', 'N/A')),
-                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
-                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
-                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
-                    "address": str(val.get('address', val.get('location', 'N/A')))
-                }
-    
-    # CASE 3: Raw response is the data itself or we can locate data inside raw_json itself
-    elif raw_json.get('status') is True or raw_json.get('name') or raw_json.get('owner_name') or raw_json.get('data') or isinstance(raw_json.get('data'), list):
-        clean_results["Result 1"] = {
-            "name": str(raw_json.get('name', raw_json.get('owner_name', 'N/A'))).upper(),
-            "father_name": str(raw_json.get('father_name', 'N/A')).upper(),
-            "mobile": str(raw_json.get('mobile', query_num)),
-            "alt_mobile": str(raw_json.get('alt_mobile', 'N/A')),
-            "email": str(raw_json.get('email', 'N/A')),
-            "aadhar_number": str(raw_json.get('aadhar_number', 'N/A')),
-            "operator": str(raw_json.get('operator', 'N/A')).upper(),
-            "state_circle": str(raw_json.get('circle', 'N/A')).upper(),
-            "address": str(raw_json.get('address', 'N/A'))
-        }
+    clean_data_list = []
 
-    # Clean the brand marks and references (such as Tech Vishal) recursively
-    clean_results = clean_branding_recursive(clean_results)
+    for i, val in enumerate(items, 1):
+        if not isinstance(val, dict):
+            continue
+        
+        # Start with ALL fields from val to never lose any field returned by upstream API!
+        record = dict(val)
 
-    # All search results are retained and forwarded without truncation
+        # Standardize & Alias common fields
+        name_val = record.get('name') or record.get('full_name') or record.get('owner_name') or record.get('holder_name') or record.get('person_name')
+        if name_val is not None:
+            record['name'] = str(name_val).strip().upper()
+            record['full_name'] = record['name']
+
+        fname_val = record.get('fname') or record.get('father_name') or record.get('fathername') or record.get('care_of')
+        if fname_val is not None:
+            record['fname'] = str(fname_val).strip().upper()
+            record['father_name'] = record['fname']
+
+        mobile_val = record.get('mobile') or record.get('number') or record.get('phone') or record.get('contact') or record.get('mobile_no')
+        if mobile_val is not None:
+            record['mobile'] = str(mobile_val).strip()
+
+        alt_val = record.get('alt') or record.get('alt_mobile') or record.get('alt_number') or record.get('alternate_mobile')
+        if alt_val is not None:
+            record['alt_mobile'] = str(alt_val).strip()
+
+        id_val = record.get('id') or record.get('aadhar_number') or record.get('aadhaar_number') or record.get('aadhar') or record.get('uid')
+        if id_val is not None:
+            record['aadhar_number'] = str(id_val).strip()
+
+        circle_val = record.get('circle') or record.get('state_circle') or record.get('state') or record.get('location')
+        if circle_val is not None:
+            record['state_circle'] = str(circle_val).strip().upper()
+            record['circle'] = record['state_circle']
+
+        addr_val = record.get('address') or record.get('location') or record.get('full_address')
+        if addr_val is not None:
+            record['address'] = str(addr_val).strip()
+
+        # Clean empty/null/N/A values to empty string instead of forced N/A
+        cleaned_record = {}
+        for k, v in record.items():
+            if v is None or v == 'null' or v == 'n-a' or v == 'NA' or v == 'N/A' or str(v).strip() == '':
+                cleaned_record[k] = ""
+            elif isinstance(v, str):
+                cleaned_record[k] = v.strip()
+            else:
+                cleaned_record[k] = v
+
+        cleaned_record = clean_branding_recursive(cleaned_record)
+        clean_results[f"Result {i}"] = cleaned_record
+        clean_data_list.append(cleaned_record)
+
     return make_api_response({
         "status": "success" if clean_results else "failed",
         "success": True if clean_results else False,
@@ -1386,7 +1404,8 @@ def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
             "expires_at": plan_info.get('expires_at', 'N/A'),
             "requests_used": usage
         },
-        "results": clean_results
+        "results": clean_results,
+        "data": clean_data_list
     })
 
 def sanitize_error_message(msg: str) -> str:

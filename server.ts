@@ -370,28 +370,31 @@ function formatUnifiedSaaSResponse({
     const filteredItem: any = { ...item, result_no: idx + 1 };
 
     // Standardize & Alias common fields so buyers receive expected properties without missing any original fields
-    if (item.name || item.full_name) {
-      filteredItem.name = String(item.name || item.full_name).trim();
+    if (item.name || item.full_name || item.owner_name || item.holder_name || item.person_name) {
+      filteredItem.name = String(item.name || item.full_name || item.owner_name || item.holder_name || item.person_name).trim();
       filteredItem.full_name = filteredItem.name;
     }
-    if (item.fname || item.father_name) {
-      filteredItem.fname = String(item.fname || item.father_name).trim();
+    if (item.fname || item.father_name || item.fathername || item.care_of) {
+      filteredItem.fname = String(item.fname || item.father_name || item.fathername || item.care_of).trim();
       filteredItem.father_name = filteredItem.fname;
     }
-    if (item.mobile || item.number || item.phone) {
-      filteredItem.mobile = String(item.mobile || item.number || item.phone).trim();
+    if (item.mobile || item.number || item.phone || item.contact || item.mobile_no || item.phone_number) {
+      filteredItem.mobile = String(item.mobile || item.number || item.phone || item.contact || item.mobile_no || item.phone_number).trim();
     }
-    if (item.alt || item.alt_mobile || item.alt_number) {
-      filteredItem.alt = String(item.alt || item.alt_mobile || item.alt_number).trim();
+    if (item.alt || item.alt_mobile || item.alt_number || item.alternate_mobile) {
+      filteredItem.alt = String(item.alt || item.alt_mobile || item.alt_number || item.alternate_mobile).trim();
       filteredItem.alt_mobile = filteredItem.alt;
     }
-    if (item.id || item.aadhaar_number || item.aadhar) {
-      filteredItem.id = String(item.id || item.aadhaar_number || item.aadhar).trim();
+    if (item.id || item.aadhaar_number || item.aadhar || item.uid) {
+      filteredItem.id = String(item.id || item.aadhaar_number || item.aadhar || item.uid).trim();
       filteredItem.aadhaar_number = filteredItem.id;
     }
-    if (item.circle || item.state_circle || item.state) {
-      filteredItem.circle = String(item.circle || item.state_circle || item.state).trim();
+    if (item.circle || item.state_circle || item.state || item.location) {
+      filteredItem.circle = String(item.circle || item.state_circle || item.state || item.location).trim();
       filteredItem.state_circle = filteredItem.circle;
+    }
+    if (item.address || item.full_address || item.location) {
+      filteredItem.address = String(item.address || item.full_address || item.location).trim();
     }
 
     // Clean empty/null/N/A values to empty string instead of forced N/A
@@ -4051,67 +4054,110 @@ function scrubAllBranding(obj: any): any {
   return obj;
 }
 
-// Helper to parse Cloudflare API response format reliably across all lookup services
+// Helper to parse Cloudflare and upstream API responses reliably across all lookup services
 function parseCloudflareApiResponse(jsonObj: any): { success: boolean; records: any[]; error?: string } {
-  if (!jsonObj || typeof jsonObj !== 'object') {
+  if (jsonObj === null || jsonObj === undefined) {
     return { success: false, records: [], error: 'Invalid response from search engine' };
   }
 
+  // Handle string input
+  if (typeof jsonObj === 'string') {
+    const trimmed = jsonObj.trim();
+    if (!trimmed) return { success: false, records: [], error: 'Empty response' };
+    try {
+      jsonObj = JSON.parse(trimmed);
+    } catch (e) {
+      // If parsing as JSON fails, try text parser
+      const textParsed = parsePlainTextLookup(trimmed, 'general' as any);
+      if (textParsed && typeof textParsed === 'object' && Object.keys(textParsed).length > 0) {
+        jsonObj = textParsed;
+      } else {
+        return { success: false, records: [], error: 'Invalid response format' };
+      }
+    }
+  }
+
+  if (typeof jsonObj !== 'object') {
+    return { success: false, records: [], error: 'Invalid response format' };
+  }
+
   // Explicit failure check
-  if (jsonObj.status === false || jsonObj.success === false) {
-    const err = jsonObj.error || jsonObj.message || 'No records found';
+  if (jsonObj.status === false || jsonObj.success === false || jsonObj.status === "false" || jsonObj.success === "false") {
+    const err = jsonObj.error || jsonObj.message || jsonObj.msg || 'No records found';
     return { success: false, records: [], error: String(err) };
   }
 
-  // Nested error in data object
-  if (jsonObj.data && typeof jsonObj.data === 'object' && jsonObj.data.error) {
-    return { success: false, records: [], error: String(jsonObj.data.error) };
-  }
-
-  if (jsonObj.error || jsonObj.message) {
+  // Check for error messages if status is not explicitly successful
+  if ((jsonObj.error || jsonObj.message) && !jsonObj.data && !jsonObj.results && !jsonObj.records && !jsonObj.result && !jsonObj.response) {
     const msg = String(jsonObj.error || jsonObj.message);
-    if (/no result|no record|not found|validation error|invalid/i.test(msg)) {
+    if (/no result|no record|not found|validation error|invalid|failed|error/i.test(msg) && !/success|found|ok|1 record|records found/i.test(msg)) {
       return { success: false, records: [], error: msg };
     }
   }
 
+  // Nested error in data object
+  if (jsonObj.data && typeof jsonObj.data === 'object' && !Array.isArray(jsonObj.data) && jsonObj.data.error) {
+    return { success: false, records: [], error: String(jsonObj.data.error) };
+  }
+
+  const META_KEYS = ['status', 'success', 'message', 'msg', 'error', 'query', 'buy_api', 'website', 'owner_telegram', 'api_status', 'timestamp', 'developer', 'processing_time', 'time_left', 'requests_used', 'time_taken', 'execution_time', 'chain_depth', 'code', 'total_found', 'processing_time_seconds'];
+
+  const isDataRecord = (obj: any): boolean => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    const nonMetaKeys = Object.keys(obj).filter(k => !META_KEYS.includes(k.toLowerCase()));
+    return nonMetaKeys.length > 0;
+  };
+
   let rawList: any[] = [];
 
-  if (Array.isArray(jsonObj.results) && jsonObj.results.length > 0) {
+  if (Array.isArray(jsonObj)) {
+    rawList = jsonObj;
+  } else if (Array.isArray(jsonObj.results) && jsonObj.results.length > 0) {
     rawList = jsonObj.results;
+  } else if (Array.isArray(jsonObj.records) && jsonObj.records.length > 0) {
+    rawList = jsonObj.records;
+  } else if (Array.isArray(jsonObj.data) && jsonObj.data.length > 0) {
+    rawList = jsonObj.data;
+  } else if (Array.isArray(jsonObj.result) && jsonObj.result.length > 0) {
+    rawList = jsonObj.result;
+  } else if (Array.isArray(jsonObj.response) && jsonObj.response.length > 0) {
+    rawList = jsonObj.response;
+  } else if (Array.isArray(jsonObj.output) && jsonObj.output.length > 0) {
+    rawList = jsonObj.output;
+  } else if (Array.isArray(jsonObj.items) && jsonObj.items.length > 0) {
+    rawList = jsonObj.items;
   } else if (jsonObj.data && typeof jsonObj.data === 'object') {
     if (Array.isArray(jsonObj.data.results) && jsonObj.data.results.length > 0) {
       rawList = jsonObj.data.results;
-    } else if (Array.isArray(jsonObj.data) && jsonObj.data.length > 0) {
-      rawList = jsonObj.data;
-    } else if (jsonObj.data.total_found === 0 || (Array.isArray(jsonObj.data.results) && jsonObj.data.results.length === 0)) {
-      return { success: false, records: [], error: 'No records found for this query' };
-    } else {
-      const dataKeys = Object.keys(jsonObj.data).filter(k => !['data', 'total_found', 'results', 'chain_depth', 'processing_time_seconds', 'timestamp', 'developer'].includes(k));
-      if (dataKeys.length > 0) {
-        rawList = [jsonObj.data];
-      }
+    } else if (Array.isArray(jsonObj.data.records) && jsonObj.data.records.length > 0) {
+      rawList = jsonObj.data.records;
+    } else if (isDataRecord(jsonObj.data)) {
+      rawList = [jsonObj.data];
     }
-  } else if (Array.isArray(jsonObj.records) && jsonObj.records.length > 0) {
-    rawList = jsonObj.records;
-  } else if (Array.isArray(jsonObj) && jsonObj.length > 0) {
-    rawList = jsonObj;
-  } else if (jsonObj.name || jsonObj.mobile || jsonObj.full_name || jsonObj.BRANCH || jsonObj.BANK || jsonObj.IFSC) {
-    rawList = [jsonObj];
+  } else if (jsonObj.result && typeof jsonObj.result === 'object') {
+    if (isDataRecord(jsonObj.result)) rawList = [jsonObj.result];
+  } else if (jsonObj.response && typeof jsonObj.response === 'object') {
+    if (isDataRecord(jsonObj.response)) rawList = [jsonObj.response];
+  } else if (jsonObj.results && typeof jsonObj.results === 'object') {
+    const childObjs = Object.values(jsonObj.results).filter(v => isDataRecord(v));
+    if (childObjs.length > 0) rawList = childObjs;
+    else if (isDataRecord(jsonObj.results)) rawList = [jsonObj.results];
   } else if (typeof jsonObj === 'object') {
-    const vals = Object.values(jsonObj).filter(v => v && typeof v === 'object');
-    if (vals.length > 0) {
-      const hasRealData = vals.some((v: any) => v.name || v.mobile || v.full_name || v.BRANCH || v.BANK || v.IFSC || v.id || v.address);
-      if (hasRealData) {
-        rawList = vals;
-      }
+    const childObjs = Object.values(jsonObj).filter(v => isDataRecord(v));
+    if (childObjs.length > 0) {
+      rawList = childObjs;
+    } else if (isDataRecord(jsonObj)) {
+      rawList = [jsonObj];
     }
   }
 
-  const validRecords = rawList.filter(rec => rec && typeof rec === 'object' && Object.keys(rec).length > 0);
+  const validRecords = rawList
+    .filter(rec => rec && typeof rec === 'object')
+    .map(rec => cleanBrandingObject(rec))
+    .filter(rec => isDataRecord(rec));
 
   if (validRecords.length === 0) {
-    return { success: false, records: [], error: 'No matching records found' };
+    return { success: false, records: [], error: 'No matching records found for this query' };
   }
 
   return { success: true, records: validRecords };
