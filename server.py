@@ -1127,8 +1127,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
         "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
         "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo",
-        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx",
-        "darkdeveloper", "darkdeveloper02", "dark_developer"
+        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx"
     ]
     for line in lines:
         line_lower = line.lower().strip()
@@ -1138,7 +1137,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
             continue
         # Strip some inline patterns
         line = re.sub(
-            r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
             '',
             line,
             flags=re.IGNORECASE
@@ -1293,7 +1292,7 @@ def clean_branding_recursive(obj):
         import re
         # Aggressive regular expression matching all forms of supplier branding
         pattern = re.compile(
-            r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
             re.IGNORECASE
         )
         val = pattern.sub("", obj)
@@ -1301,8 +1300,8 @@ def clean_branding_recursive(obj):
         val = re.sub(r'\s+', ' ', val).strip()
         # Clean trailing and leading punctuation leftover from branding removal
         val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
-        if not val or val.upper() in ["", "BOSS", "N/A", "NA", "N-A", "NULL"]:
-            return ""
+        if not val or val.upper() in ["", "BOSS"]:
+            return "N/A"
         return val
     return obj
 
@@ -1312,87 +1311,69 @@ def make_api_response(data: dict) -> dict:
     return data
 
 def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
-    if not isinstance(raw_json, (dict, list)):
-        raw_json = {}
-
-    items = []
-    if isinstance(raw_json, list):
-        items = raw_json
-    elif isinstance(raw_json, dict):
-        extracted = raw_json.get('results') or raw_json.get('data') or raw_json.get('records') or raw_json.get('result') or raw_json.get('response') or raw_json.get('output') or raw_json.get('items')
-        if isinstance(extracted, list):
-            items = extracted
-        elif isinstance(extracted, dict):
-            child_dicts = [v for v in extracted.values() if isinstance(v, dict)]
-            if child_dicts:
-                items = child_dicts
-            else:
-                items = [extracted]
-        else:
-            child_dicts = [v for v in raw_json.values() if isinstance(v, dict)]
-            if child_dicts and any(str(k).startswith(('Result', 'result', '0', '1', 'item', 'record')) for k in raw_json.keys()):
-                items = child_dicts
-            else:
-                non_meta = [k for k in raw_json.keys() if str(k).lower() not in ['status', 'success', 'message', 'msg', 'error', 'query', 'buy_api', 'website', 'owner_telegram', 'api_status', 'timestamp', 'developer', 'processing_time']]
-                if non_meta:
-                    items = [raw_json]
-
+    # Detect items: could be a list or a dict (Result 1, Result 2, etc.)
+    items = raw_json.get('results') or raw_json.get('data') or raw_json.get('records')
+    
+    # Safely handle the case where raw_json is already the parsed results dictionary (e.g. from plain-text API responses)
+    if not items and isinstance(raw_json, dict):
+        has_nested = any(isinstance(v, dict) for v in raw_json.values())
+        if has_nested:
+            items = raw_json
+        elif any(k in raw_json for k in ["name", "mobile", "phone", "full_name"]):
+            items = {"Result 1": raw_json}
+            
     clean_results = {}
-    clean_data_list = []
+    
+    # CASE 1: Items is a Dictionary (e.g., {"Result 1": {...}})
+    if isinstance(items, dict):
+        for key, val in items.items():
+            if isinstance(val, dict):
+                clean_results[key] = {
+                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
+                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
+                    "mobile": str(val.get('mobile', val.get('number', query_num))),
+                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
+                    "email": str(val.get('email', 'N/A')),
+                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
+                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
+                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
+                    "address": str(val.get('address', val.get('location', 'N/A')))
+                }
+    
+    # CASE 2: Items is a List
+    elif isinstance(items, list):
+        for i, val in enumerate(items, 1):
+            if isinstance(val, dict):
+                clean_results[f"Result {i}"] = {
+                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
+                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
+                    "mobile": str(val.get('mobile', val.get('number', query_num))),
+                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
+                    "email": str(val.get('email', 'N/A')),
+                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
+                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
+                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
+                    "address": str(val.get('address', val.get('location', 'N/A')))
+                }
+    
+    # CASE 3: Raw response is the data itself or we can locate data inside raw_json itself
+    elif raw_json.get('status') is True or raw_json.get('name') or raw_json.get('owner_name') or raw_json.get('data') or isinstance(raw_json.get('data'), list):
+        clean_results["Result 1"] = {
+            "name": str(raw_json.get('name', raw_json.get('owner_name', 'N/A'))).upper(),
+            "father_name": str(raw_json.get('father_name', 'N/A')).upper(),
+            "mobile": str(raw_json.get('mobile', query_num)),
+            "alt_mobile": str(raw_json.get('alt_mobile', 'N/A')),
+            "email": str(raw_json.get('email', 'N/A')),
+            "aadhar_number": str(raw_json.get('aadhar_number', 'N/A')),
+            "operator": str(raw_json.get('operator', 'N/A')).upper(),
+            "state_circle": str(raw_json.get('circle', 'N/A')).upper(),
+            "address": str(raw_json.get('address', 'N/A'))
+        }
 
-    for i, val in enumerate(items, 1):
-        if not isinstance(val, dict):
-            continue
-        
-        # Start with ALL fields from val to never lose any field returned by upstream API!
-        record = dict(val)
+    # Clean the brand marks and references (such as Tech Vishal) recursively
+    clean_results = clean_branding_recursive(clean_results)
 
-        # Standardize & Alias common fields
-        name_val = record.get('name') or record.get('full_name') or record.get('owner_name') or record.get('holder_name') or record.get('person_name')
-        if name_val is not None:
-            record['name'] = str(name_val).strip().upper()
-            record['full_name'] = record['name']
-
-        fname_val = record.get('fname') or record.get('father_name') or record.get('fathername') or record.get('care_of')
-        if fname_val is not None:
-            record['fname'] = str(fname_val).strip().upper()
-            record['father_name'] = record['fname']
-
-        mobile_val = record.get('mobile') or record.get('number') or record.get('phone') or record.get('contact') or record.get('mobile_no')
-        if mobile_val is not None:
-            record['mobile'] = str(mobile_val).strip()
-
-        alt_val = record.get('alt') or record.get('alt_mobile') or record.get('alt_number') or record.get('alternate_mobile')
-        if alt_val is not None:
-            record['alt_mobile'] = str(alt_val).strip()
-
-        id_val = record.get('id') or record.get('aadhar_number') or record.get('aadhaar_number') or record.get('aadhar') or record.get('uid')
-        if id_val is not None:
-            record['aadhar_number'] = str(id_val).strip()
-
-        circle_val = record.get('circle') or record.get('state_circle') or record.get('state') or record.get('location')
-        if circle_val is not None:
-            record['state_circle'] = str(circle_val).strip().upper()
-            record['circle'] = record['state_circle']
-
-        addr_val = record.get('address') or record.get('location') or record.get('full_address')
-        if addr_val is not None:
-            record['address'] = str(addr_val).strip()
-
-        # Clean empty/null/N/A values to empty string instead of forced N/A
-        cleaned_record = {}
-        for k, v in record.items():
-            if v is None or v == 'null' or v == 'n-a' or v == 'NA' or v == 'N/A' or str(v).strip() == '':
-                cleaned_record[k] = ""
-            elif isinstance(v, str):
-                cleaned_record[k] = v.strip()
-            else:
-                cleaned_record[k] = v
-
-        cleaned_record = clean_branding_recursive(cleaned_record)
-        clean_results[f"Result {i}"] = cleaned_record
-        clean_data_list.append(cleaned_record)
-
+    # All search results are retained and forwarded without truncation
     return make_api_response({
         "status": "success" if clean_results else "failed",
         "success": True if clean_results else False,
@@ -1404,8 +1385,7 @@ def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
             "expires_at": plan_info.get('expires_at', 'N/A'),
             "requests_used": usage
         },
-        "results": clean_results,
-        "data": clean_data_list
+        "results": clean_results
     })
 
 def sanitize_error_message(msg: str) -> str:
@@ -1566,7 +1546,7 @@ async def support_lookup(
 
         if selected_service == "phone":
             clean_phone = re.sub(r'\D', '', cleaned_query)
-            new_api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_phone)}"
+            new_api_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={urllib.parse.quote(clean_phone)}"
             try:
                 resp = requests.get(new_api_url, headers=headers, timeout=15)
                 if resp.status_code == 200:
@@ -1606,28 +1586,25 @@ async def support_lookup(
             except Exception as err:
                 print(f"[SUPPORT_LOOKUP] Telegram lookup error in Python: {err}")
 
-        elif selected_service == "pancard":
-            return {
-                "status": "error",
-                "error": "PN / PAN Card lookup is currently under maintenance. Please try again later."
-            }
-
         else:
             api_url = ""
             if selected_service == "adhr":
                 clean_digits = re.sub(r'[^0-9]', '', cleaned_query)
-                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_digits)}"
+                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(clean_digits)}"
             elif selected_service == "bnk":
                 clean_ifsc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_ifsc)}"
+                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(clean_ifsc)}"
             elif selected_service == "vehicle":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_rc)}"
+                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(clean_rc)}"
             elif selected_service == "veh_owner_num":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(clean_rc)}"
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(clean_rc)}"
             elif selected_service == "email":
-                api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(cleaned_query)}"
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+            elif selected_service == "pancard":
+                clean_pan = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(clean_pan)}"
 
             if api_url:
                 try:
@@ -1890,7 +1867,7 @@ async def user_lookup(
     try:
         if service_clean == 'phone':
             # Query the primary phone API
-            new_api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(cleaned_query)}"
+            new_api_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={urllib.parse.quote(cleaned_query)}"
             try:
                 print(f"[user-lookup] Fetching phone API: {new_api_url}")
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
@@ -1939,13 +1916,31 @@ async def user_lookup(
                     print(f"[Phone API fallback failed]: {fb_err}")
                     
         else:
-            if service_clean == 'pancard':
-                return jsonify({
-                    "status": "error",
-                    "message": "PN / PAN Card lookup is currently under maintenance. Please try again later."
-                }), 200
-
-            api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query or cleaned_query)}"
+            api_url = ""
+            if service_clean == 'adhr':
+                target_query = re.sub(r'[^0-9]', '', cleaned_query)
+                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'bnk':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'vehicle':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(target_query)}"
+            elif service_clean == 'pancard':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(target_query)}"
+            elif service_clean == 'aadhaar_to_pan' or service_clean == 'aadhaar_pan':
+                target_query = re.sub(r'[^0-9]', '', cleaned_query)
+                api_key = "c8117598aafa71238a4bf8377087b0ff"
+                api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={urllib.parse.quote(target_query)}"
+            elif service_clean == 'telegram':
+                target_query = cleaned_query.lstrip('@')
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_query)}"
+            elif service_clean == 'email':
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+            elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
+                target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
+                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
                 
             if api_url:
                 print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
@@ -2001,112 +1996,80 @@ async def user_lookup(
             "results": {"error": "Search gateway is currently unavailable. Please try again later."}
         })
 
-def check_plan_permission(plan_name: str, service_name: str) -> bool:
-    if not plan_name:
-        return True
-    p = str(plan_name).upper()
-    if any(k in p for k in [
-        "MASTER", "INTERNAL", "COMBO", "SPECIAL", "API", "UNLIMITED",
-        "ALL", "FULL", "VIP", "SYSTEM", "PRO", "INFINITY", "DAYS",
-        "MONTH", "REQ", "BASIC", "STANDARD", "PREMIUM", "STARTER", "GENERAL", "ACTIVE"
-    ]):
-        return True
-    
-    s = str(service_name).lower()
-    if "phone" in s or "number" in s or "mobile" in s:
-        return any(k in p for k in ["NUMBER", "PHONE", "MOBILE", "NUM"])
-    if "telegram" in s or "tg" in s:
-        return any(k in p for k in ["TELEGRAM", "TG", "TELE"])
-    if "identity" in s or "adhr" in s or "aadhaar" in s or "id" in s:
-        return any(k in p for k in ["ADHR", "IDENTITY", "AADH", "CARD", "ID"])
-    if "bank" in s or "bnk" in s or "ifsc" in s:
-        return any(k in p for k in ["BNK", "BANK", "IFSC"])
-    if "rasion" in s or "ration" in s or "family" in s:
-        return any(k in p for k in ["RASION", "RATION", "FAMILY"])
-    if "vehicle" in s or "rc" in s or "vahan" in s:
-        return any(k in p for k in ["VEHICLE", "RC", "VAHAN"])
-    if "veh_owner_num" in s or "veh_numm" in s or "veh-owner-num" in s:
-        return any(k in p for k in ["VEH", "RC", "VEHICLE"])
-    if "email" in s or "mail" in s:
-        return any(k in p for k in ["EMAIL", "MAIL"])
-    if "pan" in s or "pancard" in s or "panfind" in s or "aadhaar_to_pan" in s:
-        return any(k in p for k in ["PAN", "PN", "AADHAAR_TO_PAN"])
-        
-    return True
-
 @app.get("/api/lookup")
-@app.get("/api/v1/lookup")
-@app.get("/api/v1/lookup.php")
-@app.get("/lookup.php")
-@app.get("/lookup")
-@app.get("/api.php")
-@app.get("/api/search")
 async def saas_lookup(
     request: Request,
     key: Optional[str] = Query(None),
-    api_key: Optional[str] = Query(None),
     number: Optional[str] = Query(None),
     query: Optional[str] = Query(None),
     numquery: Optional[str] = Query(None),
-    service: Optional[str] = Query(None),
-    type: Optional[str] = Query(None)
+    service: Optional[str] = Query(None)
 ):
     start_time = time.time()
     
-    api_key_val = key or api_key or request.query_params.get("api_key")
-    selected_service = (service or type or request.query_params.get("type") or "").lower().strip()
-    target_q = (
-        query or 
-        number or 
-        numquery or 
-        request.query_params.get("phone") or 
-        request.query_params.get("term") or 
-        request.query_params.get("tgquery") or 
-        request.query_params.get("adhrquery") or 
-        request.query_params.get("bnkquery") or 
-        request.query_params.get("vehiclequery") or 
-        request.query_params.get("rc") or 
-        ""
-    ).strip()
+    # Route right away if service is passed
+    if service:
+        service_lower = service.lower()
+        if service_lower in ["adhr", "identity", "aadhaar", "aadhar"]:
+            return await identity_lookup(
+                request=request, 
+                key=key, 
+                query=query or number or numquery
+            )
+        elif service_lower in ["bnk", "bank", "ifsc"]:
+            return await bank_lookup(
+                request=request, 
+                key=key, 
+                query=query or number or numquery
+            )
+        elif service_lower in ["telegram", "tg", "tele"]:
+            return await telegram_lookup(
+                request=request, 
+                key=key, 
+                query=query or number or numquery
+            )
+        elif service_lower in ["vehicle", "rc", "vahan"]:
+            rc_arg = request.query_params.get("rc") or query or number or numquery
+            return await vehicle_lookup(
+                request=request,
+                key=key,
+                rc=rc_arg
+            )
+        elif service_lower in ["email", "mail"]:
+            return await email_lookup(
+                request=request,
+                key=key,
+                query=query or number or numquery
+            )
+        elif service_lower in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm"]:
+            rc_arg = request.query_params.get("rc") or query or number or numquery
+            return await veh_owner_num_lookup(
+                request=request,
+                key=key,
+                rc=rc_arg
+            )
 
-    # Route right away if service/type is passed
-    if selected_service:
-        if selected_service in ["adhr", "identity", "aadhaar", "aadhar", "id"]:
-            return await identity_lookup(request=request, key=api_key_val, query=target_q)
-        elif selected_service in ["bnk", "bank", "ifsc"]:
-            return await bank_lookup(request=request, key=api_key_val, query=target_q)
-        elif selected_service in ["telegram", "tg", "tele"]:
-            return await telegram_lookup(request=request, key=api_key_val, query=target_q)
-        elif selected_service in ["vehicle", "rc", "vahan"]:
-            return await vehicle_lookup(request=request, key=api_key_val, rc=target_q)
-        elif selected_service in ["email", "mail"]:
-            return await email_lookup(request=request, key=api_key_val, query=target_q)
-        elif selected_service in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm", "vehicle_to_number"]:
-            return await veh_owner_num_lookup(request=request, key=api_key_val, rc=target_q)
-        elif selected_service in ["aadhaar_to_pan", "adhr_to_pan", "aadhar_to_pan"]:
-            return await aadhaar_to_pan_lookup(request=request, key=api_key_val, aadhaar_number=target_q)
 
-    num = target_q
+    num = (number or query or numquery or "").strip()
 
     import re
-    if not selected_service and num:
+    if not service and num:
         if "@" in num and "." in num:
-            return await email_lookup(request=request, key=api_key_val, query=num)
+            return await email_lookup(request=request, key=key, query=num)
         elif re.match(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', num):
-            return await bank_lookup(request=request, key=api_key_val, query=num)
+            return await bank_lookup(request=request, key=key, query=num)
         elif re.match(r'^[A-Za-z0-9]{4,11}$', num) and any(c.isalpha() for c in num) and any(c.isdigit() for c in num) and "_" not in num and not num.startswith("@"):
-            return await vehicle_lookup(request=request, key=api_key_val, rc=num)
+            return await vehicle_lookup(request=request, key=key, rc=num)
         elif num.isdigit() and len(num) == 12:
-            return await identity_lookup(request=request, key=api_key_val, query=num)
+            return await identity_lookup(request=request, key=key, query=num)
 
     try:
         # 1. Rate Limiting Check
         if not check_rate_limit(request):
             return make_api_response({"status": "error", "message": "Too many requests. Please slow down."})
 
-        effective_key = key or api_key_val or request.query_params.get("key") or request.query_params.get("api_key")
         # 2. Key Check (Parameter level check)
-        if not effective_key:
+        if not key:
             return make_api_response({"status": "error", "message": "Access Denied: Please provide your 'key' parameter"})
 
         db = get_supabase()
@@ -2114,7 +2077,7 @@ async def saas_lookup(
             return make_api_response({"status": "error", "message": "ServerDown: Database connection failure"})
 
         # Determine if master key is used
-        is_master = effective_key == INTERNAL_MASTER_KEY
+        is_master = key == INTERNAL_MASTER_KEY
 
         # 3. Authentication & Plan Validity (Must pass prior to checking target safety status to avoid enumeration attacks)
         license = None
@@ -2122,9 +2085,9 @@ async def saas_lookup(
         user_email = None
 
         if not is_master:
-            auth_query = db.table("api_keys").select("*").eq("api_key", effective_key).execute()
+            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
             if not auth_query.data or len(auth_query.data) == 0:
-                print(f"[AUTH_FAIL] Key: {effective_key}")
+                print(f"[AUTH_FAIL] Key: {key}")
                 return make_api_response({"status": "error", "message": "Auth Failed: Invalid API key"})
             
             license = auth_query.data[0]
@@ -2153,7 +2116,8 @@ async def saas_lookup(
         # Check permission for Number Lookup
         plan_name = license.get('plan_name') or ""
         plan_upper = str(plan_name).upper()
-        if not is_master and not check_plan_permission(plan_name, "number"):
+        is_num_allowed = any(p in plan_upper for p in ["NUMBER", "PRO", "INFINITY", "COMBO", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
+        if not is_num_allowed:
             return make_api_response({
                 "status": "error",
                 "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated a 'number' query."
@@ -2307,7 +2271,7 @@ async def saas_lookup(
         if is_telegram_query:
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num.lstrip('@')
-            api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_username)}"
+            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2461,11 +2425,15 @@ async def saas_lookup(
 
                 results = {
                     "Telegram Match": {
-                        "name": username or "",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else "",
-                        "mobile": phone if phone != "N/A" else "",
-                        "alt_mobile": country_code if country_code != "N/A" else "",
-                        "operator": country if country != "N/A" else "",
+                        "name": username,
+                        "telegram_id": telegram_id,
+                        "mobile": phone,
+                        "father_name": "N/A",
+                        "alt_mobile": country_code,
+                        "email": "N/A",
+                        "operator": country,
+                        "state_circle": "N/A",
+                        "address": "N/A",
                         "platform": "Telegram Lookup"
                     }
                 }
@@ -2502,13 +2470,13 @@ async def saas_lookup(
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
         # Hardcoded primary engine source as requested to avoid environment variable dependency
-        target_template = "https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query="
+        target_template = "https://exploitsindia.site//anish-private-api//number.php?exploits="
         
         # Override to ensure only this API is always used
-        target_template = "https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query="
+        target_template = "https://exploitsindia.site//anish-private-api//number.php?exploits="
         
         # Execution
-        final_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={num}"
+        final_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={num}"
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
@@ -2720,7 +2688,7 @@ async def telegram_lookup(
         except Exception as cache_err:
             print(f"[Telegram Cache Read Error] {cache_err}")
 
-        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_username)}"
+        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2755,17 +2723,17 @@ async def telegram_lookup(
             cleaned_json = clean_branding_recursive(parsed)
             
             telegram_id = cleaned_json.get('tg_id') or cleaned_json.get('telegram_id') or target_username
-            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or ""
+            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or "N/A"
             username = cleaned_json.get('username') or cleaned_json.get('name') or target_username
-            country = cleaned_json.get('country') or ""
-            country_code = cleaned_json.get('country_code') or ""
+            country = cleaned_json.get('country') or "N/A"
+            country_code = cleaned_json.get('country_code') or "N/A"
 
-            if not telegram_id and not phone:
+            if telegram_id == "N/A" and phone == "N/A":
                 return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
             # Post-fetch validation to verify protection status (both for Telegram ID and username)
             post_protected = False
-            if telegram_id:
+            if telegram_id != "N/A":
                 try:
                     p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
                     if p_query_id and p_query_id.data:
@@ -2773,7 +2741,7 @@ async def telegram_lookup(
                 except Exception as e_post1:
                     print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
 
-            if not post_protected and username:
+            if not post_protected and username and username != "N/A":
                 clean_un = username.lstrip('@')
                 at_un = f"@{clean_un}"
                 try:
@@ -2798,7 +2766,7 @@ async def telegram_lookup(
                 protected_results = {
                     "Telegram Match": {
                         "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id or targetTelegramId,
+                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
                         "mobile": "PROTECTED @ TRACEX SHIELD",
                         "father_name": "PROTECTED @ TRACEX SHIELD",
                         "alt_mobile": "PROTECTED @ TRACEX SHIELD",
@@ -2817,11 +2785,15 @@ async def telegram_lookup(
 
             results = {
                 "Telegram Match": {
-                    "name": username or "",
-                    "telegram_id": telegram_id if telegram_id != "N/A" else "",
-                    "mobile": phone if phone != "N/A" else "",
-                    "alt_mobile": country_code if country_code != "N/A" else "",
-                    "operator": country if country != "N/A" else "",
+                    "name": username,
+                    "telegram_id": telegram_id,
+                    "mobile": phone,
+                    "father_name": "N/A",
+                    "alt_mobile": country_code,
+                    "email": "N/A",
+                    "operator": country,
+                    "state_circle": "N/A",
+                    "address": "N/A",
                     "platform": "Telegram Lookup"
                 }
             }
@@ -2867,12 +2839,12 @@ async def telegram_lookup(
                 codeMatch = re.search(r"\"country_code\"\s*:\s*\"([^\"]+)\"", cleanedText, re.IGNORECASE)
 
             username = usernameMatch.group(1).strip() if usernameMatch else targetTelegramId
-            telegram_id = idMatch.group(1).strip() if idMatch else ""
-            phone = phoneMatch.group(1).strip() if phoneMatch else ""
-            country = countryMatch.group(1).strip() if countryMatch else ""
-            country_code = codeMatch.group(1).strip() if codeMatch else ""
+            telegram_id = idMatch.group(1).strip() if idMatch else "N/A"
+            phone = phoneMatch.group(1).strip() if phoneMatch else "N/A"
+            country = countryMatch.group(1).strip() if countryMatch else "N/A"
+            country_code = codeMatch.group(1).strip() if codeMatch else "N/A"
 
-            if not telegram_id and not phone:
+            if telegram_id == "N/A" and phone == "N/A":
                 return make_api_response({
                     "status": "success", 
                     "results": {}, 
@@ -2881,7 +2853,7 @@ async def telegram_lookup(
 
             # Post-fetch validation to verify protection status (both for Telegram ID and username)
             post_protected = False
-            if telegram_id:
+            if telegram_id != "N/A":
                 try:
                     p_query_id = db.table("protected_telegrams").select("telegram_id").eq("telegram_id", telegram_id).execute()
                     if p_query_id and p_query_id.data:
@@ -2889,7 +2861,7 @@ async def telegram_lookup(
                 except Exception as e_post1:
                     print(f"[API_POST_ID_PROTECT_ERR] {e_post1}")
 
-            if not post_protected and username:
+            if not post_protected and username and username != "N/A":
                 clean_un = username.lstrip('@')
                 at_un = f"@{clean_un}"
                 try:
@@ -2914,7 +2886,7 @@ async def telegram_lookup(
                 protected_results = {
                     "Telegram Match": {
                         "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id or targetTelegramId,
+                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
                         "mobile": "PROTECTED @ TRACEX SHIELD",
                         "father_name": "PROTECTED @ TRACEX SHIELD",
                         "alt_mobile": "PROTECTED @ TRACEX SHIELD",
@@ -2933,11 +2905,15 @@ async def telegram_lookup(
 
             results = {
                 "Telegram Match": {
-                    "name": username or "",
-                    "telegram_id": telegram_id if telegram_id != "N/A" else "",
-                    "mobile": phone if phone != "N/A" else "",
-                    "alt_mobile": country_code if country_code != "N/A" else "",
-                    "operator": country if country != "N/A" else "",
+                    "name": username,
+                    "telegram_id": telegram_id,
+                    "mobile": phone,
+                    "father_name": "N/A",
+                    "alt_mobile": country_code,
+                    "email": "N/A",
+                    "operator": country,
+                    "state_circle": "N/A",
+                    "address": "N/A",
                     "platform": "Telegram Lookup"
                 }
             }
@@ -3062,7 +3038,7 @@ async def email_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query)}"
+    api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(target_query)}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3242,7 +3218,7 @@ async def identity_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
+    api_url = f"https://exploitsindia.site//osint-api/aadhar.php?exploits={target_query}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3414,7 +3390,7 @@ async def bank_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
+    api_url = f"https://exploitsindia.site//osint-api/ifsc.php?exploits={target_query}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3626,7 +3602,7 @@ async def vehicle_lookup(
             print(f"[CACHE_ERR] Vehicle cache check error in Python: {cache_err}")
 
         # Proxy fetch
-        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={target_query}"
+        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -3876,7 +3852,7 @@ async def veh_owner_num_lookup(
             print(f"[CACHE_ERR] Vehicle owner number cache check error: {cache_err}")
 
         # Proxy fetch
-        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_query)}"
+        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -4085,10 +4061,8 @@ async def pancard_lookup(
                 print(f"[DB_ERR] {db_err}")
                 return make_api_response({"status": "error", "message": "api error"})
                 
-        return jsonify({
-            "status": "error",
-            "message": "PN / PAN Card lookup is currently under maintenance. Please try again later."
-        }), 200
+        # Proxy fetch
+        api_url = f"https://exploitsindia.site//osint-api/pancard.php?exploits={target_query}"
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -4208,7 +4182,8 @@ async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query
             return JSONResponse(status_code=402, content={"error": "Payment verification failed. Please complete the Rs. 150 payment."})
 
         # 2. Execute external API
-        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_aadhaar)}"
+        api_key = "c8117598aafa71238a4bf8377087b0ff"
+        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
@@ -4238,13 +4213,11 @@ def scrub_all_branding(obj):
     if isinstance(obj, str):
         import re
         # Case-insensitive removal of any provider/developer related brand words
-        res = re.sub(r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
+        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
         res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
-        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '').strip()
-        if res.upper() in ["N/A", "NA", "N-A", "NULL"]:
-            return ""
-        return res
+        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
+        return res.strip()
     if isinstance(obj, list):
         return [scrub_all_branding(item) for item in obj]
     if isinstance(obj, dict):
@@ -4254,11 +4227,10 @@ def scrub_all_branding(obj):
             if lower_k in [
                 "branding", "success", "status", "found", "message", "api_info", "powered_by", 
                 "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
-                "provider", "api_buy_link", "website_link", "buy", "darkdeveloper02", "@darkdeveloper02", "darkdeveloper"
+                "provider", "api_buy_link", "website_link", "buy"
             ]:
                 continue
-            clean_k = re.sub(r'(@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)', '', k, flags=re.IGNORECASE).strip() or k
-            cleaned[clean_k] = scrub_all_branding(v)
+            cleaned[k] = scrub_all_branding(v)
         return cleaned
     return obj
 
@@ -4346,7 +4318,8 @@ async def aadhaar_to_pan_endpoint(request: Request):
         db.table("profiles").update({"credits": max(0, current_credits - cost)}).eq("id", user.id).execute()
 
         # 4. Query External PAN Find API
-        api_url = f"https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query={urllib.parse.quote(target_aadhaar)}"
+        api_key = "c8117598aafa71238a4bf8377087b0ff"
+        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"

@@ -27,7 +27,7 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
-const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || 'tracex_master_key_2025';
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
@@ -131,64 +131,6 @@ app.use('/api/admin', sensitiveLimiter);
 // Strict JSON parsing
 app.use(express.json({ limit: '10kb' }));
 
-// Universal response scrubbing middleware to sanitize all responses before sending to frontend or external APIs
-function sanitizeStringValue(str: string): string {
-  if (typeof str !== 'string') return str;
-  return str
-    .replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?/gi, '')
-    .replace(/darkdeveloper02/gi, '')
-    .replace(/darkdeveloper/gi, '')
-    .replace(/tech[\s\-_]*vishal(?:[\s\-_]*boss)?/gi, '')
-    .replace(/anish[\s\-_]*exploits/gi, '')
-    .replace(/cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)/gi, '')
-    .replace(/@?cyb(?:er|3r)s(?:oldier|0ldier)/gi, '')
-    .replace(/u(?:ers|ser)xinfo(?:\.in)?/gi, '')
-    .trim();
-}
-
-function sanitizeObjectPayload(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj === 'string') {
-    return sanitizeStringValue(obj);
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeObjectPayload(item));
-  }
-  if (typeof obj === 'object') {
-    const cleaned: Record<string, any> = {};
-    for (const key of Object.keys(obj)) {
-      const lowerKey = key.toLowerCase();
-      if (['darkdeveloper02', '@darkdeveloper02', 'darkdeveloper', 'developer'].includes(lowerKey)) {
-        continue;
-      }
-      const cleanKey = sanitizeStringValue(key) || key;
-      cleaned[cleanKey] = sanitizeObjectPayload(obj[key]);
-    }
-    return cleaned;
-  }
-  return obj;
-}
-
-app.use((req, res, next) => {
-  const originalJson = res.json.bind(res);
-  const originalSend = res.send.bind(res);
-
-  res.json = function (body: any) {
-    return originalJson(sanitizeObjectPayload(body));
-  };
-
-  res.send = function (body: any) {
-    if (typeof body === 'string') {
-      return originalSend(sanitizeStringValue(body));
-    } else if (body && typeof body === 'object') {
-      return originalSend(sanitizeObjectPayload(body));
-    }
-    return originalSend(body);
-  };
-
-  next();
-});
-
 
 // Healthy Check
 app.get("/api/health", (req, res) => {
@@ -206,12 +148,12 @@ app.get("/api/health", (req, res) => {
 // --- API SaaS CORE FUNCTIONS ---
 
 const StandardMapping = {
-  name: (item: any) => (item.name || item.full_name || "").toUpperCase(),
-  mobile: (item: any, q: string) => item.mobile || item.number || q || "",
-  alt_mobile: (item: any) => item.alt_mobile || item.alt_number || "",
-  operator: (item: any) => (item.operator || item.carrier || "").toUpperCase(),
-  circle: (item: any) => (item.state_circle || item.circle || item.state || "").toUpperCase(),
-  address: (item: any) => item.address || item.location || ""
+  name: (item: any) => (item.name || item.full_name || "N/A").toUpperCase(),
+  mobile: (item: any, q: string) => item.mobile || item.number || q || "N/A",
+  alt_mobile: (item: any) => item.alt_mobile || item.alt_number || "N/A",
+  operator: (item: any) => (item.operator || item.carrier || "N/A").toUpperCase(),
+  circle: (item: any) => (item.state_circle || item.circle || item.state || "N/A").toUpperCase(),
+  address: (item: any) => item.address || item.location || "N/A"
 };
 
 function filterApiResponse(rawData: any, query: string, planName: string, expiresAt: string, requestsUsed: number) {
@@ -229,7 +171,7 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
     results.forEach((item: any, idx: number) => {
       if (!item || typeof item !== 'object') return;
       
-      const filteredItem: any = { ...item, result_no: idx + 1 };
+      const filteredItem: any = { result_no: idx + 1 };
       filteredItem.name = StandardMapping.name(item);
       filteredItem.mobile = StandardMapping.mobile(item, query);
       filteredItem.alt_mobile = StandardMapping.alt_mobile(item);
@@ -237,10 +179,10 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
       filteredItem.circle = StandardMapping.circle(item);
       filteredItem.address = StandardMapping.address(item);
 
-      // Clean empty / null / N/A values to empty string instead of forced N/A
+      // Clean N/A values
       Object.keys(filteredItem).forEach(k => {
         const v = filteredItem[k];
-        if (!v || v === 'null' || v === 'n-a' || v === 'NA' || v === 'N/A' || String(v).trim() === '') filteredItem[k] = "";
+        if (!v || v === 'null' || v === 'n-a' || v === 'NA' || String(v).trim() === '') filteredItem[k] = "N/A";
       });
 
       cleanedData.push(filteredItem);
@@ -353,7 +295,7 @@ function formatUnifiedSaaSResponse({
   requestsUsed,
   records
 }: {
-  type: string;
+  type: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' | 'veh_owner_num' | 'email';
   query: string;
   expiresAt: string;
   planName: string;
@@ -361,49 +303,42 @@ function formatUnifiedSaaSResponse({
   records: any[];
 }) {
   const cleanedData: any[] = [];
-  const scrubbedRecords = scrubAllBranding(records);
-  const itemsList = Array.isArray(scrubbedRecords) ? scrubbedRecords : [scrubbedRecords];
 
-  itemsList.forEach((item, idx) => {
+  records.forEach((item, idx) => {
     if (!item || typeof item !== 'object') return;
 
     const filteredItem: any = { ...item, result_no: idx + 1 };
-
-    // Standardize & Alias common fields so buyers receive expected properties without missing any original fields
-    if (item.name || item.full_name || item.owner_name || item.holder_name || item.person_name) {
-      filteredItem.name = String(item.name || item.full_name || item.owner_name || item.holder_name || item.person_name).trim();
-      filteredItem.full_name = filteredItem.name;
-    }
-    if (item.fname || item.father_name || item.fathername || item.care_of) {
-      filteredItem.fname = String(item.fname || item.father_name || item.fathername || item.care_of).trim();
-      filteredItem.father_name = filteredItem.fname;
-    }
-    if (item.mobile || item.number || item.phone || item.contact || item.mobile_no || item.phone_number) {
-      filteredItem.mobile = String(item.mobile || item.number || item.phone || item.contact || item.mobile_no || item.phone_number).trim();
-    }
-    if (item.alt || item.alt_mobile || item.alt_number || item.alternate_mobile) {
-      filteredItem.alt = String(item.alt || item.alt_mobile || item.alt_number || item.alternate_mobile).trim();
-      filteredItem.alt_mobile = filteredItem.alt;
-    }
-    if (item.id || item.aadhaar_number || item.aadhar || item.uid) {
-      filteredItem.id = String(item.id || item.aadhaar_number || item.aadhar || item.uid).trim();
-      filteredItem.aadhaar_number = filteredItem.id;
-    }
-    if (item.circle || item.state_circle || item.state || item.location) {
-      filteredItem.circle = String(item.circle || item.state_circle || item.state || item.location).trim();
-      filteredItem.state_circle = filteredItem.circle;
-    }
-    if (item.address || item.full_address || item.location) {
-      filteredItem.address = String(item.address || item.full_address || item.location).trim();
+    
+    if (type === 'phone') {
+      filteredItem.name = (item.name || item.full_name || "N/A").toString().toUpperCase();
+      filteredItem.mobile = item.mobile || item.number || query || "N/A";
+      filteredItem.alt_mobile = item.alt_mobile || item.alt_number || "N/A";
+      filteredItem.operator = (item.operator || item.carrier || "N/A").toString().toUpperCase();
+      filteredItem.circle = (item.state_circle || item.circle || item.state || "N/A").toString().toUpperCase();
+      filteredItem.address = item.address || item.location || "N/A";
+    } else if (type === 'telegram') {
+      filteredItem.name = (item.name || "Telegram Registered Profile").toString().toUpperCase();
+      filteredItem.telegram_id = item.telegram_id || query;
+      filteredItem.username = item.username || "N/A";
+      filteredItem.mobile = item.mobile || "N/A";
+    } else {
+      // Dynamic mapping for Aadhar, Bank (IFSC), and Ration Card lookups
+      Object.entries(item).forEach(([key, val]) => {
+        if (key === 'result_no') return;
+        const normalizedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
+        let cleanedVal = val;
+        if (typeof val === 'string') {
+          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim().toUpperCase();
+        }
+        filteredItem[normalizedKey] = cleanedVal;
+      });
     }
 
-    // Clean empty/null/N/A values to empty string instead of forced N/A
+    // Clean N/A values and format keys elegantly
     Object.keys(filteredItem).forEach(k => {
       const v = filteredItem[k];
-      if (v === undefined || v === null || v === 'null' || v === 'n-a' || v === 'NA' || v === 'N/A' || String(v).trim() === '') {
-        filteredItem[k] = "";
-      } else if (typeof v === 'string') {
-        filteredItem[k] = v.trim();
+      if (v === undefined || v === null || v === 'null' || v === 'n-a' || v === 'NA' || String(v).trim() === '') {
+        filteredItem[k] = "N/A";
       }
     });
 
@@ -423,14 +358,12 @@ function formatUnifiedSaaSResponse({
     status: cleanedData.length > 0 ? "success" : "not_found",
     buy_api: "https://tracexdata.online/buy-api",
     website: "https://tracexdata.online",
-    developer: "TraceXData Intelligence",
-    owner_telegram: "@gaurav_beniwal_0001",
     query: query,
     api_status: {
-      plan: planName || "Active Plan",
-      expires_at: expiresAt || "Lifetime",
+      plan: planName,
+      expires_at: expiresAt,
       time_left: expiresAt ? `${hoursLeft}h ${minsLeft}m` : "Active",
-      requests_used: requestsUsed || 0
+      requests_used: requestsUsed
     },
     results_found: cleanedData.length,
     results: resultsObj,
@@ -442,7 +375,7 @@ function formatUnifiedSaaSResponse({
 function cleanBrandingObject(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim();
+    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
   }
   if (Array.isArray(obj)) {
     return obj.map(item => cleanBrandingObject(item));
@@ -450,12 +383,7 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
-      const lowerKey = key.toLowerCase();
-      if (['darkdeveloper02', '@darkdeveloper02', 'darkdeveloper', 'developer'].includes(lowerKey)) {
-        continue;
-      }
-      const cleanKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim() || key;
-      cleaned[cleanKey] = cleanBrandingObject(obj[key]);
+      cleaned[key] = cleanBrandingObject(obj[key]);
     }
     return cleaned;
   }
@@ -522,7 +450,7 @@ function parsePhonePlainText(text: string): any {
 // Helper to parse unstructured plain text responses into structured JSON
 function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any {
   const result: any = {};
-  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper)/gi, "").trim();
+  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;
@@ -995,7 +923,7 @@ app.all("/api/support-lookup", async (req, res) => {
 
     if (service === 'phone') {
       const cleanPhone = cleanedQuery.replace(/\D/g, '');
-      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(cleanPhone)}`;
+      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(cleanPhone)}`;
       try {
         const resp = await fetch(newApiUrl, { headers });
         if (resp.ok) {
@@ -1040,37 +968,44 @@ app.all("/api/support-lookup", async (req, res) => {
       } catch (e) {
         console.error("[SUPPORT_LOOKUP] Telegram API error:", e);
       }
-    } else if (service === 'pancard') {
-      return res.status(200).json({
-        status: "error",
-        error: "PN / PAN Card lookup is currently under maintenance. Please try again later."
-      });
     } else {
-      let targetQuery = cleanedQuery.trim();
-      if (service === 'adhr') targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-      else if (service === 'bnk' || service === 'vehicle' || service === 'veh_owner_num') targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      
-      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-      
-      try {
-        const resp = await fetch(api_url, { headers });
-        if (resp.ok) {
-          const text = await resp.text();
-          let parsed: any;
-          try { parsed = JSON.parse(text); } catch (e) {
-            parsed = parsePlainTextLookup(text, 'aadhar');
+      let api_url = "";
+      if (service === 'adhr') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'bnk') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'vehicle') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'veh_owner_num') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'email') {
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
+      } else if (service === 'pancard') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+      }
+
+      if (api_url) {
+        try {
+          const resp = await fetch(api_url, { headers });
+          if (resp.ok) {
+            const text = await resp.text();
+            let parsed: any;
+            try { parsed = JSON.parse(text); } catch (e) {
+              let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
+              if (service === 'bnk') parseType = 'bank';
+              else if (service === 'pancard') parseType = 'pan';
+              parsed = parsePlainTextLookup(text, parseType);
+            }
+            responseData = parsed;
           }
-          const parsedResult = parseCloudflareApiResponse(parsed);
-          if (parsedResult.success && parsedResult.records.length > 0) {
-            const map: Record<string, any> = {};
-            parsedResult.records.forEach((rec, idx) => {
-              map[`Result ${idx + 1}`] = rec;
-            });
-            responseData = map;
-          }
+        } catch (e) {
+          console.error("[SUPPORT_LOOKUP] External API error:", e);
         }
-      } catch (e) {
-        console.error("[SUPPORT_LOOKUP] External API error:", e);
       }
     }
 
@@ -1405,7 +1340,7 @@ app.get("/api/user-lookup", async (req, res) => {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
       
-      const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(cleanedQuery)}`;
+      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
       const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
@@ -1504,39 +1439,51 @@ app.get("/api/user-lookup", async (req, res) => {
       } catch (err) {
         console.error("Internal telegram API query failed:", err);
       }
-    } else if (service === 'pancard') {
-      return res.status(200).json({
-        status: "success",
-        results: { error: "PN / PAN Card lookup is currently under maintenance. Please try again later." }
-      });
     } else {
-      let targetQuery = cleanedQuery.trim();
-      if (service === 'adhr' || service === 'aadhaar_to_pan') targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-      else if (service === 'bnk' || service === 'vehicle' || service === 'veh_owner_num') targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      let api_url = "";
+      if (service === 'adhr') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'bnk') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'vehicle') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'veh_owner_num') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'email') {
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
+      } else if (service === 'pancard') {
+        const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+      } else if (service === 'aadhaar_to_pan') {
+        const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
+        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+      }
 
-      const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-
-      try {
+      if (api_url) {
         const response = await fetch(api_url, { headers });
         if (response.ok) {
           const text = await response.text();
+          // Try to parse JSON first
           let parsed: any;
           try {
             parsed = JSON.parse(text);
           } catch (e) {
-            parsed = parsePlainTextLookup(text, 'aadhar');
+            // Parse plain text
+            let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
+            if (service === 'bnk') parseType = 'bank';
+            else if (service === 'pancard') parseType = 'pan';
+            else if (service === 'aadhaar_to_pan') parseType = 'pan';
+            parsed = parsePlainTextLookup(text, parseType);
           }
-          const parsedResult = parseCloudflareApiResponse(parsed);
-          if (parsedResult.success && parsedResult.records.length > 0) {
-            const map: Record<string, any> = {};
-            parsedResult.records.forEach((rec, idx) => {
-              map[`Result ${idx + 1}`] = rec;
-            });
-            responseData = map;
-          }
+          responseData = parsed;
+        } else {
+          throw new Error(`API status ${response.status}`);
         }
-      } catch (err) {
-        console.error("User lookup external API error:", err);
       }
     }
 
@@ -1605,100 +1552,35 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 });
 
-function checkPlanPermission(planName: string, serviceName: string): boolean {
-  if (!planName) return true;
-  const p = String(planName).toUpperCase();
-  // General or active plans that allow all services
-  if (
-    p.includes("MASTER") || p.includes("INTERNAL") || p.includes("COMBO") ||
-    p.includes("SPECIAL") || p.includes("API") || p.includes("UNLIMITED") ||
-    p.includes("ALL") || p.includes("FULL") || p.includes("VIP") ||
-    p.includes("SYSTEM") || p.includes("PRO") || p.includes("INFINITY") ||
-    p.includes("DAYS") || p.includes("MONTH") || p.includes("REQ") ||
-    p.includes("BASIC") || p.includes("STANDARD") || p.includes("PREMIUM") ||
-    p.includes("STARTER") || p.includes("GENERAL") || p.includes("ACTIVE")
-  ) {
-    return true;
-  }
-  
-  const s = String(serviceName).toLowerCase();
-  if (s.includes("phone") || s.includes("number") || s.includes("mobile")) {
-    return p.includes("NUMBER") || p.includes("PHONE") || p.includes("MOBILE") || p.includes("NUM");
-  }
-  if (s.includes("telegram") || s.includes("tg")) {
-    return p.includes("TELEGRAM") || p.includes("TG") || p.includes("TELE");
-  }
-  if (s.includes("identity") || s.includes("adhr") || s.includes("aadhaar") || s.includes("id")) {
-    return p.includes("ADHR") || p.includes("IDENTITY") || p.includes("AADH") || p.includes("CARD") || p.includes("ID");
-  }
-  if (s.includes("bank") || s.includes("bnk") || s.includes("ifsc")) {
-    return p.includes("BNK") || p.includes("BANK") || p.includes("IFSC");
-  }
-  if (s.includes("rasion") || s.includes("ration") || s.includes("family")) {
-    return p.includes("RASION") || p.includes("RATION") || p.includes("FAMILY");
-  }
-  if (s.includes("vehicle") || s.includes("rc") || s.includes("vahan")) {
-    return p.includes("VEHICLE") || p.includes("RC") || p.includes("VAHAN");
-  }
-  if (s.includes("veh_owner_num") || s.includes("veh_numm") || s.includes("veh-owner-num")) {
-    return p.includes("VEH") || p.includes("RC") || p.includes("VEHICLE");
-  }
-  if (s.includes("email") || s.includes("mail")) {
-    return p.includes("EMAIL") || p.includes("MAIL");
-  }
-  if (s.includes("pan") || s.includes("pancard") || s.includes("panfind") || s.includes("aadhaar_to_pan")) {
-    return p.includes("PAN") || p.includes("PN") || p.includes("AADHAAR_TO_PAN");
-  }
-
-  return true;
-}
-
-app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "/lookup", "/api.php", "/api/search"], async (req, res) => {
+app.get("/api/lookup", async (req, res) => {
   const { 
     key, 
-    api_key,
     query, 
     numquery, 
     tgquery, 
     vehiclequery, 
-    adhrquery,
-    bnkquery,
-    rasionquery,
-    veh_owner_num_query,
-    email_query,
-    aadhaar_to_pan_query,
-    adhr_to_pan_query,
     number, 
     rc, 
     vehicle, 
     telegram, 
     tg, 
     phone, 
-    term,
-    ifsc,
-    aadhaar,
-    adhr,
-    family,
-    rasion,
-    service,
-    type
+    service 
   } = req.query;
-
-  const apiKey = String(key || api_key || "").trim();
   const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
   const startTime = Date.now();
 
   // Basic CORS and Content-Type
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
-  if (!apiKey) return res.status(401).json({ status: "error", message: "API key is required" });
-
-  const reqService = String(service || type || "").toLowerCase().trim();
+  if (!key) return res.status(401).json({ status: "error", message: "API key is required" });
 
   // Input Validation
-  if (reqService && reqService.length > 50) {
+  if (service && (typeof service !== 'string' || service.length > 50)) {
     return res.status(400).json({ status: "error", message: "Invalid service requested" });
   }
+
 
   if (!supabaseAdmin) {
     return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
@@ -1710,7 +1592,7 @@ app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
-    const isMaster = apiKey === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
 
     if (isMaster) {
       keyRecord = {
@@ -1725,7 +1607,7 @@ app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "
       const { data: keyRecords, error: keyErr } = await supabaseAdmin
         .from("api_keys")
         .select("*")
-        .eq("api_key", apiKey);
+        .eq("api_key", key);
 
       keyRecord = keyRecords?.[0];
 
@@ -1753,122 +1635,89 @@ app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "
       }
     }
 
-    // Combine raw candidate query inputs
-    const targetRaw = String(
-      numquery ||
-      tgquery ||
-      adhrquery ||
-      bnkquery ||
-      rasionquery ||
-      vehiclequery ||
-      veh_owner_num_query ||
-      email_query ||
-      aadhaar_to_pan_query ||
-      adhr_to_pan_query ||
-      query ||
-      number ||
-      phone ||
-      term ||
-      rc ||
-      vehicle ||
-      telegram ||
-      tg ||
-      ifsc ||
-      aadhaar ||
-      adhr ||
-      family ||
-      rasion ||
-      req.query.email ||
-      ""
-    ).trim();
-
     // 2. Identify Lookup Type and target query
-    if (reqService) {
-      if (['phone', 'number', 'mobile'].includes(reqService)) {
-        lookupType = 'phone';
-      } else if (['adhr', 'identity', 'aadhaar', 'aadhar', 'id'].includes(reqService)) {
-        lookupType = 'adhr';
-      } else if (['bnk', 'bank', 'ifsc'].includes(reqService)) {
-        lookupType = 'bnk';
-      } else if (['telegram', 'tg', 'tele'].includes(reqService)) {
+    // Priority 1: Explicit target parameters
+    if (numquery !== undefined) {
+      lookupType = 'phone';
+      targetQuery = String(numquery).trim();
+    } else if (tgquery !== undefined) {
+      lookupType = 'telegram';
+      targetQuery = String(tgquery).trim();
+    } else if (req.query.adhrquery !== undefined) {
+      lookupType = 'adhr';
+      targetQuery = String(req.query.adhrquery).trim();
+    } else if (req.query.bnkquery !== undefined) {
+      lookupType = 'bnk';
+      targetQuery = String(req.query.bnkquery).trim();
+    } else if (req.query.rasionquery !== undefined) {
+      lookupType = 'rasion';
+      targetQuery = String(req.query.rasionquery).trim();
+    } else if (req.query.vehiclequery !== undefined) {
+      lookupType = 'vehicle';
+      targetQuery = String(req.query.vehiclequery).trim();
+    } else if (req.query.veh_owner_num_query !== undefined) {
+      lookupType = 'veh_owner_num';
+      targetQuery = String(req.query.veh_owner_num_query).trim();
+    } else if (req.query.email_query !== undefined) {
+      lookupType = 'email';
+      targetQuery = String(req.query.email_query).trim();
+    } else if (req.query.aadhaar_to_pan_query !== undefined || req.query.adhr_to_pan_query !== undefined) {
+      lookupType = 'aadhaar_to_pan';
+      targetQuery = String(req.query.aadhaar_to_pan_query || req.query.adhr_to_pan_query).trim();
+    }
+    // Priority 2: Legacy or explicit service select
+    else if (telegram || tg || service === 'telegram') {
+      lookupType = 'telegram';
+      targetQuery = String(telegram || tg || query || "").trim();
+    } else if (service === 'aadhaar_to_pan') {
+      lookupType = 'aadhaar_to_pan';
+      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
+    } else if (service === 'adhr' || service === 'identity') {
+      lookupType = 'adhr';
+      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
+    } else if (service === 'bnk' || service === 'bank') {
+      lookupType = 'bnk';
+      targetQuery = String(query || req.query.ifsc || req.query.bnk || "").trim();
+    } else if (service === 'rasion' || service === 'ration') {
+      lookupType = 'rasion';
+      targetQuery = String(query || req.query.family || req.query.rasion || "").trim();
+    } else if (service === 'vehicle' || service === 'rc' || req.query.rc !== undefined || req.query.vehicle !== undefined) {
+      lookupType = 'vehicle';
+      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
+    } else if (service === 'veh_owner_num' || service === 'veh_numm') {
+      lookupType = 'veh_owner_num';
+      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
+    } else if (service === 'email' || service === 'mail') {
+      lookupType = 'email';
+      targetQuery = String(query || "").trim();
+    } else if (number || phone || service === 'phone' || service === 'number') {
+      lookupType = 'phone';
+      targetQuery = String(number || phone || query || "").trim();
+    }
+    // Priority 3: intelligent default
+    else if (query !== undefined) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      if (planUpper.includes("TELEGRAM")) {
         lookupType = 'telegram';
-      } else if (['vehicle', 'rc', 'vahan'].includes(reqService)) {
-        lookupType = 'vehicle';
-      } else if (['veh_owner_num', 'veh-owner-num', 'veh_numm', 'veh-numm', 'vehicle_to_number'].includes(reqService)) {
-        lookupType = 'veh_owner_num';
-      } else if (['email', 'mail'].includes(reqService)) {
-        lookupType = 'email';
-      } else if (['aadhaar_to_pan', 'adhr_to_pan', 'aadhar_to_pan'].includes(reqService)) {
+      } else if (planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN")) {
         lookupType = 'aadhaar_to_pan';
-      } else if (['rasion', 'ration', 'family'].includes(reqService)) {
-        lookupType = 'rasion';
-      }
-      targetQuery = targetRaw;
-    } else {
-      // Explicit specific query parameter checks
-      if (numquery !== undefined) {
-        lookupType = 'phone';
-        targetQuery = String(numquery).trim();
-      } else if (tgquery !== undefined) {
-        lookupType = 'telegram';
-        targetQuery = String(tgquery).trim();
-      } else if (adhrquery !== undefined) {
+      } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY")) {
         lookupType = 'adhr';
-        targetQuery = String(adhrquery).trim();
-      } else if (bnkquery !== undefined) {
+      } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
         lookupType = 'bnk';
-        targetQuery = String(bnkquery).trim();
-      } else if (rasionquery !== undefined) {
+      } else if (planUpper.includes("RASION") || planUpper.includes("RATION")) {
         lookupType = 'rasion';
-        targetQuery = String(rasionquery).trim();
-      } else if (vehiclequery !== undefined) {
+      } else if (planUpper.includes("VEHICLE")) {
         lookupType = 'vehicle';
-        targetQuery = String(vehiclequery).trim();
-      } else if (veh_owner_num_query !== undefined) {
-        lookupType = 'veh_owner_num';
-        targetQuery = String(veh_owner_num_query).trim();
-      } else if (email_query !== undefined) {
-        lookupType = 'email';
-        targetQuery = String(email_query).trim();
-      } else if (aadhaar_to_pan_query !== undefined || adhr_to_pan_query !== undefined) {
-        lookupType = 'aadhaar_to_pan';
-        targetQuery = String(aadhaar_to_pan_query || adhr_to_pan_query).trim();
-      } else if (telegram !== undefined || tg !== undefined) {
-        lookupType = 'telegram';
-        targetQuery = String(telegram || tg || targetRaw).trim();
-      } else if (rc !== undefined || vehicle !== undefined) {
-        lookupType = 'vehicle';
-        targetQuery = String(rc || vehicle || targetRaw).trim();
-      } else if (ifsc !== undefined) {
-        lookupType = 'bnk';
-        targetQuery = String(ifsc || targetRaw).trim();
-      } else if (aadhaar !== undefined || adhr !== undefined) {
-        lookupType = 'adhr';
-        targetQuery = String(aadhaar || adhr || targetRaw).trim();
-      } else if (targetRaw) {
-        const planUpper = String(keyRecord?.plan_name || "").toUpperCase();
-        if (planUpper.includes("TELEGRAM")) {
-          lookupType = 'telegram';
-        } else if (planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN")) {
-          lookupType = 'aadhaar_to_pan';
-        } else if (planUpper.includes("ADHR") || planUpper.includes("IDENTITY")) {
-          lookupType = 'adhr';
-        } else if (planUpper.includes("BNK") || planUpper.includes("BANK")) {
-          lookupType = 'bnk';
-        } else if (planUpper.includes("RASION") || planUpper.includes("RATION")) {
-          lookupType = 'rasion';
-        } else if (planUpper.includes("VEHICLE")) {
-          lookupType = 'vehicle';
-        } else {
-          if (targetRaw.includes('@') && targetRaw.includes('.')) lookupType = 'email';
-          else if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/i.test(targetRaw)) lookupType = 'bnk';
-          else if (/^[A-Za-z0-9]{4,11}$/.test(targetRaw) && /[A-Za-z]/.test(targetRaw) && /[0-9]/.test(targetRaw)) lookupType = 'vehicle';
-          else if (targetRaw.startsWith('@') || (/[a-zA-Z_]/.test(targetRaw) && !/^\d+$/.test(targetRaw))) lookupType = 'telegram';
-          else if (targetRaw.replace(/\D/g, '').length === 12) lookupType = 'adhr';
-          else lookupType = 'phone';
-        }
-        targetQuery = targetRaw;
+      } else {
+        const q = String(query).trim();
+        if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/.test(q)) lookupType = 'bnk';
+        else if (/^[A-Za-z0-9]{4,11}$/.test(q) && /[A-Za-z]/.test(q) && /[0-9]/.test(q)) lookupType = 'vehicle';
+        else if (q.startsWith('@') || (/[a-zA-Z_]/.test(q) && !/^\d+$/.test(q))) lookupType = 'telegram';
+        else if (/^\d{12}$/.test(q)) lookupType = 'adhr';
+        else lookupType = 'phone';
       }
+      targetQuery = String(query).trim();
     }
 
     // Normalize and clean queries depending on lookup service
@@ -1887,12 +1736,38 @@ app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "
       });
     }
 
-    // 3. Permission Enforcement
-    if (!isMaster && !checkPlanPermission(keyRecord.plan_name, lookupType)) {
-      return res.status(403).json({
-        status: "error",
-        message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a '${lookupType}' query.`
-      });
+    // 3. Strict Permission Enforcement: Block Cross-Service usage
+    const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+    const isMasterOrInternal = isMaster || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("COMBO");
+
+    if (!isMasterOrInternal) {
+      let isAuthorized = false;
+      if (lookupType === 'phone') {
+        isAuthorized = planUpper.includes("NUMBER");
+      } else if ((lookupType as string) === 'telegram') {
+        isAuthorized = planUpper.includes("TELEGRAM");
+      } else if (lookupType === 'adhr') {
+        isAuthorized = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH");
+      } else if (lookupType === 'bnk') {
+        isAuthorized = planUpper.includes("BNK") || planUpper.includes("BANK");
+      } else if (lookupType === 'rasion') {
+        isAuthorized = planUpper.includes("RASION") || planUpper.includes("RATION");
+      } else if (lookupType === 'vehicle') {
+        isAuthorized = planUpper.includes("VEHICLE");
+      } else if (lookupType === 'veh_owner_num') {
+        isAuthorized = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE");
+      } else if (lookupType === 'email') {
+        isAuthorized = planUpper.includes("EMAIL") || planUpper.includes("MAIL");
+      } else if (lookupType === 'aadhaar_to_pan') {
+        isAuthorized = planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN");
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({
+          status: "error",
+          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a '${lookupType}' query.`
+        });
+      }
     }
 
     // 4. Schema checks
@@ -1966,74 +1841,412 @@ app.get(["/api/lookup", "/api/v1/lookup", "/api/v1/lookup.php", "/lookup.php", "
       return res.status(200).json(responsePayload);
     }
 
-    // Forwarding logic based on target lookup Type - All query types forward to new Cloudflare OSINT Gateway
-    const newApiUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
-    console.log(`[SaaS API Lookup] Querying new Cloudflare OSINT Gateway for ${lookupType}: ${targetQuery}`);
+    // Forwarding logic based on target lookup Type
+    if (lookupType === 'phone') {
+      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const searchParams = new URLSearchParams();
+      searchParams.set("key", String(key)); 
+      searchParams.set("query", targetQuery);
 
-    try {
-      const response = await fetch(newApiUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept": "application/json"
-        }
-      });
+      const target = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      let rawData: any = null;
+      let responseStatus = 200;
 
-      if (!response.ok) {
-        await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-        return res.status(502).json({
-          status: "error",
-          message: `Downstream OSINT Provider Offline (Status ${response.status})`
+      // Try new phone API first
+      try {
+        console.log(`SaaS lookup querying new phone API: ${newApiUrl}`);
+        const response = await fetch(newApiUrl, {
+          headers: { 
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+          }
         });
+        if (response.ok) {
+          const text = await response.text();
+          let parsed: any = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch (e) {
+            console.log("SaaS phone lookup text is not JSON, parsing plain text...");
+            parsed = parsePhonePlainText(text);
+          }
+          if (parsed && typeof parsed === 'object') {
+            const hasData = parsed.name || parsed.mobile || parsed.results || parsed.data || parsed.records || parsed.status === true || (parsed.status === undefined && Object.keys(parsed).length > 0) || parsed.message;
+            if (hasData) {
+              rawData = parsed;
+              responseStatus = response.status;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("SaaS new phone API failed, falling back:", err);
+      }
+
+      // Fallback if new API didn't return data
+      if (!rawData) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        try {
+          console.log(`SaaS lookup falling back to old target: ${target}`);
+          const response = await fetch(target, {
+            headers: { "User-Agent": "TraceXData-SaaS-Proxy/4.5" },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            rawData = await response.json();
+            responseStatus = response.status;
+          }
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId);
+          console.error("SaaS old phone fallback failed:", fetchErr);
+        }
+      }
+
+      if (rawData) {
+        const newCount = (keyRecord.requests_used || 0) + 1;
+        if (!isMaster && keyRecord.id) {
+          try {
+            await supabaseAdmin.from("api_keys").update({ 
+              requests_used: newCount,
+              last_used_at: new Date().toISOString()
+            }).eq("id", keyRecord.id);
+          } catch (dbErr) {
+            console.error("Failed to update api_keys requests_used:", dbErr);
+          }
+        }
+
+        let recordsRaw = rawData.results || rawData.data || rawData.records || (rawData.status === true ? rawData : []);
+        if (!recordsRaw || (typeof recordsRaw === 'object' && Object.keys(recordsRaw).length === 0)) {
+          if (rawData.name || rawData.mobile || rawData.father_name) {
+            recordsRaw = [rawData];
+          }
+        }
+
+        let parsedRecords: any[] = [];
+        if (Array.isArray(recordsRaw)) {
+          parsedRecords = recordsRaw;
+        } else if (recordsRaw && typeof recordsRaw === 'object') {
+          if (recordsRaw.name || recordsRaw.mobile || recordsRaw.full_name) {
+            parsedRecords = [recordsRaw];
+          } else {
+            parsedRecords = Object.values(recordsRaw).filter(v => v && typeof v === 'object');
+          }
+        }
+
+        const filtered = formatUnifiedSaaSResponse({
+          type: 'phone',
+          query: targetQuery,
+          expiresAt: keyRecord.expires_at,
+          planName: keyRecord.plan_name,
+          requestsUsed: newCount,
+          records: parsedRecords
+        });
+        
+        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
+        return res.status(responseStatus).json(filtered);
+      } else {
+        await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "failed", Date.now() - startTime);
+        return res.status(502).json({ 
+          status: "error", 
+          message: "Downstream Provider: Unresponsive or Invalid JSON Response"
+        });
+      }
+    } else if ((lookupType as string) === 'telegram') {
+      const target_username = targetQuery.replace(/^@/, "");
+      const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
+      const response = await fetch(api_url);
+      if (!response.ok) {
+        throw new Error(`Telegram Engine Offline: Status ${response.status}`);
       }
 
       const text = await response.text();
-      let parsedData: any = null;
-      try {
-        parsedData = JSON.parse(text);
-      } catch (e) {
-        parsedData = parsePhonePlainText(text);
+      const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
+      const lowerText = cleanedText.toLowerCase();
+
+      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+         await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+         return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
       }
 
-      const parsedResult = parseCloudflareApiResponse(parsedData);
+      let recordsList: any[] = [];
+      let isParsedAsJson = false;
 
-      if (!parsedResult.success || !parsedResult.records || parsedResult.records.length === 0) {
-        await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-        return res.status(404).json({
-          status: "error",
-          message: `No records found for ${targetQuery}`
-        });
+      try {
+        const parsed = JSON.parse(text);
+        const cleaned_json = scrubAllBranding(parsed);
+        if (cleaned_json && (cleaned_json.results || cleaned_json.data || cleaned_json.records)) {
+          const items = cleaned_json.results || cleaned_json.data || cleaned_json.records;
+          recordsList = Array.isArray(items) ? items : [items];
+          isParsedAsJson = true;
+        } else if (cleaned_json && typeof cleaned_json === 'object') {
+          recordsList = [cleaned_json];
+          isParsedAsJson = true;
+        }
+      } catch (e) {
+        // Fallback to text parsing
+      }
+
+      if (!isParsedAsJson) {
+        const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
+        const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+
+        const username = usernameMatch ? usernameMatch[1].trim() : target_username;
+        const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
+        const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+
+        if (telegram_id === "N/A" && phone === "N/A") {
+           await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+           return res.status(404).json({ status: "error", message: "Lookup matched but profile contains no traceable ID or phone." });
+        }
+
+        recordsList = [{
+          name: "Telegram Registered Profile",
+          telegram_id: telegram_id,
+          username: username,
+          mobile: phone || "N/A"
+        }];
       }
 
       const newCount = (keyRecord.requests_used || 0) + 1;
       if (!isMaster && keyRecord?.id) {
-        try {
-          await supabaseAdmin.from("api_keys").update({ 
-            requests_used: newCount,
-            last_used_at: new Date().toISOString()
-          }).eq("id", keyRecord.id);
-        } catch (dbErr) {
-          console.error("Failed to update api_keys requests_used:", dbErr);
-        }
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: newCount,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
       }
 
+      await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "success", Date.now() - startTime);
+
       const filtered = formatUnifiedSaaSResponse({
-        type: lookupType,
+        type: 'telegram',
         query: targetQuery,
         expiresAt: keyRecord.expires_at,
         planName: keyRecord.plan_name,
         requestsUsed: newCount,
-        records: parsedResult.records
+        records: recordsList
       });
 
-      await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "success", Date.now() - startTime);
-      return res.status(200).json(filtered);
-    } catch (err: any) {
-      console.error("SaaS lookup fetch failed:", err);
-      await logApiRequest(keyRecord?.id || null, `${lookupType.toUpperCase()}: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-      return res.status(502).json({
-        status: "error",
-        message: err.message || "OSINT Gateway Fetch Error"
+      return res.json(filtered);
+    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan') {
+      let api_url = "";
+      let logPrefix = "";
+      
+      if (lookupType === 'adhr') {
+        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "ADHR";
+      } else if (lookupType === 'aadhaar_to_pan') {
+        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "AADHAAR_TO_PAN";
+      } else if (lookupType === 'bnk') {
+        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "BNK";
+      } else if (lookupType === 'rasion') {
+        api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "RASION";
+      } else if (lookupType === 'email') {
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
+        logPrefix = "EMAIL";
+      } else if (lookupType === 'veh_owner_num') {
+        logPrefix = "VEH_OWNER";
+        const cacheKey = `OWN_${targetQuery}`;
+        // Check database cache first for speed of response
+        try {
+          const { data: cachedRow } = await supabaseAdmin
+            .from("vehicle_search_results")
+            .select("raw_data")
+            .eq("vehicle_number", cacheKey)
+            .maybeSingle();
+
+          const isCacheValid = cachedRow && cachedRow.raw_data && 
+                               Object.keys(cachedRow.raw_data).length > 0 &&
+                               !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
+
+          if (isCacheValid) {
+            console.log(`[CACHE HIT] Serving Vehicle To Owner Number lookup ${targetQuery} via /api/lookup from DB Cache`);
+            const newCount = (keyRecord.requests_used || 0) + 1;
+            if (!isMaster && keyRecord?.id) {
+              await supabaseAdmin.from("api_keys").update({ 
+                requests_used: newCount,
+                last_used_at: new Date().toISOString()
+              }).eq("id", keyRecord.id);
+            }
+            await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
+
+            const filtered = formatUnifiedSaaSResponse({
+              type: 'veh_owner_num',
+              query: targetQuery,
+              expiresAt: keyRecord.expires_at,
+              planName: keyRecord.plan_name,
+              requestsUsed: newCount,
+              records: [cachedRow.raw_data]
+            });
+            return res.json(filtered);
+          }
+        } catch (cacheErr) {
+          console.error("Vehicle owner number Cache check error inside /api/lookup:", cacheErr);
+        }
+
+        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+      } else if (lookupType === 'vehicle') {
+        logPrefix = "VEHICLE";
+        
+        // Check database cache first for speed of response
+        try {
+          const { data: cachedRow } = await supabaseAdmin
+            .from("vehicle_search_results")
+            .select("raw_data")
+            .eq("vehicle_number", targetQuery)
+            .maybeSingle();
+
+          const isCacheValid = cachedRow && cachedRow.raw_data && 
+                               Object.keys(cachedRow.raw_data).length > 0 &&
+                               !(cachedRow.raw_data.raw_data && (cachedRow.raw_data.raw_data === "N/A" || String(cachedRow.raw_data.raw_data).trim() === ""));
+
+          if (isCacheValid) {
+            console.log(`[CACHE HIT] Serving Vehicle lookup ${targetQuery} via /api/lookup from DB Cache`);
+            const newCount = (keyRecord.requests_used || 0) + 1;
+            if (!isMaster && keyRecord?.id) {
+              await supabaseAdmin.from("api_keys").update({ 
+                requests_used: newCount,
+                last_used_at: new Date().toISOString()
+              }).eq("id", keyRecord.id);
+            }
+            await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
+
+            const filtered = formatUnifiedSaaSResponse({
+              type: 'vehicle',
+              query: targetQuery,
+              expiresAt: keyRecord.expires_at,
+              planName: keyRecord.plan_name,
+              requestsUsed: newCount,
+              records: [cachedRow.raw_data]
+            });
+            return res.json(filtered);
+          }
+        } catch (cacheErr) {
+          console.error("Vehicle Cache check error inside /api/lookup:", cacheErr);
+        }
+
+        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+      }
+
+      const response = await fetch(api_url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
       });
+      if (!response.ok) {
+        throw new Error(`OSINT Provider Offline: ${lookupType.toUpperCase()} status ${response.status}`);
+      }
+
+      const text = await response.text();
+      let parsedData: any;
+      let isJson = false;
+
+      try {
+        parsedData = JSON.parse(text);
+        isJson = true;
+      } catch (e) {
+        const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+        try {
+          parsedData = JSON.parse(cleanedText);
+          isJson = true;
+        } catch (err) {
+          if (lookupType === 'adhr') {
+            parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
+          } else if (lookupType === 'aadhaar_to_pan') {
+            parsedData = parsePlainTextLookup(cleanedText, 'pan');
+          } else if (lookupType === 'bnk') {
+            parsedData = parsePlainTextLookup(cleanedText, 'bank');
+          } else if (lookupType === 'rasion') {
+            parsedData = parsePlainTextLookup(cleanedText, 'rasion');
+          } else {
+            parsedData = { raw_data: cleanedText };
+          }
+        }
+      }
+
+      let isError = false;
+      if (isJson && parsedData) {
+        const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+        const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
+        if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+          isError = true;
+        }
+      } else {
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim()) {
+          isError = true;
+        }
+      }
+
+      if (isError) {
+         await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "failed", Date.now() - startTime);
+         return res.status(404).json({ status: "error", message: `No identity records found in ${logPrefix} database for ${targetQuery}` });
+      }
+
+      if (lookupType === 'vehicle' && parsedData && parsedData.api_creator) {
+        delete parsedData.api_creator;
+      }
+      if (lookupType === 'veh_owner_num' && parsedData && parsedData.api_creator) {
+        delete parsedData.api_creator;
+      }
+
+      const cleanedData = cleanBrandingObject(parsedData);
+
+      // Save to database cache if it's a vehicle lookup
+      if (lookupType === 'vehicle' && cleanedData && Object.keys(cleanedData).length > 0) {
+        try {
+          await supabaseAdmin.from("vehicle_search_results").upsert({
+            vehicle_number: targetQuery,
+            raw_data: cleanedData
+          }, { onConflict: "vehicle_number" });
+          console.log(`[CACHE SAVE] Saved Vehicle lookup ${targetQuery} via /api/lookup to DB Cache`);
+        } catch (cacheSaveErr) {
+          console.error("Failed to save Vehicle result to database cache:", cacheSaveErr);
+        }
+      }
+      if (lookupType === 'veh_owner_num' && cleanedData && Object.keys(cleanedData).length > 0) {
+        try {
+          const cacheKey = `OWN_${targetQuery}`;
+          await supabaseAdmin.from("vehicle_search_results").upsert({
+            vehicle_number: cacheKey,
+            raw_data: cleanedData
+          }, { onConflict: "vehicle_number" });
+          console.log(`[CACHE SAVE] Saved Vehicle To Owner Number lookup ${targetQuery} via /api/lookup to DB Cache`);
+        } catch (cacheSaveErr) {
+          console.error("Failed to save Vehicle To Owner Number result to database cache:", cacheSaveErr);
+        }
+      }
+      const newCount = (keyRecord.requests_used || 0) + 1;
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: newCount,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+
+      await logApiRequest(keyRecord?.id || null, `${logPrefix}: ${targetQuery}`, "success", Date.now() - startTime);
+
+      const filtered = formatUnifiedSaaSResponse({
+        type: lookupType as any,
+        query: targetQuery,
+        expiresAt: keyRecord.expires_at,
+        planName: keyRecord.plan_name,
+        requestsUsed: newCount,
+        records: Array.isArray(cleanedData) ? cleanedData : [cleanedData]
+      });
+
+      return res.json(filtered);
+    } else {
+      return res.status(400).json({ status: "error", message: "Lookup option unsupported or disabled" });
     }
   } catch (error: any) {
     console.error("[PROXY_ERROR]", error);
@@ -2602,12 +2815,13 @@ app.get("/api/script/download-file", async (req, res) => {
 });
 
 // Telegram Lookup API Middleware Proxy
-app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res) => {
-  const { query, telegram, api, tg, tgquery } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  const targetTelegramId = String(query || telegram || api || tg || tgquery || "").trim();
+app.get("/api/telegram", async (req, res) => {
+  const { query, telegram, api } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  const targetTelegramId = String(query || telegram || api || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetTelegramId) {
@@ -2663,8 +2877,10 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "telegram")) {
+      // Check telegram permissions
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("TELEGRAM") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'telegram' query.`
@@ -2744,7 +2960,7 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
       console.error("[Telegram Cache Read Error]", cacheErr);
     }
 
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(target_username)}`;
+    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds timeout
 
@@ -2793,12 +3009,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
       const cleaned_json = cleanBrandingObject(parsed);
       if (cleaned_json) {
         const telegram_id = cleaned_json.tg_id || cleaned_json.telegram_id || target_username;
-        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "";
+        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "N/A";
         const username = cleaned_json.username || cleaned_json.name || target_username;
-        const country = cleaned_json.country || "";
-        const country_code = cleaned_json.country_code || "";
+        const country = cleaned_json.country || "N/A";
+        const country_code = cleaned_json.country_code || "N/A";
 
-        if (!telegram_id && !phone) {
+        if (telegram_id === "N/A" && phone === "N/A") {
           // Fallback to text parser
         } else {
           results = {
@@ -2806,8 +3022,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
               name: username,
               telegram_id: telegram_id,
               mobile: phone,
+              father_name: "N/A",
               alt_mobile: country_code,
+              email: "N/A",
               operator: country,
+              state_circle: "N/A",
+              address: "N/A",
               platform: "Telegram Lookup"
             }
           };
@@ -2835,12 +3055,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
       if (!codeMatch) codeMatch = cleanedText.match(/"country_code"\s*:\s*"([^"]+)"/i);
 
       const username = usernameMatch ? usernameMatch[1].trim() : target_username;
-      const telegram_id = idMatch ? idMatch[1].trim() : "";
-      const phone = phoneMatch ? phoneMatch[1].trim() : "";
-      const country = countryMatch ? countryMatch[1].trim() : "";
-      const country_code = codeMatch ? codeMatch[1].trim() : "";
+      const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
+      const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+      const country = countryMatch ? countryMatch[1].trim() : "N/A";
+      const country_code = codeMatch ? codeMatch[1].trim() : "N/A";
 
-      if (!telegram_id && !phone) {
+      if (telegram_id === "N/A" && phone === "N/A") {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
          return res.status(200).json({ status: "success", results: {}, message: "no data found" });
       }
@@ -2850,8 +3070,12 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
           name: username,
           telegram_id: telegram_id,
           mobile: phone,
+          father_name: "N/A",
           alt_mobile: country_code,
+          email: "N/A",
           operator: country,
+          state_circle: "N/A",
+          address: "N/A",
           platform: "Telegram Lookup"
         }
       };
@@ -2889,12 +3113,13 @@ app.get(["/api/telegram", "/api/v1/telegram", "/telegram.php"], async (req, res)
 });
 
 // Identity Card Lookup API Middleware Proxy
-app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res) => {
-  const { query, aadhar, adhr, identity, exploits, adhrquery } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(query || aadhar || adhr || identity || exploits || adhrquery || "").trim();
+app.get("/api/identity", async (req, res) => {
+  const { query, aadhar, identity, exploits } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(query || aadhar || identity || exploits || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -2958,7 +3183,9 @@ app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res)
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "identity")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'identity' query.`
@@ -2966,11 +3193,12 @@ app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res)
       }
     }
 
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
       }
     });
     if (!response.ok) {
@@ -2979,16 +3207,22 @@ app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res)
     }
 
     const text = await response.text();
-    let rawJson: any;
-    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'aadhar'); }
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const lowerText = cleanedText.toLowerCase();
 
-    const parsedResult = parseCloudflareApiResponse(rawJson);
-    if (!parsedResult.success) {
+    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
-    const cleanedData = scrubAllBranding(parsedResult.records);
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(cleanedText);
+    } catch (e) {
+      parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
+    }
+
+    const cleanedData = cleanBrandingObject(parsedData);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -3009,12 +3243,13 @@ app.get(["/api/identity", "/api/v1/identity", "/identity.php"], async (req, res)
 });
 
 // BA&NK Lookup API Middleware Proxy
-app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
-  const { query, ifsc, bank, exploits, bnkquery } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(query || ifsc || bank || exploits || bnkquery || "").trim();
+app.get("/api/bank", async (req, res) => {
+  const { query, ifsc, bank, exploits } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(query || ifsc || bank || exploits || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3078,7 +3313,9 @@ app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "bank")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'bank' query.`
@@ -3086,11 +3323,12 @@ app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
       }
     }
 
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
       }
     });
     if (!response.ok) {
@@ -3099,16 +3337,22 @@ app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
     }
 
     const text = await response.text();
-    let rawJson: any;
-    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'bank'); }
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const lowerText = cleanedText.toLowerCase();
 
-    const parsedResult = parseCloudflareApiResponse(rawJson);
-    if (!parsedResult.success) {
+    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
        await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
-    const cleanedData = scrubAllBranding(parsedResult.records);
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(cleanedText);
+    } catch (e) {
+      parsedData = parsePlainTextLookup(cleanedText, 'bank');
+    }
+
+    const cleanedData = cleanBrandingObject(parsedData);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -3129,12 +3373,13 @@ app.get(["/api/bank", "/api/v1/bank", "/bank.php"], async (req, res) => {
 });
 
 // Rasion Card Lookup API Middleware Proxy
-app.get(["/api/rasion", "/api/ration", "/api/v1/ration", "/ration.php"], async (req, res) => {
-  const { query, family, rasion, ration, exploits, rasionquery } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(query || family || rasion || ration || exploits || rasionquery || "").trim();
+app.get(["/api/rasion", "/api/ration"], async (req, res) => {
+  const { query, family, rasion, ration, exploits } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(query || family || rasion || ration || exploits || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3198,7 +3443,9 @@ app.get(["/api/rasion", "/api/ration", "/api/v1/ration", "/ration.php"], async (
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "rasion")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("RASION") || planUpper.includes("RATION") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'rasion' query.`
@@ -3206,11 +3453,12 @@ app.get(["/api/rasion", "/api/ration", "/api/v1/ration", "/ration.php"], async (
       }
     }
 
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
       }
     });
     if (!response.ok) {
@@ -3219,16 +3467,22 @@ app.get(["/api/rasion", "/api/ration", "/api/v1/ration", "/ration.php"], async (
     }
 
     const text = await response.text();
-    let rawJson: any;
-    try { rawJson = JSON.parse(text); } catch (e) { rawJson = parsePlainTextLookup(text, 'rasion'); }
+    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
+    const lowerText = cleanedText.toLowerCase();
 
-    const parsedResult = parseCloudflareApiResponse(rawJson);
-    if (!parsedResult.success) {
+    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: parsedResult.error || "api error" });
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
-    const cleanedData = scrubAllBranding(parsedResult.records);
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(cleanedText);
+    } catch (e) {
+      parsedData = parsePlainTextLookup(cleanedText, 'rasion');
+    }
+
+    const cleanedData = cleanBrandingObject(parsedData);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -3271,12 +3525,13 @@ function sanitizeErrorMessage(msg: string): string {
 }
 
 // Vehicle Lookup API Middleware Proxy
-app.get(["/api/vehicle", "/api/v1/vehicle", "/vehicle.php"], async (req, res) => {
-  const { query, vehicle, vehicle_no, exploits, vehiclequery, rc } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(query || vehicle || vehicle_no || exploits || vehiclequery || rc || "").trim();
+app.get("/api/vehicle", async (req, res) => {
+  const { query, vehicle, vehicle_no, exploits } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(query || vehicle || vehicle_no || exploits || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3340,7 +3595,9 @@ app.get(["/api/vehicle", "/api/v1/vehicle", "/vehicle.php"], async (req, res) =>
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "vehicle")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle' query.`
@@ -3375,7 +3632,7 @@ app.get(["/api/vehicle", "/api/v1/vehicle", "/vehicle.php"], async (req, res) =>
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
@@ -3459,10 +3716,10 @@ app.get(["/api/vehicle", "/api/v1/vehicle", "/vehicle.php"], async (req, res) =>
 });
 
 // Vehicle To Owner Number Lookup API Middleware Proxy
-app.get(["/api/veh-owner-num", "/api/veh_owner_num", "/api/v1/veh-owner-num"], async (req, res) => {
-  const { query, rc, vehicle, vehicle_no, exploits, veh_owner_num_query } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(rc || query || vehicle || vehicle_no || exploits || veh_owner_num_query || "").trim();
+app.get("/api/veh-owner-num", async (req, res) => {
+  const { query, rc, vehicle, vehicle_no, exploits } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(rc || query || vehicle || vehicle_no || exploits || "").trim();
   const startTime = Date.now();
 
   res.setHeader('Content-Type', 'application/json');
@@ -3528,7 +3785,9 @@ app.get(["/api/veh-owner-num", "/api/veh_owner_num", "/api/v1/veh-owner-num"], a
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "veh_owner_num")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle to owner number' query.`
@@ -3564,7 +3823,7 @@ app.get(["/api/veh-owner-num", "/api/veh_owner_num", "/api/v1/veh-owner-num"], a
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
@@ -3651,10 +3910,10 @@ app.get(["/api/veh-owner-num", "/api/veh_owner_num", "/api/v1/veh-owner-num"], a
 });
 
 // Email Lookup API Middleware Proxy
-app.get(["/api/email", "/api/v1/email", "/email.php"], async (req, res) => {
-  const { query, email, email_query } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
-  let targetQuery = String(query || email || email_query || "").trim();
+app.get("/api/email", async (req, res) => {
+  const { query, email } = req.query;
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
+  let targetQuery = String(query || email || "").trim();
   const startTime = Date.now();
 
   res.setHeader('Content-Type', 'application/json');
@@ -3713,7 +3972,9 @@ app.get(["/api/email", "/api/v1/email", "/email.php"], async (req, res) => {
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "email")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("EMAIL") || planUpper.includes("MAIL") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'email' query.`
@@ -3722,7 +3983,7 @@ app.get(["/api/email", "/api/v1/email", "/email.php"], async (req, res) => {
     }
 
     // Fetch from the external provider
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
@@ -3796,12 +4057,13 @@ app.get(["/api/email", "/api/v1/email", "/email.php"], async (req, res) => {
 });
 
 // PAN / PN Card Lookup API Middleware Proxy
-app.get(["/api/pancard", "/api/panfind", "/api/v1/pancard", "/pancard.php"], async (req, res) => {
+app.get("/api/pancard", async (req, res) => {
   const { query, pan, pn, pancard, exploits } = req.query;
-  const key = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.headers['api-key'] || "").trim();
+  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(query || pan || pn || pancard || exploits || "").trim();
   const startTime = Date.now();
 
+  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
   if (!targetQuery) {
@@ -3865,7 +4127,9 @@ app.get(["/api/pancard", "/api/panfind", "/api/v1/pancard", "/pancard.php"], asy
       }
 
       // Check permissions
-      if (!checkPlanPermission(keyRecord.plan_name, "pancard")) {
+      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+      const isAllowed = planUpper.includes("PAN") || planUpper.includes("PN") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
+      if (!isAllowed) {
         return res.status(403).json({
           status: "error",
           message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'pancard' query.`
@@ -3873,7 +4137,7 @@ app.get(["/api/pancard", "/api/panfind", "/api/v1/pancard", "/pancard.php"], asy
       }
     }
 
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetQuery)}`;
+    const api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -3993,7 +4257,8 @@ app.get("/api/panfind", async (req, res) => {
     }
 
     // 2. Execute target API lookup
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
+    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
     
     const apiResponse = await fetch(api_url);
     if (!apiResponse.ok) {
@@ -4008,7 +4273,11 @@ app.get("/api/panfind", async (req, res) => {
       apiData = { error: "Failed to parse search output", raw: rawText };
     }
 
-    apiData = scrubAllBranding(apiData);
+    // 3. Remove "developer": "@techvishalboss" from the response object
+    if (apiData && typeof apiData === "object") {
+      delete apiData.developer;
+    }
+
     return res.json(apiData);
   } catch (error: any) {
     console.error("PAN Find error:", error);
@@ -4020,7 +4289,7 @@ app.get("/api/panfind", async (req, res) => {
 function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
-    let res = obj
+    return obj
       .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -4028,10 +4297,6 @@ function scrubAllBranding(obj: any): any {
       .replace(/Contact/gi, "")
       .replace(/Buy_API/gi, "")
       .trim();
-    if (/^(N\/A|NA|N-A|NULL)$/i.test(res)) {
-      return "";
-    }
-    return res;
   }
   if (Array.isArray(obj)) {
     return obj.map(item => scrubAllBranding(item));
@@ -4052,115 +4317,6 @@ function scrubAllBranding(obj: any): any {
     return cleaned;
   }
   return obj;
-}
-
-// Helper to parse Cloudflare and upstream API responses reliably across all lookup services
-function parseCloudflareApiResponse(jsonObj: any): { success: boolean; records: any[]; error?: string } {
-  if (jsonObj === null || jsonObj === undefined) {
-    return { success: false, records: [], error: 'Invalid response from search engine' };
-  }
-
-  // Handle string input
-  if (typeof jsonObj === 'string') {
-    const trimmed = jsonObj.trim();
-    if (!trimmed) return { success: false, records: [], error: 'Empty response' };
-    try {
-      jsonObj = JSON.parse(trimmed);
-    } catch (e) {
-      // If parsing as JSON fails, try text parser
-      const textParsed = parsePlainTextLookup(trimmed, 'general' as any);
-      if (textParsed && typeof textParsed === 'object' && Object.keys(textParsed).length > 0) {
-        jsonObj = textParsed;
-      } else {
-        return { success: false, records: [], error: 'Invalid response format' };
-      }
-    }
-  }
-
-  if (typeof jsonObj !== 'object') {
-    return { success: false, records: [], error: 'Invalid response format' };
-  }
-
-  // Explicit failure check
-  if (jsonObj.status === false || jsonObj.success === false || jsonObj.status === "false" || jsonObj.success === "false") {
-    const err = jsonObj.error || jsonObj.message || jsonObj.msg || 'No records found';
-    return { success: false, records: [], error: String(err) };
-  }
-
-  // Check for error messages if status is not explicitly successful
-  if ((jsonObj.error || jsonObj.message) && !jsonObj.data && !jsonObj.results && !jsonObj.records && !jsonObj.result && !jsonObj.response) {
-    const msg = String(jsonObj.error || jsonObj.message);
-    if (/no result|no record|not found|validation error|invalid|failed|error/i.test(msg) && !/success|found|ok|1 record|records found/i.test(msg)) {
-      return { success: false, records: [], error: msg };
-    }
-  }
-
-  // Nested error in data object
-  if (jsonObj.data && typeof jsonObj.data === 'object' && !Array.isArray(jsonObj.data) && jsonObj.data.error) {
-    return { success: false, records: [], error: String(jsonObj.data.error) };
-  }
-
-  const META_KEYS = ['status', 'success', 'message', 'msg', 'error', 'query', 'buy_api', 'website', 'owner_telegram', 'api_status', 'timestamp', 'developer', 'processing_time', 'time_left', 'requests_used', 'time_taken', 'execution_time', 'chain_depth', 'code', 'total_found', 'processing_time_seconds'];
-
-  const isDataRecord = (obj: any): boolean => {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-    const nonMetaKeys = Object.keys(obj).filter(k => !META_KEYS.includes(k.toLowerCase()));
-    return nonMetaKeys.length > 0;
-  };
-
-  let rawList: any[] = [];
-
-  if (Array.isArray(jsonObj)) {
-    rawList = jsonObj;
-  } else if (Array.isArray(jsonObj.results) && jsonObj.results.length > 0) {
-    rawList = jsonObj.results;
-  } else if (Array.isArray(jsonObj.records) && jsonObj.records.length > 0) {
-    rawList = jsonObj.records;
-  } else if (Array.isArray(jsonObj.data) && jsonObj.data.length > 0) {
-    rawList = jsonObj.data;
-  } else if (Array.isArray(jsonObj.result) && jsonObj.result.length > 0) {
-    rawList = jsonObj.result;
-  } else if (Array.isArray(jsonObj.response) && jsonObj.response.length > 0) {
-    rawList = jsonObj.response;
-  } else if (Array.isArray(jsonObj.output) && jsonObj.output.length > 0) {
-    rawList = jsonObj.output;
-  } else if (Array.isArray(jsonObj.items) && jsonObj.items.length > 0) {
-    rawList = jsonObj.items;
-  } else if (jsonObj.data && typeof jsonObj.data === 'object') {
-    if (Array.isArray(jsonObj.data.results) && jsonObj.data.results.length > 0) {
-      rawList = jsonObj.data.results;
-    } else if (Array.isArray(jsonObj.data.records) && jsonObj.data.records.length > 0) {
-      rawList = jsonObj.data.records;
-    } else if (isDataRecord(jsonObj.data)) {
-      rawList = [jsonObj.data];
-    }
-  } else if (jsonObj.result && typeof jsonObj.result === 'object') {
-    if (isDataRecord(jsonObj.result)) rawList = [jsonObj.result];
-  } else if (jsonObj.response && typeof jsonObj.response === 'object') {
-    if (isDataRecord(jsonObj.response)) rawList = [jsonObj.response];
-  } else if (jsonObj.results && typeof jsonObj.results === 'object') {
-    const childObjs = Object.values(jsonObj.results).filter(v => isDataRecord(v));
-    if (childObjs.length > 0) rawList = childObjs;
-    else if (isDataRecord(jsonObj.results)) rawList = [jsonObj.results];
-  } else if (typeof jsonObj === 'object') {
-    const childObjs = Object.values(jsonObj).filter(v => isDataRecord(v));
-    if (childObjs.length > 0) {
-      rawList = childObjs;
-    } else if (isDataRecord(jsonObj)) {
-      rawList = [jsonObj];
-    }
-  }
-
-  const validRecords = rawList
-    .filter(rec => rec && typeof rec === 'object')
-    .map(rec => cleanBrandingObject(rec))
-    .filter(rec => isDataRecord(rec));
-
-  if (validRecords.length === 0) {
-    return { success: false, records: [], error: 'No matching records found for this query' };
-  }
-
-  return { success: true, records: validRecords };
 }
 
 // Secure credits-based Aadhaar-to-PAN lookup
@@ -4302,7 +4458,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     }
 
     // 5. Query External PAN Find API
-    const api_url = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
+    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
+    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
     
     let apiData: any = null;
     let panFound = false;
@@ -4314,36 +4471,20 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         const rawText = await apiResponse.text();
         try {
           apiData = JSON.parse(rawText);
-          apiData = scrubAllBranding(apiData);
-          panFound = true;
-          retrievedPan = "PAN_FOUND";
+          if (apiData && typeof apiData === "object") {
+            // Scrub branding keys
+            apiData = scrubAllBranding(apiData);
+            retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
+            if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
+              panFound = true;
+            }
+          }
         } catch (e) {
           console.error("Failed to parse external API response:", rawText);
         }
       }
     } catch (apiErr) {
       console.error("External PAN Find request failed:", apiErr);
-    }
-
-    // Fallback to Cloudflare search if direct panfind endpoint failed
-    if (!panFound) {
-      try {
-        const cfUrl = `https://sophisticated-telecharger-kiss-bracelets.trycloudflare.com/search?query=${encodeURIComponent(targetAadhaar)}`;
-        const cfResp = await fetch(cfUrl);
-        if (cfResp.ok) {
-          const cfText = await cfResp.text();
-          let cfParsed: any;
-          try { cfParsed = JSON.parse(cfText); } catch (e) { cfParsed = parsePlainTextLookup(cfText, 'pan'); }
-          const parsedResult = parseCloudflareApiResponse(cfParsed);
-          if (parsedResult.success && parsedResult.records.length > 0) {
-            apiData = parsedResult.records;
-            panFound = true;
-            retrievedPan = "PAN_FOUND";
-          }
-        }
-      } catch (cfErr) {
-        console.error("Aadhaar to PAN Cloudflare fallback error:", cfErr);
-      }
     }
 
     // 6. Log search to persistent history

@@ -65,10 +65,10 @@ const SERVICE_TABS: ServiceTab[] = [
   },
   {
     id: 'pancard',
-    label: 'PAN Card Details (Maintenance)',
+    label: 'PAN Card Details',
     icon: CreditCard,
     placeholder: 'Enter 10-character PAN Number...',
-    hint: '⚠️ Currently Under Maintenance - Check back later',
+    hint: 'Full name, father name & verification status',
     example: 'ABCDE1234F'
   },
   {

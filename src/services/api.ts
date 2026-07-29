@@ -481,7 +481,6 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
-      .replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "")
       .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -497,11 +496,10 @@ const scrubBranding = (obj: any): any => {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy', 'darkdeveloper02', '@darkdeveloper02', 'darkdeveloper'].includes(lowerKey)) {
+      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy'].includes(lowerKey)) {
         continue;
       }
-      const cleanKey = key.replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "").trim() || key;
-      cleaned[cleanKey] = scrubBranding(val);
+      cleaned[key] = scrubBranding(val);
     }
     return cleaned;
   }
@@ -510,7 +508,7 @@ const scrubBranding = (obj: any): any => {
 
 export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
   const result: any = {};
-  const cleanText = text.replace(/@?dark[\s\-_]*developer(?:[\s\-_]*02)?|darkdeveloper02|darkdeveloper/gi, "").replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "").trim();
+  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;
@@ -775,11 +773,41 @@ export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse>
 };
 
 export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => {
-  return {
-    status: false,
-    results: {},
-    error: 'PN / PAN Card lookup is currently under maintenance. Please try again later.'
-  };
+  const cleanPancardNo = pancardNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  
+  console.log('Searching TRACEXDATA PN Card Intelligence...');
+  try {
+    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
+
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token || '';
+
+    const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
+    
+    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
+      const cleanResults = scrubBranding(apiData.results || {});
+      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+      return { 
+        status: true, 
+        results: cleanResults, 
+        raw_results: cleanRawResults 
+      };
+    } else {
+      return {
+        status: false,
+        results: {},
+        error: apiData?.message || apiData?.error || 'No records found for this PN Card.'
+      };
+    }
+  } catch (error: any) {
+    console.error(`PN Card lookup error:`, error);
+    return {
+      status: false,
+      results: {},
+      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+    };
+  }
 };
 
 export const lookupEmail = async (email: string): Promise<ApiResponse> => {
