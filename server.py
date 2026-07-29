@@ -3242,10 +3242,28 @@ async def identity_lookup(
             
         text = resp.text or ""
         cleaned_body = clean_branding_text_line_by_line(text)
-        parsed_records = parse_raw_text_to_records(text, target_query)
+        
+        parsed_data = None
+        try:
+            parsed_data = resp.json()
+        except Exception:
+            parsed_data = parse_raw_text_to_records(text, target_query)
+            
+        results_data = {}
+        if parsed_data and isinstance(parsed_data, dict):
+            if "results" in parsed_data and parsed_data["results"]:
+                results_data = parsed_data["results"]
+            elif "data" in parsed_data and parsed_data["data"]:
+                results_data = parsed_data["data"]
+            else:
+                results_data = parsed_data
+        elif parsed_records:
+            results_data = parsed_records
+
+        cleaned_results = clean_branding_recursive(results_data) if results_data else {}
         
         # Telemetry updates (only deduct if we succeeded in parsing records)
-        if (parsed_records or cleaned_body.strip()) and not is_master and key_record:
+        if (cleaned_results or cleaned_body.strip()) and not is_master and key_record:
             try:
                 db.table("api_keys").update({
                     "requests_used": (key_record.get('requests_used') or 0) + 1,
@@ -3256,7 +3274,7 @@ async def identity_lookup(
                 
         # API Log
         try:
-            status_str = "success" if (parsed_records or cleaned_body.strip()) else "failed"
+            status_str = "success" if (cleaned_results or cleaned_body.strip()) else "failed"
             masked_q = f"{target_query[:4]}****{target_query[-4:]}"
             db.table("api_logs").insert({
                 "api_key_id": key_record.get('id') if not is_master else None,
@@ -3267,7 +3285,7 @@ async def identity_lookup(
             }).execute()
         except: pass
         
-        if not parsed_records and not cleaned_body.strip():
+        if not cleaned_results and not cleaned_body.strip():
             return make_api_response({
                 "status": "success", 
                 "results": {}, 
@@ -3276,7 +3294,7 @@ async def identity_lookup(
             
         return make_api_response({
             "status": "success", 
-            "results": {}, 
+            "results": cleaned_results, 
             "raw_results": cleaned_body
         })
         
@@ -3414,10 +3432,26 @@ async def bank_lookup(
             
         text = resp.text or ""
         cleaned_body = clean_branding_text_line_by_line(text)
-        parsed_records = parse_raw_text_to_records(text, target_query)
+        
+        parsed_data = None
+        try:
+            parsed_data = resp.json()
+        except Exception:
+            parsed_data = parse_raw_text_to_records(text, target_query)
+            
+        results_data = {}
+        if parsed_data and isinstance(parsed_data, dict):
+            if "results" in parsed_data and parsed_data["results"]:
+                results_data = parsed_data["results"]
+            elif "data" in parsed_data and parsed_data["data"]:
+                results_data = parsed_data["data"]
+            else:
+                results_data = parsed_data
+
+        cleaned_results = clean_branding_recursive(results_data) if results_data else {}
         
         # Telemetry updates (only deduct if we succeeded in parsing records)
-        if (parsed_records or cleaned_body.strip()) and not is_master and key_record:
+        if (cleaned_results or cleaned_body.strip()) and not is_master and key_record:
             try:
                 db.table("api_keys").update({
                     "requests_used": (key_record.get('requests_used') or 0) + 1,
@@ -3428,7 +3462,7 @@ async def bank_lookup(
                 
         # API Log
         try:
-            status_str = "success" if (parsed_records or cleaned_body.strip()) else "failed"
+            status_str = "success" if (cleaned_results or cleaned_body.strip()) else "failed"
             masked_q = f"{target_query[:4]}****{target_query[-2:]}"
             db.table("api_logs").insert({
                 "api_key_id": key_record.get('id') if not is_master else None,
@@ -3439,7 +3473,7 @@ async def bank_lookup(
             }).execute()
         except: pass
         
-        if not parsed_records and not cleaned_body.strip():
+        if not cleaned_results and not cleaned_body.strip():
             return make_api_response({
                 "status": "success", 
                 "results": {}, 
@@ -3448,7 +3482,7 @@ async def bank_lookup(
             
         return make_api_response({
             "status": "success", 
-            "results": {},
+            "results": cleaned_results,
             "raw_results": cleaned_body
         })
         
