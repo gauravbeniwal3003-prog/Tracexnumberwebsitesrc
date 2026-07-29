@@ -972,7 +972,7 @@ app.all("/api/support-lookup", async (req, res) => {
       let api_url = "";
       if (service === 'adhr') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://exploitsindia.site/anish-private-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
       } else if (service === 'bnk') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
         api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
@@ -2036,7 +2036,7 @@ app.get("/api/lookup", async (req, res) => {
       let logPrefix = "";
       
       if (lookupType === 'adhr') {
-        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = `https://exploitsindia.site/anish-private-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
         logPrefix = "ADHR";
       } else if (lookupType === 'aadhaar_to_pan') {
         const apiKey = "c8117598aafa71238a4bf8377087b0ff";

@@ -1590,7 +1590,7 @@ async def support_lookup(
             api_url = ""
             if selected_service == "adhr":
                 clean_digits = re.sub(r'[^0-9]', '', cleaned_query)
-                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(clean_digits)}"
+                api_url = f"https://exploitsindia.site/anish-private-api/aadhar.php?exploits={urllib.parse.quote(clean_digits)}"
             elif selected_service == "bnk":
                 clean_ifsc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
                 api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(clean_ifsc)}"
@@ -3218,7 +3218,7 @@ async def identity_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://exploitsindia.site//osint-api/aadhar.php?exploits={target_query}"
+    api_url = f"https://exploitsindia.site/anish-private-api/aadhar.php?exploits={target_query}"
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
