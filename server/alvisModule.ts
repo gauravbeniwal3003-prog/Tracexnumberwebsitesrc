@@ -466,9 +466,7 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
     const queryClean = String(rawInputQuery || "").trim();
 
     if (!queryClean) {
-      const host = req.get("host") || "tracexdata-api.onrender.com";
-      const protocol = req.protocol || "https";
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = "https://tracexdata-api.onrender.com";
 
       if (serviceKey === "number_lookup") {
         return res.status(400).json({

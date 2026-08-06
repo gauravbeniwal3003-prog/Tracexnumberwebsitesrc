@@ -323,8 +323,7 @@ export default function AlvisAppApi() {
   };
 
   const apiKey = walletData?.api_key || "alvis_live_key_sample";
-  const activeOrigin = typeof window !== "undefined" ? window.location.origin : "https://tracexdata-api.onrender.com";
-  const renderHost = activeOrigin;
+  const renderHost = "https://tracexdata-api.onrender.com";
 
   // The 3 Working APIs allotted to the user with hardcoded prices
   const apis = [
