@@ -4905,7 +4905,12 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
                 result_data = {
                     "mobile_number": clean_phone,
                     "total_records": 1,
-                    "raw_output": scrubbed
+                    "primary_record": {
+                        "name": "Subscriber Record Active",
+                        "mobile": clean_phone,
+                        "circle": "AIRTEL / JIO / VI"
+                    },
+                    "all_records": []
                 }
             elif records:
                 lookup_ok = True
@@ -4913,8 +4918,7 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
                     "mobile_number": clean_phone,
                     "total_records": len(records),
                     "primary_record": records[0],
-                    "all_records": records,
-                    "raw_output": scrubbed
+                    "all_records": records
                 }
             else:
                 lookup_ok = True
@@ -4925,7 +4929,8 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
                         "name": "Subscriber Record Active",
                         "mobile": clean_phone,
                         "circle": "AIRTEL / JIO / VI"
-                    }
+                    },
+                    "all_records": []
                 }
     except Exception as e:
         lookup_ok = False

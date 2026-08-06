@@ -1,8 +1,8 @@
 {
   "user_name": "alvisappapi",
   "api_key": "alvis_live_key_77c38c3e9a596cbe",
-  "wallet_balance": 418,
-  "total_searches": 8,
+  "wallet_balance": 417.5,
+  "total_searches": 9,
   "pricing": {
     "aadhaar_to_pan": {
       "name": "Aadhaar to PAN Lookup",
@@ -95,6 +95,15 @@
       "status": "completed",
       "balance_after": 418,
       "reason": "Aadhaar to PAN Lookup search for 123****012"
+    },
+    {
+      "id": "tx_deb_1786030937659_322",
+      "date_time": "2026-08-06T15:42:17.659Z",
+      "amount": 0.5,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 417.5,
+      "reason": "Number Lookup search for 972****355"
     }
   ],
   "searches": [
@@ -169,8 +178,17 @@
       "charged_amount": 26,
       "status": "success",
       "response_summary": "Data retrieved successfully"
+    },
+    {
+      "id": "srch_1786030938596_788",
+      "date_time": "2026-08-06T15:42:18.596Z",
+      "api_used": "number_lookup",
+      "search_input": "972****355",
+      "charged_amount": 0.5,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
     }
   ],
   "created_at": "2026-08-06T12:20:49.063Z",
-  "updated_at": "2026-08-06T15:31:59.956Z"
+  "updated_at": "2026-08-06T15:42:18.596Z"
 }
