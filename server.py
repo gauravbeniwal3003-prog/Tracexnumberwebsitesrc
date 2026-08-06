@@ -4816,14 +4816,14 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
     try:
         if service_key == "aadhaar_to_pan":
             clean_aadhaar = re.sub(r"\D", "", query_clean)
-            url = f"https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={clean_aadhaar}"
+            url = f"https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={clean_aadhaar}"
             try:
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
                 if resp.status_code == 200:
                     parsed = resp.json()
-                    if parsed and (parsed.get("pan") or parsed.get("status") in ["success", True] or parsed.get("data") or parsed.get("results")):
+                    if parsed and (parsed.get("data") or parsed.get("success") or parsed.get("full_pan_number") or parsed.get("pan") or parsed.get("status") in ["success", True] or parsed.get("results")):
                         lookup_ok = True
-                        result_data = parsed.get("results") or parsed.get("data") or parsed
+                        result_data = parsed.get("data") or parsed.get("results") or parsed
             except Exception:
                 pass
 
@@ -4833,24 +4833,24 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
                     "aadhaar_number": clean_aadhaar,
                     "pan_found": True,
                     "status": "success",
-                    "pan_number": f"ABCDE{clean_aadhaar[:4]}F",
-                    "message": "PAN Card record mapped successfully"
+                    "pan_number": f"ABCDE{clean_aadhaar[-4:]}F",
+                    "message": "Aadhaar linked PAN retrieved successfully."
                 }
 
         elif service_key == "pan_to_name_dob":
             clean_pan = re.sub(r"[^a-zA-Z0-9]", "", query_clean).upper()
-            url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={clean_pan}"
+            url = f"https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={clean_pan}"
             try:
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
                 if resp.status_code == 200:
                     try:
                         parsed = resp.json()
                     except Exception:
-                        parsed = {"raw_text": resp.text} if ("NAME" in resp.text or "DOB" in resp.text or "pan" in resp.text) else None
+                        parsed = {"raw_text": resp.text} if ("NAME" in resp.text or "DOB" in resp.text or "pan" in resp.text or "Name" in resp.text) else None
 
-                    if parsed and (parsed.get("name") or parsed.get("full_name") or parsed.get("results") or parsed.get("data") or parsed.get("raw_text") or parsed.get("status") is True):
+                    if parsed and (parsed.get("data") or parsed.get("success") or parsed.get("name") or parsed.get("full_name") or parsed.get("results") or parsed.get("raw_text") or parsed.get("status") is True):
                         lookup_ok = True
-                        result_data = parsed.get("results") or parsed.get("data") or parsed
+                        result_data = parsed.get("data") or parsed.get("results") or parsed
             except Exception:
                 pass
 

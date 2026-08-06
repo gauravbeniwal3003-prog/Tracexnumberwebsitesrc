@@ -579,8 +579,7 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
           throw new Error("Invalid 12-digit Aadhaar number format.");
         }
 
-        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-        const url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(cleanAadhaar)}`;
+        const url = `https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query=${encodeURIComponent(cleanAadhaar)}`;
 
         try {
           const resp = await fetch(url, {
@@ -594,9 +593,9 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
               parsed = JSON.parse(text);
             } catch (e) {}
 
-            if (parsed && (parsed.pan || parsed.status === "success" || parsed.status === true || parsed.data || parsed.results)) {
+            if (parsed && (parsed.data || parsed.success || parsed.full_pan_number || parsed.pan || parsed.status === "success" || parsed.status === true)) {
               lookupSuccess = true;
-              resultData = parsed.results || parsed.data || parsed;
+              resultData = parsed.data || parsed.results || parsed;
             }
           }
         } catch (e) {}
@@ -617,7 +616,7 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
           throw new Error("Invalid 10-character PAN number format.");
         }
 
-        const url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(cleanPan)}`;
+        const url = `https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query=${encodeURIComponent(cleanPan)}`;
 
         try {
           const resp = await fetch(url, {
@@ -635,9 +634,9 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
               }
             }
 
-            if (parsed && (parsed.name || parsed.full_name || parsed.results || parsed.data || parsed.raw_text || parsed.status === true)) {
+            if (parsed && (parsed.data || parsed.success || parsed.name || parsed.full_name || parsed.results || parsed.raw_text || parsed.status === true)) {
               lookupSuccess = true;
-              resultData = parsed.results || parsed.data || parsed;
+              resultData = parsed.data || parsed.results || parsed;
             }
           }
         } catch (e) {}

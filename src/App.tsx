@@ -847,16 +847,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           >
             📧 EMAIL (20 CTR)
           </Link>
-          <Link
-            to="/panfind"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'aadhaar_to_pan'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            💳 Aadhaar to PAN (150 CTR)*
-          </Link>
         </div>
 
         {/* VPS & Data Maintenance Cost Notice */}
