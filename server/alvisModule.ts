@@ -61,13 +61,13 @@ const DEFAULT_STORE: AlvisStoreData = {
       name: "Aadhaar to PAN Lookup",
       customer_price: 26.0,
       provider_price: 5.0,
-      provider_url: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number="
+      provider_url: "https://digisevapoint.com/api/developer_api.php?service=panfind"
     },
     pan_to_name_dob: {
       name: "PAN to Name & DOB Lookup",
       customer_price: 14.0,
       provider_price: 2.0,
-      provider_url: "https://exploitsindia.site/osint-api/pancard.php?exploits="
+      provider_url: "https://digisevapoint.com/api/developer_api.php?service=pan_to_name_dob"
     },
     number_lookup: {
       name: "Number Lookup",
@@ -448,6 +448,29 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
     return clean.slice(0, 3) + "****" + clean.slice(-3);
   };
 
+  function sanitizeAlvisData(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map(sanitizeAlvisData);
+    } else if (obj !== null && typeof obj === "object") {
+      const cleaned: any = {};
+      for (const [key, val] of Object.entries(obj)) {
+        const kLower = key.toLowerCase();
+        if (
+          ["developer", "developer_api", "cost_deducted", "remaining_balance", "buy_api", "support", "response_code", "developer_contact", "website_link", "message_code"].includes(kLower)
+        ) {
+          continue;
+        }
+        cleaned[key] = sanitizeAlvisData(val);
+      }
+      return cleaned;
+    } else if (typeof obj === "string") {
+      return obj
+        .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|@techvishalboss|digisevapoint|exploitsindia|exploits|@ExploitsCollective|TVB_SGL_BCFC1E32|BUY\s*API|SUPPORT)/gi, "")
+        .trim();
+    }
+    return obj;
+  }
+
   // Helper method to execute and wrap Alvis lookups with wallet logic
   async function handleAlvisLookup(
     req: express.Request,
@@ -760,7 +783,7 @@ export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any
         search_query: queryClean,
         charged_amount: customerPrice,
         remaining_balance: latestStore.wallet_balance,
-        data: resultData
+        data: sanitizeAlvisData(resultData)
       });
     } else {
       // Automatic Refund!

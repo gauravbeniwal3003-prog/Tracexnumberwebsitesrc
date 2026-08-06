@@ -4444,13 +4444,13 @@ def _get_default_alvis_store():
                 "name": "Aadhaar to PAN Lookup",
                 "customer_price": 26.0,
                 "provider_price": 5.0,
-                "provider_url": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number="
+                "provider_url": "https://digisevapoint.com/api/developer_api.php?service=panfind"
             },
             "pan_to_name_dob": {
                 "name": "PAN to Name & DOB Lookup",
                 "customer_price": 14.0,
                 "provider_price": 2.0,
-                "provider_url": "https://exploitsindia.site/osint-api/pancard.php?exploits="
+                "provider_url": "https://digisevapoint.com/api/developer_api.php?service=pan_to_name_dob"
             },
             "number_lookup": {
                 "name": "Number Lookup",
@@ -4683,6 +4683,27 @@ def mask_alvis_query(val: str):
     if len(clean) < 5:
         return clean
     return clean[:3] + "****" + clean[-3:]
+
+def sanitize_alvis_data(obj):
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            k_lower = str(k).lower()
+            if k_lower in ["developer", "developer_api", "cost_deducted", "remaining_balance", "buy_api", "support", "response_code", "developer_contact", "website_link", "message_code"]:
+                continue
+            cleaned[k] = sanitize_alvis_data(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [sanitize_alvis_data(item) for item in obj]
+    elif isinstance(obj, str):
+        cleaned_str = re.sub(
+            r"(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|@techvishalboss|digisevapoint|exploitsindia|exploits|@ExploitsCollective|TVB_SGL_BCFC1E32|BUY\s*API|SUPPORT)",
+            "",
+            obj,
+            flags=re.IGNORECASE
+        ).strip()
+        return cleaned_str
+    return obj
 
 async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: str):
     store = verify_alvis_auth(request)
@@ -4958,7 +4979,7 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
             "search_query": query_clean,
             "charged_amount": cust_price,
             "remaining_balance": latest_store.get("wallet_balance"),
-            "data": result_data
+            "data": sanitize_alvis_data(result_data)
         }
     else:
         # Auto-Refund
