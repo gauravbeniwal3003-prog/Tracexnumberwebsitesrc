@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import { setupAlvisRoutes } from "./server/alvisModule.ts";
 
 dotenv.config();
 
@@ -130,6 +131,9 @@ app.use('/api/admin', sensitiveLimiter);
 
 // Strict JSON parsing
 app.use(express.json({ limit: '10kb' }));
+
+// Dedicated Alvis App API & Wallet Module
+setupAlvisRoutes(app, supabaseAdmin);
 
 
 // Healthy Check
@@ -2478,7 +2482,7 @@ async function fulfillOrder(orderId: string, userId: string) {
 // Cashfree Routes
 
 app.post("/api/cashfree/create-order", async (req, res) => {
-  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
+  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind" || req.body?.plan_id === "alvisappapi";
   
   let authenticatedUserId = null;
   const authHeader = req.headers.authorization;
@@ -2512,7 +2516,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     if (!amount || typeof amount !== 'number' || amount <= 0 || amount > 100000) {
       return res.status(400).json({ error: "Invalid payment amount" });
     }
-    if (plan_id !== "pgpay_manual" && plan_id !== "panfind") {
+    if (plan_id !== "pgpay_manual" && plan_id !== "panfind" && plan_id !== "alvisappapi") {
       if (!user_id || typeof user_id !== 'string') {
         return res.status(400).json({ error: "Invalid user ID" });
       }

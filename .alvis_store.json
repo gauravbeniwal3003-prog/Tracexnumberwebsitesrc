@@ -1,0 +1,122 @@
+{
+  "user_name": "alvisappapi",
+  "api_key": "alvis_live_key_77c38c3e9a596cbe",
+  "wallet_balance": 458.5,
+  "total_searches": 5,
+  "pricing": {
+    "aadhaar_to_pan": {
+      "name": "Aadhaar to PAN Lookup",
+      "customer_price": 26,
+      "provider_price": 5,
+      "provider_url": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number="
+    },
+    "pan_to_name_dob": {
+      "name": "PAN to Name & DOB Lookup",
+      "customer_price": 14,
+      "provider_price": 2,
+      "provider_url": "https://exploitsindia.site/osint-api/pancard.php?exploits="
+    },
+    "number_lookup": {
+      "name": "Number Lookup",
+      "customer_price": 0.5,
+      "provider_price": 0,
+      "provider_url": "internal_number_lookup"
+    }
+  },
+  "transactions": [
+    {
+      "id": "tx_deb_1786029125357_608",
+      "date_time": "2026-08-06T15:12:05.357Z",
+      "amount": 0.5,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 499.5,
+      "reason": "Number Lookup search for 987****210"
+    },
+    {
+      "id": "tx_deb_1786029126141_131",
+      "date_time": "2026-08-06T15:12:06.141Z",
+      "amount": 26,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 473.5,
+      "reason": "Aadhaar to PAN Lookup search for 123****012"
+    },
+    {
+      "id": "tx_deb_1786029127108_371",
+      "date_time": "2026-08-06T15:12:07.108Z",
+      "amount": 14,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 459.5,
+      "reason": "PAN to Name & DOB Lookup search for ABC****34F"
+    },
+    {
+      "id": "tx_deb_1786029132331_253",
+      "date_time": "2026-08-06T15:12:12.331Z",
+      "amount": 0.5,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 459,
+      "reason": "Number Lookup search for 987****210"
+    },
+    {
+      "id": "tx_deb_1786029588160_7",
+      "date_time": "2026-08-06T15:19:48.160Z",
+      "amount": 0.5,
+      "type": "debit",
+      "status": "completed",
+      "balance_after": 458.5,
+      "reason": "Number Lookup search for 987****210"
+    }
+  ],
+  "searches": [
+    {
+      "id": "srch_1786029126119_641",
+      "date_time": "2026-08-06T15:12:06.119Z",
+      "api_used": "number_lookup",
+      "search_input": "987****210",
+      "charged_amount": 0.5,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
+    },
+    {
+      "id": "srch_1786029127100_238",
+      "date_time": "2026-08-06T15:12:07.100Z",
+      "api_used": "aadhaar_to_pan",
+      "search_input": "123****012",
+      "charged_amount": 26,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
+    },
+    {
+      "id": "srch_1786029127184_117",
+      "date_time": "2026-08-06T15:12:07.184Z",
+      "api_used": "pan_to_name_dob",
+      "search_input": "ABC****34F",
+      "charged_amount": 14,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
+    },
+    {
+      "id": "srch_1786029132773_496",
+      "date_time": "2026-08-06T15:12:12.773Z",
+      "api_used": "number_lookup",
+      "search_input": "987****210",
+      "charged_amount": 0.5,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
+    },
+    {
+      "id": "srch_1786029588792_661",
+      "date_time": "2026-08-06T15:19:48.792Z",
+      "api_used": "number_lookup",
+      "search_input": "987****210",
+      "charged_amount": 0.5,
+      "status": "success",
+      "response_summary": "Data retrieved successfully"
+    }
+  ],
+  "created_at": "2026-08-06T12:20:49.063Z",
+  "updated_at": "2026-08-06T15:19:48.792Z"
+}

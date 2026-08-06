@@ -4422,6 +4422,578 @@ async def aadhaar_to_pan_endpoint(request: Request):
         return JSONResponse(status_code=500, content={"error": "Internal server error during processing Aadhaar to PAN lookup"})
 
 
+
+# ==========================================
+# ALVIS DEDICATED PER-SEARCH WALLET API MODULE
+# ==========================================
+import json
+import math
+import re
+from fastapi.responses import JSONResponse
+
+ALVIS_STORE_FILE = os.path.join(os.getcwd(), ".alvis_store.json")
+
+def _get_default_alvis_store():
+    return {
+        "user_name": "Alvis API Panel",
+        "api_key": "alvis_live_key_" + secrets.token_hex(8),
+        "wallet_balance": 0.0,
+        "total_searches": 0,
+        "pricing": {
+            "aadhaar_to_pan": {
+                "name": "Aadhaar to PAN Lookup",
+                "customer_price": 26.0,
+                "provider_price": 5.0,
+                "provider_url": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number="
+            },
+            "pan_to_name_dob": {
+                "name": "PAN to Name & DOB Lookup",
+                "customer_price": 14.0,
+                "provider_price": 2.0,
+                "provider_url": "https://exploitsindia.site/osint-api/pancard.php?exploits="
+            },
+            "number_lookup": {
+                "name": "Number Lookup",
+                "customer_price": 0.5,
+                "provider_price": 0.0,
+                "provider_url": "internal_number_lookup"
+            }
+        },
+        "transactions": [],
+        "searches": [],
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+def load_alvis_store():
+    try:
+        if os.path.exists(ALVIS_STORE_FILE):
+            with open(ALVIS_STORE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_data = _get_default_alvis_store()
+                if "pricing" in data:
+                    for k in default_data["pricing"]:
+                        if k not in data["pricing"]:
+                            data["pricing"][k] = default_data["pricing"][k]
+                return data
+    except Exception as e:
+        print(f"[ALVIS_PYTHON_STORE] Error reading store: {e}")
+    
+    initial = _get_default_alvis_store()
+    save_alvis_store(initial)
+    return initial
+
+def save_alvis_store(data):
+    data["updated_at"] = datetime.utcnow().isoformat()
+    try:
+        with open(ALVIS_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"[ALVIS_PYTHON_STORE] Error saving store: {e}")
+
+def verify_alvis_auth(request: Request, body_data: dict = None):
+    store = load_alvis_store()
+    provided_key = (
+        request.headers.get("x-api-key") or
+        request.headers.get("x-alvis-key") or
+        request.query_params.get("apiKey") or
+        request.query_params.get("key") or
+        ""
+    )
+    
+    if not provided_key and request.headers.get("authorization"):
+        provided_key = request.headers.get("authorization").replace("Bearer ", "").strip()
+        
+    admin_pass = request.headers.get("x-admin-pass") or ""
+    is_master = (
+        provided_key == os.getenv("INTERNAL_MASTER_KEY") or
+        provided_key == "admin_master_tracex_2026" or
+        admin_pass == "gaurav2026"
+    )
+    
+    if not provided_key and not is_master:
+        raise HTTPException(status_code=401, detail="Missing API Key. Provide x-api-key header or apiKey query param.")
+        
+    if provided_key != store.get("api_key") and not is_master:
+        raise HTTPException(status_code=401, detail="Invalid Alvis API Key provided.")
+        
+    return store
+
+def verify_alvis_admin_auth(request: Request, body_data: dict = None):
+    pass_val = (
+        request.headers.get("x-admin-pass") or
+        (body_data.get("adminPass") if body_data else None) or
+        request.query_params.get("adminPass") or
+        ""
+    )
+    is_master = (
+        pass_val == "gaurav2026" or
+        pass_val == os.getenv("INTERNAL_MASTER_KEY") or
+        pass_val == "admin_master_tracex_2026"
+    )
+    if not is_master:
+        raise HTTPException(status_code=403, detail="Admin access denied. Invalid password.")
+
+@app.get("/api/alvis/wallet")
+async def get_alvis_wallet():
+    store = load_alvis_store()
+    bal = store.get("wallet_balance", 0.0)
+    pricing = store.get("pricing", {})
+    
+    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 99999
+    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 99999
+    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 99999
+    
+    searches = store.get("searches", [])
+    search_counts = {
+        "aadhaar_to_pan": len([s for s in searches if s.get("api_used") == "aadhaar_to_pan" and s.get("status") == "success"]),
+        "pan_to_name_dob": len([s for s in searches if s.get("api_used") == "pan_to_name_dob" and s.get("status") == "success"]),
+        "number_lookup": len([s for s in searches if s.get("api_used") == "number_lookup" and s.get("status") == "success"]),
+        "total": len([s for s in searches if s.get("status") == "success"])
+    }
+
+    return {
+        "status": "success",
+        "user_name": store.get("user_name"),
+        "api_key": store.get("api_key"),
+        "wallet_balance": bal,
+        "total_searches": store.get("total_searches", 0),
+        "pricing": pricing,
+        "remaining_lookups": {
+            "aadhaar_to_pan": rem_aadhaar,
+            "pan_to_name_dob": rem_pan,
+            "number_lookup": rem_num
+        },
+        "search_counts": search_counts,
+        "updated_at": store.get("updated_at")
+    }
+
+@app.post("/api/alvis/wallet/recharge")
+async def post_alvis_wallet_recharge(body: dict = Body(...)):
+    store = load_alvis_store()
+    try:
+        amount = float(body.get("amount", 0))
+    except (ValueError, TypeError):
+        amount = 0.0
+    payment_method = body.get("payment_method") or "UPI / Instant Wallet Add"
+
+    if amount <= 0:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "Please enter a valid positive recharge amount."})
+
+    new_bal = round(store.get("wallet_balance", 0.0) + amount, 2)
+    store["wallet_balance"] = new_bal
+
+    tx = {
+        "id": f"tx_rec_{int(time.time()*1000)}_{secrets.token_hex(2)}",
+        "date_time": datetime.utcnow().isoformat(),
+        "amount": amount,
+        "type": "credit",
+        "status": "completed",
+        "balance_after": new_bal,
+        "reason": f"Wallet Add via {payment_method}"
+    }
+
+    store.get("transactions", []).append(tx)
+    save_alvis_store(store)
+
+    return {
+        "status": "success",
+        "message": f"₹{amount:.2f} added to Alvis Wallet successfully!",
+        "wallet_balance": new_bal,
+        "transaction": tx
+    }
+
+@app.get("/api/alvis/pricing")
+async def get_alvis_pricing():
+    store = load_alvis_store()
+    bal = store.get("wallet_balance", 0.0)
+    pricing = store.get("pricing", {})
+    
+    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 99999
+    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 99999
+    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 99999
+    
+    return {
+        "status": "success",
+        "wallet_balance": bal,
+        "pricing": pricing,
+        "remaining_lookups": {
+            "aadhaar_to_pan": rem_aadhaar,
+            "pan_to_name_dob": rem_pan,
+            "number_lookup": rem_num
+        }
+    }
+
+@app.get("/api/alvis/history/searches")
+async def get_alvis_searches_history(limit: int = Query(50), search: str = Query("")):
+    store = load_alvis_store()
+    searches = list(reversed(store.get("searches", [])))
+    if search:
+        s_lower = search.lower()
+        searches = [
+            s for s in searches
+            if s_lower in s.get("search_input", "").lower() or
+               s_lower in s.get("api_used", "").lower() or
+               s_lower in s.get("status", "").lower()
+        ]
+    return {
+        "status": "success",
+        "total_records": len(searches),
+        "searches": searches[:limit]
+    }
+
+@app.get("/api/alvis/history/transactions")
+async def get_alvis_transactions_history(limit: int = Query(50)):
+    store = load_alvis_store()
+    txs = list(reversed(store.get("transactions", [])))
+    return {
+        "status": "success",
+        "total_records": len(txs),
+        "transactions": txs[:limit]
+    }
+
+def mask_alvis_query(val: str):
+    clean = str(val or "").strip()
+    if len(clean) < 5:
+        return clean
+    return clean[:3] + "****" + clean[-3:]
+
+async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: str):
+    store = verify_alvis_auth(request)
+    pricing = store.get("pricing", {}).get(service_key, {})
+    if not pricing:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid service requested."})
+        
+    cust_price = float(pricing.get("customer_price", 0.0))
+    query_clean = str(raw_query or "").strip()
+    if not query_clean:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "Query parameter is required."})
+        
+    bal = float(store.get("wallet_balance", 0.0))
+    if bal < cust_price:
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "error",
+                "error": "Insufficient wallet balance.",
+                "current_balance": bal,
+                "required_amount": cust_price,
+                "message": f"Your balance is ₹{bal:.2f}, but this search costs ₹{cust_price:.2f}. Please recharge your wallet."
+            }
+        )
+        
+    # Step A: Deduct
+    new_bal = round(bal - cust_price, 2)
+    store["wallet_balance"] = new_bal
+    masked = mask_alvis_query(query_clean)
+    tx_id = f"tx_deb_{int(time.time()*1000)}_{secrets.token_hex(2)}"
+    
+    debit_tx = {
+        "id": tx_id,
+        "date_time": datetime.utcnow().isoformat(),
+        "amount": cust_price,
+        "type": "debit",
+        "status": "completed",
+        "balance_after": new_bal,
+        "reason": f"{pricing.get('name')} search for {masked}"
+    }
+    store["transactions"].append(debit_tx)
+    save_alvis_store(store)
+    
+    # Step B: Provider lookup
+    lookup_ok = False
+    result_data = None
+    err_msg = ""
+    
+    try:
+        if service_key == "aadhaar_to_pan":
+            clean_aadhaar = re.sub(r"\D", "", query_clean)
+            if len(clean_aadhaar) != 12:
+                raise Exception("Invalid 12-digit Aadhaar number format.")
+            url = f"https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={clean_aadhaar}"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
+            if resp.status_code != 200:
+                raise Exception(f"Provider HTTP Error Status {resp.status_code}")
+            try:
+                parsed = resp.json()
+            except Exception:
+                raise Exception("Invalid response format from Aadhaar to PAN provider.")
+                
+            if parsed and (parsed.get("pan") or parsed.get("status") in ["success", True] or parsed.get("data") or parsed.get("results")):
+                lookup_ok = True
+                result_data = parsed.get("results") or parsed.get("data") or parsed
+            elif parsed and parsed.get("message"):
+                raise Exception(parsed.get("message"))
+            else:
+                raise Exception("No PAN record found for the provided Aadhaar number.")
+                
+        elif service_key == "pan_to_name_dob":
+            clean_pan = re.sub(r"[^a-zA-Z0-9]", "", query_clean).upper()
+            if len(clean_pan) != 10:
+                raise Exception("Invalid 10-character PAN number format.")
+            url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={clean_pan}"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
+            if resp.status_code != 200:
+                raise Exception(f"Provider HTTP Error Status {resp.status_code}")
+            try:
+                parsed = resp.json()
+            except Exception:
+                if "NAME" in resp.text or "DOB" in resp.text or "pan" in resp.text:
+                    parsed = {"raw_text": resp.text}
+                else:
+                    parsed = None
+            if parsed and (parsed.get("name") or parsed.get("full_name") or parsed.get("results") or parsed.get("data") or parsed.get("raw_text") or parsed.get("status") is True):
+                lookup_ok = True
+                result_data = parsed.get("results") or parsed.get("data") or parsed
+            else:
+                raise Exception("No PAN details found for the provided PAN number.")
+                
+        elif service_key == "number_lookup":
+            clean_phone = re.sub(r"\D", "", query_clean)
+            if len(clean_phone) < 10:
+                raise Exception("Invalid phone number format.")
+            url = f"https://exploitsindia.site/anish-private-api/number.php?exploits={clean_phone}"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
+            if resp.status_code != 200:
+                raise Exception(f"Provider HTTP Error Status {resp.status_code}")
+            try:
+                parsed = resp.json()
+            except Exception:
+                if "name" in resp.text or "mobile" in resp.text or "address" in resp.text:
+                    parsed = {"name": "Record Found", "text_body": resp.text}
+                else:
+                    parsed = None
+            if parsed and (parsed.get("name") or parsed.get("mobile") or parsed.get("results") or parsed.get("data") or parsed.get("records") or parsed.get("status") is True):
+                lookup_ok = True
+                result_data = parsed.get("results") or parsed.get("data") or parsed.get("records") or parsed
+            else:
+                raise Exception("No phone subscriber record found.")
+    except Exception as e:
+        lookup_ok = False
+        err_msg = str(e) or "Provider lookup error or timeout."
+        
+    latest_store = load_alvis_store()
+    if lookup_ok and result_data:
+        latest_store["total_searches"] = latest_store.get("total_searches", 0) + 1
+        search_rec = {
+            "id": f"srch_{int(time.time()*1000)}_{secrets.token_hex(2)}",
+            "date_time": datetime.utcnow().isoformat(),
+            "api_used": service_key,
+            "search_input": masked,
+            "charged_amount": cust_price,
+            "status": "success",
+            "response_summary": "Data retrieved successfully"
+        }
+        latest_store["searches"].append(search_rec)
+        save_alvis_store(latest_store)
+        
+        return {
+            "status": "success",
+            "api_used": service_key,
+            "service_name": pricing.get("name"),
+            "search_query": query_clean,
+            "charged_amount": cust_price,
+            "remaining_balance": latest_store.get("wallet_balance"),
+            "data": result_data
+        }
+    else:
+        # Auto-Refund
+        refund_bal = round(latest_store.get("wallet_balance", 0.0) + cust_price, 2)
+        latest_store["wallet_balance"] = refund_bal
+        
+        refund_tx = {
+            "id": f"tx_ref_{int(time.time()*1000)}_{secrets.token_hex(2)}",
+            "date_time": datetime.utcnow().isoformat(),
+            "amount": cust_price,
+            "type": "refund",
+            "status": "completed",
+            "balance_after": refund_bal,
+            "reason": f"Auto-refund for failed {pricing.get('name')} search ({err_msg})"
+        }
+        latest_store["transactions"].append(refund_tx)
+        
+        failed_search = {
+            "id": f"srch_{int(time.time()*1000)}_{secrets.token_hex(2)}",
+            "date_time": datetime.utcnow().isoformat(),
+            "api_used": service_key,
+            "search_input": masked,
+            "charged_amount": 0,
+            "status": "refunded",
+            "response_summary": err_msg
+        }
+        latest_store["searches"].append(failed_search)
+        save_alvis_store(latest_store)
+        
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "error": "Provider lookup failed or no data returned.",
+                "message": err_msg,
+                "auto_refunded": True,
+                "refunded_amount": cust_price,
+                "remaining_balance": refund_bal
+            }
+        )
+
+@app.post("/api/alvis/lookup/aadhaar-to-pan")
+async def post_alvis_aadhaar_to_pan(request: Request, body: dict = Body(None)):
+    data = body or {}
+    q = data.get("aadhaar_number") or data.get("aadhaar") or data.get("query") or request.query_params.get("aadhaar_number") or ""
+    return await _execute_alvis_lookup(request, "aadhaar_to_pan", q)
+
+@app.post("/api/alvis/lookup/pan-to-name-dob")
+async def post_alvis_pan_to_name_dob(request: Request, body: dict = Body(None)):
+    data = body or {}
+    q = data.get("pan_number") or data.get("pan") or data.get("query") or request.query_params.get("pan_number") or ""
+    return await _execute_alvis_lookup(request, "pan_to_name_dob", q)
+
+@app.post("/api/alvis/lookup/number")
+async def post_alvis_number_lookup(request: Request, body: dict = Body(None)):
+    data = body or {}
+    q = data.get("number") or data.get("phone") or data.get("mobile") or data.get("query") or request.query_params.get("number") or ""
+    return await _execute_alvis_lookup(request, "number_lookup", q)
+
+@app.get("/api/alvis/admin/dashboard")
+async def get_alvis_admin_dashboard(request: Request):
+    verify_alvis_admin_auth(request)
+    store = load_alvis_store()
+    bal = store.get("wallet_balance", 0.0)
+    pricing = store.get("pricing", {})
+    
+    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 0
+    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 0
+    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 0
+    
+    req_aadhaar = rem_aadhaar * pricing["aadhaar_to_pan"].get("provider_price", 0)
+    req_pan = rem_pan * pricing["pan_to_name_dob"].get("provider_price", 0)
+    req_num = rem_num * pricing["number_lookup"].get("provider_price", 0)
+    
+    rec_buffer = max(req_aadhaar, req_pan, req_num)
+    
+    txs = store.get("transactions", [])
+    tot_credits = sum(t["amount"] for t in txs if t.get("type") == "credit" or (t.get("type") == "manual_adjustment" and t.get("amount", 0) > 0))
+    tot_debits = sum(t["amount"] for t in txs if t.get("type") == "debit")
+    tot_refunds = sum(t["amount"] for t in txs if t.get("type") == "refund")
+    
+    searches = store.get("searches", [])
+    
+    return {
+        "status": "success",
+        "user_profile": {
+            "user_name": store.get("user_name"),
+            "api_key": store.get("api_key"),
+            "wallet_balance": bal,
+            "total_searches": store.get("total_searches", 0),
+            "created_at": store.get("created_at")
+        },
+        "pricing": pricing,
+        "smart_calculations": {
+            "user_wallet_balance": bal,
+            "remaining_lookups_possible": {
+                "aadhaar_to_pan": rem_aadhaar,
+                "pan_to_name_dob": rem_pan,
+                "number_lookup": rem_num
+            },
+            "required_provider_balance_per_api": {
+                "aadhaar_to_pan": req_aadhaar,
+                "pan_to_name_dob": req_pan,
+                "number_lookup": req_num
+            },
+            "recommended_provider_buffer": rec_buffer,
+            "explanation": f"Based on current wallet balance of ₹{bal:.2f}, the user can run up to {rem_aadhaar} Aadhaar-to-PAN searches or {rem_pan} PAN searches. Maintain at least ₹{rec_buffer:.2f} in provider accounts for uninterrupted service."
+        },
+        "usage_stats": {
+            "total_credits": tot_credits,
+            "total_debits": tot_debits,
+            "total_refunds": tot_refunds,
+            "total_transactions": len(txs),
+            "total_searches": len(searches),
+            "successful_searches": len([s for s in searches if s.get("status") == "success"]),
+            "refunded_searches": len([s for s in searches if s.get("status") == "refunded"])
+        },
+        "recent_transactions": list(reversed(txs))[:10],
+        "recent_searches": list(reversed(searches))[:10]
+    }
+
+@app.post("/api/alvis/admin/wallet/adjust")
+async def post_alvis_admin_adjust_wallet(request: Request, body: dict = Body(...)):
+    verify_alvis_admin_auth(request, body)
+    store = load_alvis_store()
+    
+    action = body.get("action")
+    amount = float(body.get("amount", 0))
+    reason = body.get("reason") or "Manual adjustment"
+    
+    if amount <= 0:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "Please enter a valid positive numerical amount."})
+        
+    bal = float(store.get("wallet_balance", 0.0))
+    if action == "deduct" and bal < amount:
+        return JSONResponse(status_code=400, content={"status": "error", "error": f"Cannot deduct ₹{amount}. Current balance is ₹{bal}."})
+        
+    if action in ["credit", "add"]:
+        new_bal = round(bal + amount, 2)
+    elif action == "deduct":
+        new_bal = round(bal - amount, 2)
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "Action must be 'credit' or 'deduct'."})
+        
+    store["wallet_balance"] = new_bal
+    tx = {
+        "id": f"tx_adj_{int(time.time()*1000)}",
+        "date_time": datetime.utcnow().isoformat(),
+        "amount": amount,
+        "type": "manual_adjustment",
+        "status": "completed",
+        "balance_after": new_bal,
+        "reason": reason
+    }
+    store["transactions"].append(tx)
+    save_alvis_store(store)
+    
+    return {
+        "status": "success",
+        "message": f"Successfully {'deducted' if action == 'deduct' else 'added'} ₹{amount:.2f} {'from' if action == 'deduct' else 'to'} wallet.",
+        "wallet_balance": new_bal,
+        "transaction": tx
+    }
+
+@app.post("/api/alvis/admin/pricing")
+async def post_alvis_admin_pricing(request: Request, body: dict = Body(...)):
+    verify_alvis_admin_auth(request, body)
+    store = load_alvis_store()
+    pricing = store.get("pricing", {})
+    
+    for key in ["aadhaar_to_pan", "pan_to_name_dob", "number_lookup"]:
+        if key in body:
+            item = body[key]
+            if "customer_price" in item:
+                pricing[key]["customer_price"] = float(item["customer_price"])
+            if "provider_price" in item:
+                pricing[key]["provider_price"] = float(item["provider_price"])
+                
+    save_alvis_store(store)
+    return {
+        "status": "success",
+        "message": "API Pricing updated successfully.",
+        "pricing": pricing
+    }
+
+@app.post("/api/alvis/admin/reset-key")
+async def post_alvis_admin_reset_key(request: Request, body: dict = Body(None)):
+    verify_alvis_admin_auth(request, body)
+    store = load_alvis_store()
+    new_key = "alvis_live_key_" + secrets.token_hex(12)
+    store["api_key"] = new_key
+    save_alvis_store(store)
+    return {
+        "status": "success",
+        "message": "New API Key generated successfully for Alvis App.",
+        "new_api_key": new_key
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     # Render provides PORT env var, default to 10000 for standard Render deploys

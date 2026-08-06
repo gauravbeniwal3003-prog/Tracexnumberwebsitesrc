@@ -37,6 +37,7 @@ import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
 import SupportGauravBeniwalPage from './pages/SupportGauravBeniwalPage.tsx';
+import AlvisAppApi from './pages/AlvisAppApi.tsx';
 
 export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -124,6 +125,8 @@ export default function App() {
         <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
         <Route path="/pgpay/:urlAmt" element={<PgPaymentPage fallbackFixed />} />
+        <Route path="/Alvisappapi" element={<AlvisAppApi />} />
+        <Route path="/alvisappapi" element={<AlvisAppApi />} />
         <Route path="/:pgpayCustom" element={<PgPaymentPage customSegment />} />
       </Routes>
 
