@@ -517,15 +517,16 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({ configs: providerConfigs })
       });
-      const json = await res.json();
-      if (res.ok && json.status === 'success') {
+      const json = await res.json().catch(() => ({ error: 'Invalid JSON response from server' }));
+      if (res.ok && (json.status === 'success' || json.configs)) {
         alert("Provider API Routing Configurations updated successfully! All live lookups will now use the updated provider endpoints.");
         fetchData();
       } else {
-        alert("Failed to update provider configurations: " + (json.error || 'Unknown error'));
+        const errMsg = json.error || json.message || json.detail || (res.statusText ? `${res.status} ${res.statusText}` : 'Unknown error');
+        alert("Failed to update provider configurations: " + errMsg);
       }
     } catch (err: any) {
-      alert("Error updating provider configs: " + err.message);
+      alert("Error updating provider configs: " + (err.message || err));
     } finally {
       setIsSavingProviders(false);
     }

@@ -5020,6 +5020,115 @@ async def get_realtime_pricing_api(request: Request):
         "services": priced_services
     }
 
+
+# --- DEDICATED PROVIDER CONFIGS API ---
+
+DEFAULT_PROVIDER_CONFIGS = {
+  "phone": "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
+  "aadhaar": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  "adhr": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  "aadhaar_to_pan": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
+  "pancard": "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
+  "ifsc": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  "bnk": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  "vehicle": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
+  "veh_owner_num": "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+  "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
+  "telegram": "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
+  "family": "https://exploitsindia.site/anish-private-api/family.php?exploits={query}"
+}
+
+PROVIDER_CONFIGS = dict(DEFAULT_PROVIDER_CONFIGS)
+
+try:
+    if os.path.exists("data/provider_config.json"):
+        with open("data/provider_config.json", "r", encoding="utf-8") as _f:
+            PROVIDER_CONFIGS.update(json.load(_f))
+except Exception as _e:
+    pass
+
+
+@app.api_route("/api/admin/provider-configs", methods=["GET", "POST", "PUT"])
+@app.api_route("/api/provider-configs", methods=["GET", "POST", "PUT"])
+async def handle_provider_configs_api(request: Request):
+    global PROVIDER_CONFIGS
+    if request.method == "GET":
+        return {
+            "status": "success",
+            "configs": PROVIDER_CONFIGS,
+            "defaults": DEFAULT_PROVIDER_CONFIGS
+        }
+
+    try:
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        configs = body.get("configs") if isinstance(body, dict) else None
+        if not configs and isinstance(body, dict):
+            configs = body
+
+        if isinstance(configs, str):
+            try:
+                configs = json.loads(configs)
+            except Exception:
+                pass
+
+        if configs and isinstance(configs, dict):
+            clean_configs = {}
+            for k, v in configs.items():
+                if isinstance(v, str):
+                    clean_configs[k.strip()] = v.strip()
+
+            PROVIDER_CONFIGS.update(clean_configs)
+
+            # Mirror aliases
+            if "aadhaar" in clean_configs: PROVIDER_CONFIGS["adhr"] = clean_configs["aadhaar"]
+            if "adhr" in clean_configs: PROVIDER_CONFIGS["aadhaar"] = clean_configs["adhr"]
+            if "ifsc" in clean_configs: PROVIDER_CONFIGS["bnk"] = clean_configs["ifsc"]
+            if "bnk" in clean_configs: PROVIDER_CONFIGS["ifsc"] = clean_configs["bnk"]
+            if "pancard" in clean_configs: PROVIDER_CONFIGS["pan"] = clean_configs["pancard"]
+            if "pan" in clean_configs: PROVIDER_CONFIGS["pancard"] = clean_configs["pan"]
+
+            try:
+                os.makedirs("data", exist_ok=True)
+                with open("data/provider_config.json", "w", encoding="utf-8") as f:
+                    json.dump(PROVIDER_CONFIGS, f, indent=2)
+            except Exception as fs_err:
+                print(f"[PROVIDER_CONFIG_FS_ERR] {fs_err}")
+
+            db = get_supabase()
+            if db:
+                try:
+                    for k, u in clean_configs.items():
+                        db.table("api_provider_configs").upsert({
+                            "service_key": k,
+                            "provider_url": u,
+                            "updated_at": datetime.utcnow().isoformat() + "Z"
+                        }, on_conflict="service_key").execute()
+                except Exception as sub_err:
+                    print(f"[PROVIDER_CONFIG_SUPABASE_NOTICE] {sub_err}")
+
+            return {
+                "status": "success",
+                "message": "Provider API Routing Configurations updated successfully!",
+                "configs": PROVIDER_CONFIGS
+            }
+
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "Invalid provider configurations payload.", "message": "Invalid provider configurations payload."}
+        )
+
+    except Exception as err:
+        print(f"[PROVIDER_CONFIG_UPDATE_ERR] {err}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "error": str(err) or "Failed to update provider configurations.", "message": str(err) or "Failed to update provider configurations."}
+        )
+
 @app.get("/api/alvis/wallet")
 async def get_alvis_wallet():
     store = load_alvis_store()

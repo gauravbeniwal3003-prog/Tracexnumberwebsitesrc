@@ -1,0 +1,15 @@
+{
+  "phone": "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
+  "aadhaar": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  "adhr": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  "aadhaar_to_pan": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
+  "pancard": "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
+  "ifsc": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  "bnk": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  "vehicle": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
+  "veh_owner_num": "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+  "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
+  "telegram": "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
+  "family": "https://exploitsindia.site/anish-private-api/family.php?exploits={query}",
+  "pan": "https://exploitsindia.site/osint-api/pancard.php?exploits={query}"
+}
