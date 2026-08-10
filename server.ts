@@ -1235,14 +1235,14 @@ app.get("/api/service-records", async (req, res) => {
 
     if (searchLogs && searchLogs.length > 0) {
       const formatted = searchLogs.map((r: any, idx: number) => ({
-        id: r.id || String(idx + 1),
-        logId: `#${r.id ? String(r.id).slice(-4) : (1000 - idx)}`,
+        id: String(r.id || idx + 1),
+        logId: `#${r.id != null ? r.id : (idx + 1)}`,
         dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
         client: user.email?.split('@')[0] || "User",
         serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
         referenceCode: r.query || "N/A",
         status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
-        payload: {
+        payload: r.results || r.payload || {
           status: r.status || "SUCCESS",
           search_type: r.search_type,
           query: r.query,
@@ -2437,39 +2437,8 @@ app.all("/api/lookup", async (req, res) => {
 
     // 3. Strict Permission Enforcement: Block Cross-Service usage
     const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-    const isMasterOrInternal = isMaster || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("COMBO");
-
-    if (!isMasterOrInternal) {
-      let isAuthorized = false;
-      if (planUpper.includes("ACCOUNT") || planUpper.includes("DIRECT") || planUpper.includes("WALLET") || planUpper.includes("MASTER") || planUpper.includes("ALL")) {
-        isAuthorized = true;
-      } else if (lookupType === 'phone') {
-        isAuthorized = planUpper.includes("NUMBER");
-      } else if ((lookupType as string) === 'telegram') {
-        isAuthorized = planUpper.includes("TELEGRAM");
-      } else if (lookupType === 'adhr') {
-        isAuthorized = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH");
-      } else if (lookupType === 'bnk') {
-        isAuthorized = planUpper.includes("BNK") || planUpper.includes("BANK");
-      } else if (lookupType === 'rasion') {
-        isAuthorized = planUpper.includes("RASION") || planUpper.includes("RATION");
-      } else if (lookupType === 'vehicle') {
-        isAuthorized = planUpper.includes("VEHICLE");
-      } else if (lookupType === 'veh_owner_num') {
-        isAuthorized = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE");
-      } else if (lookupType === 'email') {
-        isAuthorized = planUpper.includes("EMAIL") || planUpper.includes("MAIL");
-      } else if (lookupType === 'aadhaar_to_pan') {
-        isAuthorized = planUpper.includes("AADHAAR_TO_PAN") || planUpper.includes("AADHAAR TO PAN");
-      }
-
-      if (!isAuthorized) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a '${lookupType}' query.`
-        });
-      }
-    }
+    // All active API keys are valid for every type of lookup
+    const isAuthorized = true;
 
     // 4. Schema checks
     if (lookupType === 'phone' && !/^\d{10}$/.test(targetQuery)) {
@@ -3851,15 +3820,8 @@ app.get("/api/telegram", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check telegram permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("TELEGRAM") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'telegram' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     // Checking safety protection bypass
@@ -4156,15 +4118,8 @@ app.get("/api/identity", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("ADHR") || planUpper.includes("IDENTITY") || planUpper.includes("AADH") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'identity' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     const api_url = getProviderUrl('aadhaar', targetQuery);
@@ -4286,15 +4241,8 @@ app.get("/api/bank", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("BNK") || planUpper.includes("BANK") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'bank' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     const api_url = getProviderUrl('ifsc', targetQuery);
@@ -4416,15 +4364,8 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("RASION") || planUpper.includes("RATION") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'rasion' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     const api_url = getProviderUrl('family', targetQuery);
@@ -4568,15 +4509,8 @@ app.get("/api/vehicle", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     // 1. Check database cache first for speed of response
@@ -4758,15 +4692,8 @@ app.get("/api/veh-owner-num", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("VEH_OWNER") || planUpper.includes("VEH_NUMM") || planUpper.includes("VEHICLE_TO_NUMBER") || planUpper.includes("VEHICLE") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'vehicle to owner number' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     // 1. Check database cache first for speed of response using prefix
@@ -4945,15 +4872,8 @@ app.get("/api/email", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("EMAIL") || planUpper.includes("MAIL") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL") || planUpper.includes("PRO") || planUpper.includes("INFINITY");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated an 'email' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     // Fetch from the external provider
@@ -5100,15 +5020,8 @@ app.get("/api/pancard", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
       }
 
-      // Check permissions
-      const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-      const isAllowed = planUpper.includes("PAN") || planUpper.includes("PN") || planUpper.includes("COMBO") || planUpper.includes("MASTER") || planUpper.includes("INTERNAL");
-      if (!isAllowed) {
-        return res.status(403).json({
-          status: "error",
-          message: `Access Denied: Your API key is authorized for '${keyRecord.plan_name}' but you initiated a 'pancard' query.`
-        });
-      }
+      // All API keys allowed
+      const isAllowed = true;
     }
 
     const api_url = getProviderUrl('pancard', targetQuery);

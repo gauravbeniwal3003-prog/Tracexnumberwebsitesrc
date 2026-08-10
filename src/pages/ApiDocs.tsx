@@ -347,7 +347,7 @@ export default function ApiDocs() {
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
 
   // Live Tester State
-  const [selectedEndpointCode, setSelectedEndpointCode] = useState<string>("adhar2panlink");
+  const [selectedEndpointCode, setSelectedEndpointCode] = useState<string>("phone");
   const [queryInput, setQueryInput] = useState<string>("");
   const [testResponse, setTestResponse] = useState<any>(null);
   const [isLoadingTest, setIsLoadingTest] = useState<boolean>(false);
@@ -616,11 +616,11 @@ export default function ApiDocs() {
                 </label>
                 <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-2.5 px-3 gap-2">
                   <div className="text-xs font-mono text-slate-600 font-medium truncate flex-1 select-all">
-                    {baseDomain}/api/lookup?api_key=<span className="text-amber-600 font-bold">{apiKey}</span>&amp;service=<span className="text-emerald-600 font-bold">{selectedEndpointCode}</span>&amp;query=<span className="text-pink-600 font-bold">{queryInput || "ENTER_QUERY"}</span>
+                    {baseDomain}/api/lookup?api_key=<span className="text-amber-600 font-bold">{apiKey}</span>&amp;service=<span className="text-emerald-600 font-bold">{selectedEndpointCode}</span>&amp;query=<span className="text-pink-600 font-bold">{queryInput}</span>
                   </div>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`${baseDomain}/api/lookup?api_key=${apiKey}&service=${selectedEndpointCode}&query=${queryInput || "ENTER_QUERY"}`);
+                      navigator.clipboard.writeText(`${baseDomain}/api/lookup?api_key=${apiKey}&service=${selectedEndpointCode}&query=${queryInput}`);
                       setCopiedUrl(true);
                       setTimeout(() => setCopiedUrl(false), 2000);
                     }}

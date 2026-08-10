@@ -2242,15 +2242,8 @@ async def saas_lookup(
                 "website_link": "https://tracexdata.online"
             })
 
-        # Check permission for Number Lookup
-        plan_name = license.get('plan_name') or ""
-        plan_upper = str(plan_name).upper()
-        is_num_allowed = any(p in plan_upper for p in ["NUMBER", "PRO", "INFINITY", "COMBO", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-        if not is_num_allowed:
-            return make_api_response({
-                "status": "error",
-                "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated a 'number' query."
-            })
+        # All API keys valid
+        is_num_allowed = True
 
         # Format safety check for strict Number Lookup keys
         is_strict_number_plan = "NUMBER" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -2741,15 +2734,8 @@ async def telegram_lookup(
             if limit is not None and int(requests_used) >= int(limit):
                 return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
 
-        # Permission check
-        plan_name = keyRecord.get('plan_name') or ""
-        plan_upper = str(plan_name).upper()
-        is_allowed = any(p in plan_upper for p in ["TELEGRAM", "PRO", "INFINITY", "COMBO", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-        if not is_allowed:
-            return make_api_response({
-                "status": "error",
-                "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated a 'telegram' query."
-            })
+        # All API keys valid
+        is_allowed = True
             
         # Format check for strict telegram
         is_strict_telegram_plan = "TELEGRAM" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3137,15 +3123,8 @@ async def email_lookup(
             if limit is not None and int(requests_used) >= int(limit):
                 return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                 
-            # Permission check
-            plan_name = key_record.get('plan_name') or ""
-            plan_upper = str(plan_name).upper()
-            is_allowed = any(p in plan_upper for p in ["EMAIL", "MAIL", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-            if not is_allowed:
-                return make_api_response({
-                    "status": "error",
-                    "message": f"Access Denied: Your API key is authorized for '{plan_name}' but you initiated an 'email' query."
-                })
+            # All API keys valid
+            is_allowed = True
                 
             # Daily Limit Check for email Lookup (by default 1000 per day limit)
             try:
@@ -3325,14 +3304,8 @@ async def identity_lookup(
             if limit is not None and int(requests_used) >= int(limit):
                 return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                 
-            # Permission check
-            plan_upper = str(key_record.get('plan_name') or "").upper()
-            is_allowed = any(p in plan_upper for p in ["ADHR", "IDENTITY", "AADH", "COMBO", "MASTER", "INTERNAL"])
-            if not is_allowed:
-                return make_api_response({
-                    "status": "error",
-                    "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated an 'identity' query."
-                })
+            # All API keys valid
+            is_allowed = True
             
             # Format validation for strict Identity plans
             is_strict_identity_plan = any(p in plan_upper for p in ["ADHR", "IDENTITY", "AADH"]) and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3515,14 +3488,8 @@ async def bank_lookup(
             if limit is not None and int(requests_used) >= int(limit):
                 return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                 
-            # Permission check
-            plan_upper = str(key_record.get('plan_name') or "").upper()
-            is_allowed = any(p in plan_upper for p in ["BNK", "BANK", "BA&NK", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-            if not is_allowed:
-                return make_api_response({
-                    "status": "error",
-                    "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated a 'bank' query."
-                })
+            # All API keys valid
+            is_allowed = True
                 
             # Format validation for strict Bank plans
             is_strict_bank_plan = any(p in plan_upper for p in ["BNK", "BANK", "BA&NK"]) and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3707,14 +3674,8 @@ async def vehicle_lookup(
                 if limit is not None and int(requests_used) >= int(limit):
                     return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                     
-                # Permission check
-                plan_upper = str(key_record.get('plan_name') or "").upper()
-                is_allowed = any(p in plan_upper for p in ["VEHICLE", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-                if not is_allowed:
-                    return make_api_response({
-                        "status": "error",
-                        "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated a 'vehicle' query."
-                    })
+                # All API keys valid
+                is_allowed = True
                     
                 # Format validation for strict Vehicle plans
                 is_strict_vehicle_plan = "VEHICLE" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3965,14 +3926,8 @@ async def veh_owner_num_lookup(
                 if limit is not None and int(requests_used) >= int(limit):
                     return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                     
-                # Permission check
-                plan_upper = str(key_record.get('plan_name') or "").upper()
-                is_allowed = any(p in plan_upper for p in ["VEH_OWNER", "VEH_NUMM", "VEHICLE_TO_NUMBER", "VEHICLE", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-                if not is_allowed:
-                    return make_api_response({
-                        "status": "error",
-                        "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated a 'vehicle to owner number' query."
-                    })
+                # All API keys valid
+                is_allowed = True
             except Exception as db_err:
                 print(f"[DB_ERR] {db_err}")
                 return make_api_response({"status": "error", "message": "api error"})
@@ -4212,14 +4167,8 @@ async def pancard_lookup(
                 if limit is not None and int(requests_used) >= int(limit):
                     return make_api_response({"status": "error", "message": "Quota Exhausted: Lookup limit reached"})
                     
-                # Permission check
-                plan_upper = str(key_record.get('plan_name') or "").upper()
-                is_allowed = any(p in plan_upper for p in ["PAN", "PN", "COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP", "SYSTEM"])
-                if not is_allowed:
-                    return make_api_response({
-                        "status": "error",
-                        "message": f"Access Denied: Your API key is authorized for '{key_record.get('plan_name')}' but you initiated a 'pancard' query."
-                    })
+                # All API keys valid
+                is_allowed = True
             except Exception as db_err:
                 print(f"[DB_ERR] {db_err}")
                 return make_api_response({"status": "error", "message": "api error"})
@@ -4566,6 +4515,22 @@ ALVIS_DB_FILE = os.path.join(os.getcwd(), "alvis_database.db")
 
 def _init_alvis_sqlite_db():
     try:
+        if os.path.exists(ALVIS_DB_FILE):
+            try:
+                conn = sqlite3.connect(ALVIS_DB_FILE)
+                c = conn.cursor()
+                c.execute("PRAGMA quick_check;")
+                row = c.fetchone()
+                conn.close()
+                if not row or row[0] != "ok":
+                    print("[ALVIS_SQLITE_PY] Corrupt DB quick_check failed, resetting...")
+                    try: os.remove(ALVIS_DB_FILE)
+                    except Exception: pass
+            except Exception as check_err:
+                print(f"[ALVIS_SQLITE_PY] Corrupt DB detected during init: {check_err}, resetting...")
+                try: os.remove(ALVIS_DB_FILE)
+                except Exception: pass
+
         conn = sqlite3.connect(ALVIS_DB_FILE)
         c = conn.cursor()
         c.execute('''
@@ -4617,20 +4582,26 @@ def _get_default_alvis_store():
 def load_alvis_store():
     try:
         if os.path.exists(ALVIS_DB_FILE):
-            conn = sqlite3.connect(ALVIS_DB_FILE)
-            c = conn.cursor()
-            c.execute("SELECT store_json FROM alvis_store WHERE id = 1")
-            row = c.fetchone()
-            conn.close()
-            if row and row[0]:
-                data = json.loads(row[0])
-                default_data = _get_default_alvis_store()
-                if "pricing" in data:
-                    for k in default_data["pricing"]:
-                        if k not in data["pricing"]:
-                            data["pricing"][k] = default_data["pricing"][k]
-                return data
-        elif os.path.exists(ALVIS_STORE_FILE):
+            try:
+                conn = sqlite3.connect(ALVIS_DB_FILE)
+                c = conn.cursor()
+                c.execute("SELECT store_json FROM alvis_store WHERE id = 1")
+                row = c.fetchone()
+                conn.close()
+                if row and row[0]:
+                    data = json.loads(row[0])
+                    default_data = _get_default_alvis_store()
+                    if "pricing" in data:
+                        for k in default_data["pricing"]:
+                            if k not in data["pricing"]:
+                                data["pricing"][k] = default_data["pricing"][k]
+                    return data
+            except Exception as db_err:
+                print(f"[ALVIS_PYTHON_STORE] Corrupt SQLite DB during load: {db_err}, resetting...")
+                try: os.remove(ALVIS_DB_FILE)
+                except Exception: pass
+
+        if os.path.exists(ALVIS_STORE_FILE):
             with open(ALVIS_STORE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 default_data = _get_default_alvis_store()

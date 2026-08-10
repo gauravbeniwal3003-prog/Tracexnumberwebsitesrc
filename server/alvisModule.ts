@@ -94,8 +94,14 @@ function initSqliteDatabase(): void {
     initSqlJs().then((SQL) => {
       let db: any;
       if (fs.existsSync(DB_FILE)) {
-        const filebuffer = fs.readFileSync(DB_FILE);
-        db = new SQL.Database(filebuffer);
+        try {
+          const filebuffer = fs.readFileSync(DB_FILE);
+          db = new SQL.Database(filebuffer);
+        } catch (dbErr) {
+          console.warn("[ALVIS_SQLITE_TS] Corrupt SQLite DB file detected, removing and re-creating:", dbErr);
+          try { fs.unlinkSync(DB_FILE); } catch (_) {}
+          db = new SQL.Database();
+        }
       } else {
         db = new SQL.Database();
       }
@@ -141,6 +147,9 @@ function initSqliteDatabase(): void {
       }
     }).catch((e) => {
       console.error("[ALVIS_SQLITE_TS] Error initializing sql.js:", e);
+      try {
+        if (fs.existsSync(DB_FILE)) fs.unlinkSync(DB_FILE);
+      } catch (_) {}
     });
   } catch (err) {
     console.error("[ALVIS_SQLITE_TS] Error in initSqliteDatabase:", err);
