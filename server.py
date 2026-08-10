@@ -2244,6 +2244,8 @@ async def saas_lookup(
 
         # All API keys valid
         is_num_allowed = True
+        plan_name = license.get('plan_name') or ""
+        plan_upper = str(plan_name).upper()
 
         # Format safety check for strict Number Lookup keys
         is_strict_number_plan = "NUMBER" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -2736,6 +2738,8 @@ async def telegram_lookup(
 
         # All API keys valid
         is_allowed = True
+        plan_name = keyRecord.get('plan_name') or ""
+        plan_upper = str(plan_name).upper()
             
         # Format check for strict telegram
         is_strict_telegram_plan = "TELEGRAM" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3306,6 +3310,8 @@ async def identity_lookup(
                 
             # All API keys valid
             is_allowed = True
+            plan_name = key_record.get('plan_name') or ""
+            plan_upper = str(plan_name).upper()
             
             # Format validation for strict Identity plans
             is_strict_identity_plan = any(p in plan_upper for p in ["ADHR", "IDENTITY", "AADH"]) and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3490,6 +3496,8 @@ async def bank_lookup(
                 
             # All API keys valid
             is_allowed = True
+            plan_name = key_record.get('plan_name') or ""
+            plan_upper = str(plan_name).upper()
                 
             # Format validation for strict Bank plans
             is_strict_bank_plan = any(p in plan_upper for p in ["BNK", "BANK", "BA&NK"]) and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
@@ -3676,6 +3684,8 @@ async def vehicle_lookup(
                     
                 # All API keys valid
                 is_allowed = True
+                plan_name = key_record.get('plan_name') or ""
+                plan_upper = str(plan_name).upper()
                     
                 # Format validation for strict Vehicle plans
                 is_strict_vehicle_plan = "VEHICLE" in plan_upper and not any(p in plan_upper for p in ["COMBO", "PRO", "INFINITY", "SPECIAL", "MASTER", "INTERNAL", "VIP"])
