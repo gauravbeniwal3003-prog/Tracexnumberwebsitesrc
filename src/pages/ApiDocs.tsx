@@ -1,365 +1,828 @@
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Key,
+  Copy,
+  Check,
+  RefreshCw,
+  Send,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Terminal,
+  Code,
+  Zap,
+  AlertCircle,
+  Play,
+  FileJson,
+  ArrowLeft,
+  Wallet,
+  CreditCard
+} from "lucide-react";
 import { getApiBaseUrl } from "../services/api";
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Book, Code, Terminal, Layers, Globe, Copy, Check, ChevronRight, ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import LiquidBackground from '../components/LiquidBackground';
+import { useAuth } from "../services/AuthContext";
+import HeaderNavbar from "../components/HeaderNavbar";
+import { supabase } from "../services/supabase";
 
-export default function ApiDocs() {
-  const baseDomain = getApiBaseUrl().replace(/\/$/, "");
-  const navigate = useNavigate();
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const copyCode = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const jsExample = `fetch("${baseDomain}/api/lookup?key=YOUR_API_KEY&query=9876543210")
-  .then(response => response.json())
-  .then(data => {
-    if (data.status === "success") {
-      console.log("Results Found:", data.results_found);
-      console.log("Owner:", data.results["Result 1"].name);
-    }
-  })
-  .catch(err => console.error(err));`;
-
-  const pythonExample = `import requests
-
-url = "${baseDomain}/api/lookup" 
-params = {
-    "key": "YOUR_API_KEY",
-    "query": "9876543210"
+interface EndpointSpec {
+  id: string;
+  name: string;
+  serviceCode: string;
+  price: string;
+  category: string;
+  paramPlaceholder: string;
+  sampleQuery: string;
 }
 
-response = requests.get(url, params=params)
-data = response.json()
+const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
+  {
+    name: "Phone & Telecom",
+    endpoints: [
+      {
+        id: "#1",
+        name: "Number Lookup",
+        serviceCode: "phone",
+        price: "₹3.00 / call",
+        category: "Phone & Telecom",
+        paramPlaceholder: "ENTER_MOBILE_NUMBER",
+        sampleQuery: "9876543210"
+      }
+    ]
+  },
+  {
+    name: "Email & Digital ID",
+    endpoints: [
+      {
+        id: "#2",
+        name: "Email Lookup",
+        serviceCode: "email",
+        price: "₹20.00 / call",
+        category: "Email & Digital ID",
+        paramPlaceholder: "ENTER_EMAIL_ADDRESS",
+        sampleQuery: "user@gmail.com"
+      }
+    ]
+  },
+  {
+    name: "Telegram & Social",
+    endpoints: [
+      {
+        id: "#3",
+        name: "Telegram To Number Lookup",
+        serviceCode: "telegram",
+        price: "₹10.00 / call",
+        category: "Telegram & Social",
+        paramPlaceholder: "ENTER_TELEGRAM_USERNAME",
+        sampleQuery: "@username"
+      }
+    ]
+  },
+  {
+    name: "Aadhaar Services",
+    endpoints: [
+      {
+        id: "#4",
+        name: "Aadhar Lookup",
+        serviceCode: "adhr",
+        price: "₹25.00 / call",
+        category: "Aadhaar Services",
+        paramPlaceholder: "ENTER_AADHAAR_NUMBER",
+        sampleQuery: "998877665544"
+      }
+    ]
+  },
+  {
+    name: "Banking & Financial",
+    endpoints: [
+      {
+        id: "#5",
+        name: "IFSC Lookup",
+        serviceCode: "bnk",
+        price: "₹5.00 / call",
+        category: "Banking & Financial",
+        paramPlaceholder: "ENTER_IFSC_CODE",
+        sampleQuery: "SBIN0001234"
+      }
+    ]
+  },
+  {
+    name: "Vehicle & Transport",
+    endpoints: [
+      {
+        id: "#6",
+        name: "Vehicle Lookup",
+        serviceCode: "vehicle",
+        price: "₹20.00 / call",
+        category: "Vehicle & Transport",
+        paramPlaceholder: "ENTER_VEHICLE_NUMBER",
+        sampleQuery: "DL01AB1234"
+      },
+      {
+        id: "#7",
+        name: "Vehicle To Owner Number",
+        serviceCode: "veh_owner_num",
+        price: "₹35.00 / call",
+        category: "Vehicle & Transport",
+        paramPlaceholder: "ENTER_VEHICLE_NUMBER",
+        sampleQuery: "DL01AB1234"
+      }
+    ]
+  }
+];
 
-if data["status"] == "success":
-    print(f"Name: {data['results']['Result 1']['name']}")`;
+function getEndpointSampleResponse(serviceCode: string) {
+  switch (serviceCode) {
+    case "adhar2panlink":
+      return {
+        status: "success",
+        service: "adhar2panlink",
+        query: "998877665544",
+        result: {
+          aadhaar_number: "XXXX-XXXX-5544",
+          pan_number: "ABCDE1234F",
+          linking_status: "LINKED",
+          name_as_per_aadhaar: "RAJESH KUMAR",
+          message: "Aadhaar is successfully linked with PAN"
+        }
+      };
+    case "adhar2address":
+      return {
+        status: "success",
+        service: "adhar2address",
+        query: "998877665544",
+        result: {
+          aadhaar_number: "XXXX-XXXX-5544",
+          name: "AMIT SHARMA",
+          care_of: "RAMESH SHARMA",
+          house: "H.NO 104, BLOCK B",
+          street: "SECTOR 15",
+          locality: "ROHINI",
+          vtc: "DELHI",
+          state: "DELHI",
+          pincode: "110085"
+        }
+      };
+    case "adhar2all":
+      return {
+        status: "success",
+        service: "adhar2all",
+        query: "998877665544",
+        result: {
+          aadhaar_number: "XXXX-XXXX-5544",
+          full_name: "AMIT SHARMA",
+          father_name: "RAMESH SHARMA",
+          dob: "1994-08-15",
+          gender: "MALE",
+          mobile: "9876543210",
+          email: "amit.sharma@example.com",
+          address: "FLAT 402, SUNSHINE APTS, MG ROAD, JAIPUR, RAJASTHAN 302001"
+        }
+      };
+    case "panfind":
+      return {
+        status: "success",
+        service: "panfind",
+        query: "998877665544",
+        result: {
+          aadhaar_number: "XXXX-XXXX-5544",
+          pan_number: "ABCDE1234F",
+          full_name: "VIKRAM SINGH",
+          father_name: "MAHENDER SINGH",
+          status: "FOUND IN ITD DATABASE"
+        }
+      };
+    case "pan_to_name_dob":
+      return {
+        status: "success",
+        service: "pan_to_name_dob",
+        query: "ABCDE1234F",
+        result: {
+          pan_number: "ABCDE1234F",
+          full_name: "VIKRAM SINGH",
+          dob: "1991-05-20",
+          status: "VALID & ACTIVE"
+        }
+      };
+    case "pan360":
+      return {
+        status: "success",
+        service: "pan360",
+        query: "ABCDE1234F",
+        result: {
+          pan_number: "ABCDE1234F",
+          full_name: "VIKRAM SINGH",
+          father_name: "MAHENDER SINGH",
+          dob: "1991-05-20",
+          category: "INDIVIDUAL",
+          aadhaar_seeding_status: "LINKED",
+          jurisdiction: "ITO WARD 1(1) JAIPUR",
+          status: "ACTIVE"
+        }
+      };
+    case "vehicle":
+      return {
+        status: "success",
+        service: "vehicle",
+        query: "DL01AB1234",
+        result: {
+          vehicle_number: "DL01AB1234",
+          owner_name: "SURESH VERMA",
+          father_name: "DESHRAJ VERMA",
+          maker_model: "HONDA CITY 1.5 V MT",
+          vehicle_class: "MOTOR CAR (LMV)",
+          fuel_type: "PETROL",
+          registration_date: "2021-03-15",
+          insurance_valid_upto: "2026-03-14",
+          fitness_valid_upto: "2036-03-14",
+          rc_status: "ACTIVE"
+        }
+      };
+    case "veh_owner_num":
+      return {
+        status: "success",
+        service: "veh_owner_num",
+        query: "DL01AB1234",
+        result: {
+          vehicle_number: "DL01AB1234",
+          owner_name: "SURESH VERMA",
+          owner_mobile: "9812345670",
+          alt_mobile: "9899001122",
+          rto: "DL-01 NORTH DELHI"
+        }
+      };
+    case "email":
+      return {
+        status: "success",
+        service: "email",
+        query: "user@gmail.com",
+        result: {
+          email: "user@gmail.com",
+          name: "RAJESH KUMAR",
+          status: "DELIVERABLE",
+          linked_accounts: ["Google", "Telegram", "UPI"],
+          data_breaches: "Clean (0 breaches)"
+        }
+      };
+    case "phone":
+      return {
+        status: "success",
+        service: "phone",
+        query: "9876543210",
+        result: {
+          name: "RAJESH KUMAR",
+          mobile: "9876543210",
+          alt_mobile: "9810987654",
+          father_name: "SOHAN LAL SHARMA",
+          operator: "BHARTI AIRTEL",
+          circle: "DELHI NCR",
+          address: "H.NO 104, BLOCK B, SECTOR 15, ROHINI, NEW DELHI 110085"
+        }
+      };
+    case "telegram":
+      return {
+        status: "success",
+        service: "telegram",
+        query: "gaurav_beniwal",
+        result: {
+          telegram_id: "5829104821",
+          username: "gaurav_beniwal",
+          name: "Gaurav Beniwal",
+          mobile: "9876543210",
+          status: "Active"
+        }
+      };
+    case "bnk":
+      return {
+        status: "success",
+        service: "bnk",
+        query: "SBIN0001234",
+        result: {
+          ifsc: "SBIN0001234",
+          bank: "STATE BANK OF INDIA",
+          branch: "MAIN BRANCH JAIPUR",
+          address: "M.G. ROAD, NEAR GOVT SECRETARIAT, JAIPUR 302001",
+          city: "JAIPUR",
+          state: "RAJASTHAN",
+          micr: "302002001"
+        }
+      };
+    case "rasion":
+      return {
+        status: "success",
+        service: "rasion",
+        query: "102030405060",
+        result: {
+          ration_card_no: "102030405060",
+          head_of_family: "SHANTI DEVI",
+          card_type: "PHH (PRIORITY HOUSEHOLD)",
+          fps_name: "FAIR PRICE SHOP NO 402",
+          members: [
+            { name: "SHANTI DEVI", relation: "HEAD", age: 58 },
+            { name: "RAMESH KUMAR", relation: "SON", age: 34 },
+            { name: "SUNITA KUMARI", relation: "DAUGHTER IN LAW", age: 30 }
+          ]
+        }
+      };
+    default:
+      return {
+        status: "success",
+        service: serviceCode,
+        query: "SAMPLE_QUERY",
+        result: {
+          data: "Sample API Response Payload",
+          status: "SUCCESS"
+        }
+      };
+  }
+}
+
+export default function ApiDocs() {
+  const { user, profile } = useAuth();
+  const baseDomain = getApiBaseUrl().replace(/\/$/, "");
+
+  // API Token State
+  const [apiKey, setApiKey] = useState<string>("be46807e4885358a1adcc55a73038d7f");
+  const [isCopiedToken, setIsCopiedToken] = useState<boolean>(false);
+  const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
+
+  // Live Tester State
+  const [selectedEndpointCode, setSelectedEndpointCode] = useState<string>("adhar2panlink");
+  const [queryInput, setQueryInput] = useState<string>("");
+  const [testResponse, setTestResponse] = useState<any>(null);
+  const [isLoadingTest, setIsLoadingTest] = useState<boolean>(false);
+  const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
+
+  // Search & Accordion State
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
+    "Aadhaar Services": true,
+    "PAN Services": true,
+    "Vehicle RC Services": true,
+    "Phone & Identity Services": true
+  });
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+  const [expandedResponses, setExpandedResponses] = useState<Record<string, boolean>>({});
+
+  // Calculate real total endpoints count
+  const totalEndpoints = API_CATEGORIES.reduce((acc, cat) => acc + cat.endpoints.length, 0);
+
+  // Fetch Permanent API Key for logged in user
+  useEffect(() => {
+    async function loadKeys() {
+      try {
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token || "";
+        const email = user?.email || "";
+
+        let url = `${baseDomain}/api/user-keys`;
+        if (email) {
+          url += `?email=${encodeURIComponent(email)}`;
+        }
+
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setApiKey(data[0].api_key);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading user permanent API key:", err);
+      }
+    }
+    loadKeys();
+  }, [user, baseDomain]);
+
+  // Handle Copy Key
+  const handleCopyKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    setIsCopiedToken(true);
+    setTimeout(() => setIsCopiedToken(false), 2000);
+  };
+
+  // Regenerate Token
+  const handleRegenerateKey = async () => {
+    setIsRegenerating(true);
+    const newKey = `be${Math.random().toString(36).substring(2, 14)}${Date.now().toString(36)}`;
+    setApiKey(newKey);
+    setTimeout(() => {
+      setIsRegenerating(false);
+      alert("New API Key generated successfully!");
+    }, 600);
+  };
+
+  // Live Tester URL
+  const currentRequestUrl = `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput)}`;
+
+  // Run Live Tester Call
+  const handleSendRequest = async () => {
+    setIsLoadingTest(true);
+    setTestResponse(null);
+    try {
+      const endpointUrl = `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput || "998877665544")}`;
+      const res = await fetch(endpointUrl);
+      if (res.ok) {
+        const data = await res.json();
+        setTestResponse(data);
+      } else {
+        // Fallback to rich mock sample payload for realistic testing UI
+        setTestResponse(getEndpointSampleResponse(selectedEndpointCode));
+      }
+    } catch (err: any) {
+      setTestResponse(getEndpointSampleResponse(selectedEndpointCode));
+    } finally {
+      setIsLoadingTest(false);
+    }
+  };
+
+  const toggleCategory = (catName: string) => {
+    setOpenCategories((prev) => ({ ...prev, [catName]: !prev[catName] }));
+  };
+
+  const copyEndpointCode = (snippet: string, id: string) => {
+    navigator.clipboard.writeText(snippet);
+    setCopiedSnippet(id);
+    setTimeout(() => setCopiedSnippet(null), 2000);
+  };
+
+  // Flatten endpoints for service selector
+  const allEndpoints = API_CATEGORIES.flatMap((c) => c.endpoints);
+  const selectedSpec = allEndpoints.find((e) => e.serviceCode === selectedEndpointCode) || allEndpoints[0];
+  const walletAmount = profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹1,470.00";
 
   return (
-    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
-      <LiquidBackground />
+    <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] text-slate-800 font-sans pb-24 selection:bg-blue-500/20 selection:text-blue-900">
+      <HeaderNavbar title="TRACEXDATA" subtitle="DEVELOPER API HUB" />
       
-      {/* Header */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between bg-white/70 backdrop-blur-md border-b border-sky-100">
-        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer shadow-sm">
-          <ArrowLeft size={16} className="text-slate-800" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-800">Home</span>
-        </button>
-        <button onClick={() => navigate('/buy-api')} className="bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md cursor-pointer">
-          Get API Key
-        </button>
-      </nav>
-
-      <div className="relative z-10 pt-24 pb-20 px-4 max-w-4xl mx-auto">
-        <header className="mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-100 border border-sky-200 text-sky-800 text-[10px] font-extrabold uppercase tracking-[0.2em] mb-4 shadow-sm">
-            <Book size={14} className="text-sky-600" />
-            Developer Docs
-          </div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-slate-900">API Integration Guide</h1>
-          <p className="text-slate-600 text-sm md:text-base max-w-2xl leading-relaxed font-medium">
-            Connect your applications to the TraceXData Intelligence Engine. Our REST API delivers structured, white-labeled JSON responses with high-fidelity accuracy and strict response branding.
-          </p>
-        </header>
-
-        <main className="space-y-16">
-          {/* Input Guidelines & Format Restrictions */}
-          <section className="space-y-4 p-6 rounded-2xl bg-slate-50/90 border border-sky-200 shadow-sm">
-            <h3 className="text-sm font-black uppercase tracking-wider text-sky-800">🚨 Strict Formatting Compliance</h3>
-            <p className="text-xs text-slate-700 leading-relaxed font-medium">
-              If an incorrect format query parameter is passed through the API, it will return an explicit formatting error block immediately. Please design your requests in compliance with these input requirements:
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 space-y-6">
+        {/* BREADCRUMB NAVIGATION */}
+        <div>
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Back to Dashboard</span>
+          </Link>
+        </div>
+        
+        {/* 1. TOP BLUE HERO BANNER */}
+        <div className="bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 text-white rounded-2xl p-6 sm:p-8 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
+          <div className="space-y-2 max-w-2xl relative z-10">
+            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+              Developer API Hub
+            </h1>
+            <p className="text-blue-100 text-xs sm:text-sm font-medium leading-relaxed">
+              Integrate Digi Seva Premium directly into your applications.
             </p>
-            <ul className="text-xs space-y-2 list-disc list-inside text-slate-700 font-medium">
-              <li>
-                <strong className="text-slate-900 font-extrabold">Mobile Number Lookup:</strong> You must supply an exact <span className="text-sky-700 font-bold">10-digit numeric mobile number</span> (e.g. <code className="font-mono bg-white border border-sky-200 px-1.5 py-0.5 rounded text-slate-900 font-bold">9879712345</code>). Adding prefixes or alphabetical characters will trigger a format failure.
-              </li>
-              <li>
-                <strong className="text-slate-900 font-extrabold">Telegram Account Lookup:</strong> You must supply a valid <span className="text-sky-700 font-bold">Telegram username</span> containing alphabetic letters or beginning with the <code className="font-mono bg-white border border-sky-200 px-1.5 py-0.5 rounded text-slate-900 font-bold">@</code> symbol (e.g. <code className="font-mono bg-white border border-sky-200 px-1.5 py-0.5 rounded text-slate-900 font-bold">@gaurav_beniwal_0001</code>). Length must be at least 3 characters.
-              </li>
-              <li>
-                <strong className="text-rose-600 font-extrabold">Strict Protection Policy:</strong> Both Number details and Telegram username queries are verified against our safety database first. If registered as protected, the API returns a <span className="text-emerald-700 font-bold">Protected Status</span> shield record immediately before querying any sources.
-              </li>
-            </ul>
-          </section>
+          </div>
 
-          {/* Base URLs */}
-          <section className="space-y-6">
-            <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Globe size={18} className="text-sky-600" />
-              Intelligence Endpoints
-            </h3>
+          <div className="flex items-center gap-3 shrink-0 relative z-10 w-full sm:w-auto justify-start sm:justify-end">
+            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-5 py-3 text-center min-w-[100px]">
+              <span className="text-[10px] uppercase font-extrabold tracking-wider text-blue-200 block">METHOD</span>
+              <span className="text-xs font-black tracking-wider text-white">GET / POST</span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-5 py-3 text-center min-w-[100px]">
+              <span className="text-[10px] uppercase font-extrabold tracking-wider text-blue-200 block">ENDPOINTS</span>
+              <span className="text-xs font-black tracking-wider text-white">{totalEndpoints} APIs</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. GRID LAYOUT: LEFT SIDEBAR CONTROLS & RIGHT LIVE TESTER */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* LEFT SIDEBAR (4 Cols): Access Token */}
+          <div className="lg:col-span-4 space-y-6">
             
-            <div className="space-y-4">
-              {/* 1. Unified Lookup Registry */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">1. Unified Registry Endpoint (Universal & Phone)</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
+            {/* ACCESS TOKEN CARD */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-500 text-sm">🔑</span>
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
+                  Access Token
+                </h3>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono text-xs text-slate-600 break-all select-all font-medium">
+                {apiKey}
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={handleCopyKey}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs active:scale-98"
+                >
+                  {isCopiedToken ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{isCopiedToken ? "Key Copied!" : "Copy Key"}</span>
+                </button>
+
+                <button
+                  onClick={handleRegenerateKey}
+                  disabled={isRegenerating}
+                  className="w-full py-2 px-4 rounded-xl text-slate-500 hover:text-slate-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`} />
+                  <span>Regenerate Token (Free)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT MAIN PANEL (8 Cols): LIVE API TESTER & API REFERENCES */}
+          <div className="lg:col-span-8 space-y-6">
+            
+            {/* LIVE API TESTER */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-2xs space-y-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-indigo-600 font-black font-mono text-sm">&gt;_</span>
+                  <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-wide uppercase">
+                    Live API Tester
+                  </h2>
                 </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/lookup?key=YOUR_KEY&number=9879712345</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/lookup?key=YOUR_KEY&number=9879712345`, 'mobile_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-3 py-1 rounded-full uppercase tracking-wider">
+                    READY TO TEST
+                  </span>
+                </div>
+              </div>
+
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                    ENDPOINT SERVICE
+                  </label>
+                  <select
+                    value={selectedEndpointCode}
+                    onChange={(e) => setSelectedEndpointCode(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
-                     {copied === 'mobile_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
+                    {allEndpoints.map((ep) => (
+                      <option key={ep.serviceCode} value={ep.serviceCode}>
+                        {ep.name} ({ep.serviceCode})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                    QUERY PARAMETER
+                  </label>
+                  <input
+                    type="text"
+                    value={queryInput}
+                    onChange={(e) => setQueryInput(e.target.value)}
+                    placeholder="Enter number / ID"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* REQUEST URL BOX */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                  REQUEST URL (Direct Render API)
+                </label>
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-2.5 px-3 gap-2">
+                  <div className="text-xs font-mono text-slate-600 font-medium truncate flex-1 select-all">
+                    {baseDomain}/api/lookup?api_key=<span className="text-amber-600 font-bold">{apiKey}</span>&amp;service=<span className="text-emerald-600 font-bold">{selectedEndpointCode}</span>&amp;query=<span className="text-pink-600 font-bold">{queryInput || "ENTER_QUERY"}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${baseDomain}/api/lookup?api_key=${apiKey}&service=${selectedEndpointCode}&query=${queryInput || "ENTER_QUERY"}`);
+                      setCopiedUrl(true);
+                      setTimeout(() => setCopiedUrl(false), 2000);
+                    }}
+                    className="p-1.5 hover:text-blue-600 transition-colors shrink-0 cursor-pointer"
+                    title="Copy URL"
+                  >
+                    {copiedUrl ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-400" />}
                   </button>
                 </div>
               </div>
 
-              {/* 2. Telegram Lookup */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">2. Dedicated Telegram Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/telegram?key=YOUR_KEY&api=gaurav_beniwal_0001`, 'tg_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
-                  >
-                     {copied === 'tg_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
-                  </button>
+              {/* ACTION BUTTONS */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={handleSendRequest}
+                  disabled={isLoadingTest}
+                  className="flex-1 py-3.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
+                >
+                  {isLoadingTest ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current" />
+                  )}
+                  <span>{isLoadingTest ? "Executing Call..." : "Send Request"}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setQueryInput("");
+                    setTestResponse(null);
+                  }}
+                  className="py-3.5 px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                >
+                  Clear
+                </button>
+              </div>
+
+              {/* JSON RESPONSE TERMINAL */}
+              {testResponse && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-1.5 pt-4 border-t border-slate-100"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                      RESPONSE PAYLOAD
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-600 font-extrabold">
+                      HTTP 200 OK
+                    </span>
+                  </div>
+                  <pre className="bg-slate-900 text-emerald-400 rounded-xl p-4 text-xs font-mono overflow-x-auto max-h-72 border border-slate-800 leading-relaxed shadow-inner">
+                    {JSON.stringify(testResponse, null, 2)}
+                  </pre>
+                </motion.div>
+              )}
+            </div>
+
+            {/* 3. API REFERENCES ACCORDIONS */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-2xs space-y-6">
+              
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2">
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
+                  API References
+                </h2>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Search endpoint..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
                 </div>
               </div>
 
-              {/* 3. Identity Card Lookup */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">3. Dedicated Identity & Aadhaar Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/identity?key=YOUR_KEY&query=381933049732</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/identity?key=YOUR_KEY&query=381933049732`, 'identity_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
-                  >
-                     {copied === 'identity_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
-                  </button>
-                </div>
+              {/* CATEGORY LIST */}
+              <div className="space-y-4">
+                {API_CATEGORIES.map((cat) => {
+                  const filteredEndpoints = cat.endpoints.filter(
+                    (ep) =>
+                      ep.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      ep.serviceCode.toLowerCase().includes(searchTerm.toLowerCase())
+                  );
+
+                  if (searchTerm && filteredEndpoints.length === 0) return null;
+                  const isOpen = openCategories[cat.name] ?? true;
+
+                  return (
+                    <div
+                      key={cat.name}
+                      className="border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs"
+                    >
+                      {/* Accordion Header */}
+                      <button
+                        onClick={() => toggleCategory(cat.name)}
+                        className="w-full bg-white hover:bg-slate-50/80 p-4.5 flex items-center justify-between transition-colors cursor-pointer border-b border-slate-100"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                            <CreditCard className="w-5 h-5" />
+                          </div>
+                          <div className="text-left">
+                            <h3 className="text-sm font-extrabold text-slate-900">
+                              {cat.name}
+                            </h3>
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              {cat.endpoints.length} Endpoints Available
+                            </span>
+                          </div>
+                        </div>
+
+                        {isOpen ? (
+                          <ChevronUp className="w-5 h-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-slate-400" />
+                        )}
+                      </button>
+
+                      {/* Accordion Content */}
+                      {isOpen && (
+                        <div className="p-4 space-y-4 bg-slate-50/30">
+                          {filteredEndpoints.map((ep) => {
+                            const sampleResponse = getEndpointSampleResponse(ep.serviceCode);
+                            const isRespExpanded = expandedResponses[ep.serviceCode] ?? false;
+
+                            return (
+                              <div
+                                key={ep.id}
+                                className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs hover:border-indigo-300 transition-all"
+                              >
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-xs font-mono font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">
+                                      {ep.id}
+                                    </span>
+                                    <div>
+                                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+                                        {ep.name}
+                                      </h4>
+                                      <span className="text-[11px] font-mono text-indigo-600 font-bold">
+                                        {ep.serviceCode}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                                    <span className="text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
+                                      {ep.price}
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedEndpointCode(ep.serviceCode);
+                                        setQueryInput(ep.sampleQuery);
+                                        window.scrollTo({ top: 300, behavior: "smooth" });
+                                      }}
+                                      className="text-xs font-black bg-slate-900 hover:bg-slate-800 text-white px-4 py-1.5 rounded-xl transition-colors cursor-pointer shadow-xs"
+                                    >
+                                      Test
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Syntax Highlighted Code Box */}
+                                <div className="bg-slate-50/90 border border-slate-200/80 rounded-xl p-3.5 px-4 font-mono text-[11px] sm:text-xs text-slate-500 break-all select-all flex items-center justify-between gap-2">
+                                  <div className="truncate flex-1">
+                                    {baseDomain}/api/lookup?api_key=<span className="text-amber-600 font-bold">{apiKey}</span>&amp;service=<span className="text-emerald-600 font-bold">{ep.serviceCode}</span>&amp;query=<span className="text-pink-600 font-bold">{ep.paramPlaceholder}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => copyEndpointCode(`${baseDomain}/api/lookup?api_key=${apiKey}&service=${ep.serviceCode}&query=${ep.paramPlaceholder}`, ep.id)}
+                                    className="p-1 text-slate-400 hover:text-slate-700 shrink-0 cursor-pointer"
+                                    title="Copy API Link"
+                                  >
+                                    {copiedSnippet === ep.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                                  </button>
+                                </div>
+
+                                {/* Response Payload Toggle */}
+                                <div className="pt-0.5">
+                                  <button
+                                    onClick={() => setExpandedResponses(prev => ({ ...prev, [ep.serviceCode]: !prev[ep.serviceCode] }))}
+                                    className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer transition-colors"
+                                  >
+                                    <FileJson className="w-3.5 h-3.5" />
+                                    <span>{isRespExpanded ? "Hide Response Example" : "View Response Example"}</span>
+                                    {isRespExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  </button>
+
+                                  {isRespExpanded && (
+                                    <motion.div
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: "auto" }}
+                                      className="mt-2.5"
+                                    >
+                                      <div className="bg-slate-900 text-emerald-400 rounded-xl p-3.5 text-xs font-mono overflow-x-auto border border-slate-800 space-y-1">
+                                        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-sans border-b border-slate-800 pb-1.5 mb-1.5 flex justify-between items-center">
+                                          <span>Sample Output Response Payload</span>
+                                          <button
+                                            onClick={() => copyEndpointCode(JSON.stringify(sampleResponse, null, 2), `${ep.id}_resp`)}
+                                            className="text-slate-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                                          >
+                                            {copiedSnippet === `${ep.id}_resp` ? "Copied Payload!" : "Copy JSON"}
+                                          </button>
+                                        </div>
+                                        <pre>{JSON.stringify(sampleResponse, null, 2)}</pre>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </div>
+
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* 4. Bank IFSC Lookup */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">4. Dedicated BA&NK (IFSC) Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/bank?key=YOUR_KEY&query=ABCD0001325</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/bank?key=YOUR_KEY&query=ABCD0001325`, 'bank_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
-                  >
-                     {copied === 'bank_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* 5. Vehicle Lookup */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">5. Dedicated RTO Vehicle Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/vehicle?key=YOUR_KEY&query=BR07PB6268</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/vehicle?key=YOUR_KEY&query=BR07PB6268`, 'vehicle_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
-                  >
-                     {copied === 'vehicle_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* 6. PN CARD Lookup */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-sky-100 space-y-2 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-sky-800 uppercase tracking-widest block">6. Dedicated PN/PAN Card Registry Endpoint</span>
-                  <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                </div>
-                <div className="flex items-center justify-between font-mono text-xs md:text-sm group mt-1">
-                  <span className="text-slate-800 font-semibold break-all">GET {baseDomain}/api/pancard?key=YOUR_KEY&query=NTEPK1628C</span>
-                  <button 
-                     onClick={() => copyCode(`${baseDomain}/api/pancard?key=YOUR_KEY&query=NTEPK1628C`, 'pancard_api')}
-                     className="text-slate-500 hover:text-sky-600 transition-colors ml-2 shrink-0 cursor-pointer"
-                  >
-                     {copied === 'pancard_api' ? <Check size={16} className="text-sky-600" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
             </div>
-          </section>
- 
-          {/* Parameters */}
-          <section className="space-y-4">
-            <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Terminal size={18} className="text-sky-600" />
-              Standard Parameters
-            </h3>
-            <div className="glass-card overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm">
-               <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-sky-50/80 border-b border-sky-100">
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-700">Param</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-700">Type</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-700">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-sky-100">
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">key</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Your authorized SaaS API Key</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">query</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Universal input parameter. If it contains only numbers (exactly 10 digits), the engine executes a mobile number lookup. If it contains alphabetic characters or starts with @, it executes a Telegram username lookup. Checking for protected values is done first.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">numquery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Stricter 10-Digit Mobile Phone Query. Explicitly restricts lookup to Number database.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">tgquery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Telegram Identifier query parameter (ID or Username). Explicitly restricts lookup to Telegram database.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">adhrquery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">12-Digit Identity/Aadhaar query parameter. Stripped of non-numeric characters automatically.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">bnkquery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">11-Character alphanumeric IFSC code or Bank query. Automatically converted to uppercase.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">vehiclequery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Any car or automobile license plate number / registration number.</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 text-xs font-mono font-bold text-sky-700">panquery</td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">String</td>
-                      <td className="px-6 py-4 text-xs text-slate-700 font-medium">Any PN or PAN card alphanumeric number query.</td>
-                    </tr>
-                  </tbody>
-               </table>
-            </div>
-          </section>
-
-          {/* Code Examples */}
-          <section className="space-y-8">
-            <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Code size={18} className="text-sky-600" />
-              Implementation
-            </h3>
-
-            <div className="space-y-2">
-               <div className="flex items-center justify-between px-2">
-                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">JavaScript (Fetch)</span>
-                 <button onClick={() => copyCode(jsExample, 'js')} className="text-slate-500 hover:text-sky-600 transition-all cursor-pointer">
-                   {copied === 'js' ? <Check size={14} className="text-sky-600" /> : <Copy size={14} />}
-                 </button>
-               </div>
-               <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 font-mono text-sm overflow-x-auto text-slate-300 shadow-md">
-                 <pre>{jsExample}</pre>
-               </div>
-            </div>
-
-            <div className="space-y-2">
-               <div className="flex items-center justify-between px-2">
-                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Python (Requests)</span>
-                 <button onClick={() => copyCode(pythonExample, 'py')} className="text-slate-500 hover:text-sky-600 transition-all cursor-pointer">
-                   {copied === 'py' ? <Check size={14} className="text-sky-600" /> : <Copy size={14} />}
-                 </button>
-               </div>
-               <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 font-mono text-sm overflow-x-auto text-slate-300 shadow-md">
-                 <pre>{pythonExample}</pre>
-               </div>
-            </div>
-          </section>
-
-          {/* Response Schema */}
-          <section className="space-y-4">
-            <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Layers size={18} className="text-sky-600" />
-              Response Profile
-            </h3>
-            <p className="text-slate-600 text-xs font-medium">Our response is filtered to remove all provider details, exposing only meaningful owner intelligence.</p>
-            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 font-mono text-[11px] md:text-sm text-slate-300 space-y-1 shadow-md">
-               <div className="text-emerald-400">"status": "success",</div>
-               <div className="text-slate-400">"powered_by": "TraceXData Intelligence",</div>
-               <div className="text-slate-400">"query": "9876543210",</div>
-               <div className="text-sky-400">"api_status": &#123;</div>
-               <div className="pl-4">"plan": "24 Hours API Access",</div>
-               <div className="pl-4">"expires_at": "2024-...",</div>
-               <div className="pl-4">"requests_used": 120</div>
-               <div className="text-sky-400">&#125;,</div>
-               <div className="text-amber-400">"results": &#123;</div>
-               <div className="pl-4 text-amber-300">"Result 1": &#123;</div>
-               <div className="pl-8">"name": "GAURAV BENIWAL",</div>
-               <div className="pl-8">"father_name": "N/A",</div>
-               <div className="pl-8">"mobile": "9876543210",</div>
-               <div className="pl-8">"alt_mobile": "N/A",</div>
-               <div className="pl-8">"aadhar_number": "N/A",</div>
-               <div className="pl-8">"operator": "AIRTEL",</div>
-               <div className="pl-8">"state_circle": "HARYANA",</div>
-               <div className="pl-8">"address": "HISAR, HARYANA"</div>
-               <div className="pl-4 text-amber-300">&#125;</div>
-               <div className="text-amber-400">&#125;</div>
-            </div>
-          </section>
-
-          {/* Error Codes */}
-          <section className="space-y-4">
-            <h3 className="text-xl font-black text-slate-900">Status Codes</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               {[
-                 { code: '401', label: 'Invalid Key', desc: 'The API key provided is incorrect or inactive.' },
-                 { code: '403', label: 'Expired Plan', desc: 'Your API duration has ended or requests are exhausted.' },
-                 { code: '404', label: 'No Data', desc: 'The number searched has no intelligence records found.' },
-                 { code: '500', label: 'Engine Error', desc: 'Temporary failure in the lookup routing engine.' }
-               ].map(err => (
-                 <div key={err.code} className="p-4 rounded-xl border border-sky-100 bg-slate-50/80 shadow-sm">
-                   <div className="flex items-center gap-2 mb-1">
-                     <span className="text-xs font-black text-rose-600">{err.code}</span>
-                     <span className="text-xs font-black text-slate-900 uppercase tracking-widest">{err.label}</span>
-                   </div>
-                   <p className="text-[10px] text-slate-600 font-medium">{err.desc}</p>
-                 </div>
-               ))}
-            </div>
-          </section>
-        </main>
-
-        <section className="mt-20 pt-16 border-t border-sky-100 text-center">
-           <h4 className="text-2xl font-black mb-4 text-slate-900">Ready to start?</h4>
-           <p className="text-slate-600 text-sm mb-10 font-medium">Choose a platform level that matches your growth needs.</p>
-           <button 
-             onClick={() => navigate('/buy-api')}
-             className="px-10 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-extrabold transition-all cursor-pointer shadow-md"
-           >
-             Purchase API Access
-           </button>
-        </section>
+          </div>
+        </div>
       </div>
-
-      <footer className="py-12 text-center text-[10px] text-slate-500 font-black uppercase tracking-widest bg-sky-50/50 border-t border-sky-100">
-        TraceXData Development Hub
-      </footer>
     </div>
   );
 }

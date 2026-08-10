@@ -9,21 +9,10 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
     return import.meta.env.VITE_RENDER_BACKEND_URL;
   }
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    // If it's local development or AI Studio preview workspace, use window.location.origin
-    if (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.includes('ais-dev-') ||
-      hostname.includes('ais-pre-') ||
-      hostname.includes('gitpod.io')
-    ) {
-      return window.location.origin;
-    }
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin;
   }
-  // Default to the correct Render backend API URL for production
-  return 'https://tracexdata-api.onrender.com';
+  return '';
 };
 
 export const safeFetchJson = async (response: Response): Promise<any> => {
@@ -481,22 +470,26 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "")
+      .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
-      .replace(/Powered_by/gi, "")
-      .replace(/Contact/gi, "")
-      .replace(/Buy_API/gi, "")
+      .replace(/\s+/g, " ")
       .trim();
   }
   if (Array.isArray(obj)) {
-    return obj.map(item => scrubBranding(item));
+    return obj.map(item => scrubBranding(item)).filter(item => item !== null && item !== "" && item !== undefined);
   }
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (['branding', 'api_info', 'powered_by', 'buy_api', 'owner_telegram', 'developer', 'provider', 'api_buy_link', 'website_link', 'buy'].includes(lowerKey)) {
+      if ([
+        'branding', 'api_info', 'powered_by', 'buy_api', 
+        'owner_telegram', 'developer', 'developer_name', 'provider', 
+        'provider_info', 'api_buy_link', 'website_link', 'buy', 
+        'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to'
+      ].includes(lowerKey)) {
         continue;
       }
       cleaned[key] = scrubBranding(val);
@@ -508,7 +501,7 @@ const scrubBranding = (obj: any): any => {
 
 export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
   const result: any = {};
-  const cleanText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "").trim();
+  const cleanText = text.replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;

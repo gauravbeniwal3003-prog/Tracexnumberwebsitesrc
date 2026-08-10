@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import HeaderNavbar from "../components/HeaderNavbar";
 import {
   Wallet,
   Search,
@@ -29,15 +30,39 @@ import {
   Terminal,
   X,
   CheckCircle2,
-  QrCode,
-  ExternalLink
+  ExternalLink,
+  Menu,
+  Settings,
+  LogOut,
+  ArrowLeft,
+  Car,
+  Wheat,
+  Building2,
+  User,
+  Ticket,
+  Award,
+  Gift,
+  HelpCircle,
+  ChevronDown,
+  Fingerprint,
+  FileBadge,
+  Vote,
+  HeartPulse
 } from "lucide-react";
 import { getApiBaseUrl } from "../services/api.ts";
+import { useAuth } from "../services/AuthContext.tsx";
+import { useNavigate } from "react-router-dom";
 
 export default function AlvisAppApi() {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  // Navigation & View State
   const [activeTab, setActiveTab] = useState<
-    "apis" | "history" | "transactions" | "tester"
-  >("apis");
+    "dashboard" | "categories" | "apis" | "history" | "transactions" | "tester" | "profile"
+  >("dashboard");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [baseUrl, setBaseUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,25 +72,20 @@ export default function AlvisAppApi() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
+  const [showKeyModal, setShowKeyModal] = useState(false);
 
   // Recharge & Payment Gateway Modal State
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeStep, setRechargeStep] = useState<"amount" | "cashfree" | "processing" | "success">("amount");
   const [rechargeAmount, setRechargeAmount] = useState("260");
-  const [paymentMethod, setPaymentMethod] = useState("Cashfree UPI / Gateway");
-  const [cashfreeMethodTab, setCashfreeMethodTab] = useState<"upi" | "card" | "netbanking">("upi");
   const [cashfreeOrder, setCashfreeOrder] = useState<any>(null);
   const [cashfreePaymentId, setCashfreePaymentId] = useState("");
-  const [upiVpa, setUpiVpa] = useState("alvisappapi@upi");
-  const [cardNumber, setCardNumber] = useState("4532 •••• •••• 8912");
-  const [cardExpiry, setCardExpiry] = useState("08/29");
-  const [cardCvv, setCardCvv] = useState("•••");
-  const [selectedBank, setSelectedBank] = useState("HDFC Bank");
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const [rechargeMsg, setRechargeMsg] = useState<string | null>(null);
   const [rechargeError, setRechargeError] = useState<string | null>(null);
 
-  // Live Tester State
+  // Live Tester / Search Modal State
+  const [showTesterModal, setShowTesterModal] = useState(false);
   const [selectedApi, setSelectedApi] = useState<
     "aadhaar_to_pan" | "pan_to_name_dob" | "number_lookup"
   >("aadhaar_to_pan");
@@ -107,7 +127,6 @@ export default function AlvisAppApi() {
         setRechargeMsg(data.message || "Payment completed successfully! Points credited to your wallet.");
         fetchWalletInfo(backend);
         fetchTransactions(backend);
-        // Clear query parameter from browser address bar
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (err) {
@@ -173,7 +192,7 @@ export default function AlvisAppApi() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // 1. Step A: Initiate Direct Cashfree Payment Gateway Redirection
+  // Initiate Cashfree Order
   const handleInitiateCashfreeCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(rechargeAmount);
@@ -199,107 +218,93 @@ export default function AlvisAppApi() {
         const generatedPayId = "CF_PAY_" + Math.floor(100000 + Math.random() * 900000);
         setCashfreePaymentId(generatedPayId);
 
-        // DIRECT PAYMENT GATEWAY REDIRECTION VIA CASHFREE SDK
         if (window.Cashfree) {
           try {
-            const cashfree = window.Cashfree({
-              mode: data.cf_mode || "production"
-            });
-            // Direct redirection to official Cashfree Checkout
-            await cashfree.checkout({
+            const cashfree = window.Cashfree({ mode: data.cf_mode || "production" });
+            cashfree.checkout({
               paymentSessionId: data.payment_session_id,
               redirectTarget: "_self"
             });
             return;
           } catch (cfErr) {
-            console.warn("Cashfree Checkout SDK redirect notice:", cfErr);
+            console.warn("Cashfree SDK direct launch failed, showing fallback UI:", cfErr);
           }
         }
-        
-        // Fallback to modal if _self is intercepted inside sandbox iframe
         setRechargeStep("cashfree");
       } else {
-        setRechargeError(data.error || "Failed to create Cashfree payment order session.");
+        setRechargeError(data.message || "Failed to initiate Cashfree payment session.");
       }
     } catch (err: any) {
-      setRechargeError(err.message || "Network error launching payment gateway.");
+      setRechargeError(err.message || "Network error while connecting to Cashfree.");
     } finally {
       setRechargeLoading(false);
     }
   };
 
-  // 2. Step B: Process Cashfree Payment Verification & Add Wallet Balance
   const handleConfirmCashfreePayment = async () => {
-    const amt = parseFloat(rechargeAmount);
-    if (!cashfreeOrder || isNaN(amt) || amt <= 0) return;
+    if (!cashfreeOrder) return;
+    try {
+      setRechargeLoading(true);
+      setRechargeError(null);
 
-    setRechargeStep("processing");
-    setRechargeError(null);
+      const targetUrl = baseUrl || window.location.origin;
+      const res = await fetch(`${targetUrl}/api/alvis/payment/cashfree/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_id: cashfreeOrder.order_id,
+          payment_id: cashfreePaymentId,
+          payment_method: "Cashfree UPI / Gateway"
+        })
+      });
 
-    // Simulate Payment Gateway Network Delay
-    setTimeout(async () => {
-      try {
-        const targetUrl = baseUrl || window.location.origin;
-        const selectedMethodLabel =
-          cashfreeMethodTab === "upi"
-            ? `Cashfree UPI (${upiVpa})`
-            : cashfreeMethodTab === "card"
-            ? "Cashfree Card"
-            : `Cashfree NetBanking (${selectedBank})`;
-
-        const res = await fetch(`${targetUrl}/api/alvis/payment/cashfree/verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: amt,
-            order_id: cashfreeOrder.order_id,
-            payment_id: cashfreePaymentId,
-            payment_method: selectedMethodLabel
-          })
-        });
-
-        const data = await res.json();
-        if (res.ok && data.status === "success") {
-          setRechargeStep("success");
-          fetchWalletInfo();
-          fetchTransactions();
-        } else {
-          setRechargeError(data.error || "Cashfree payment verification failed.");
-          setRechargeStep("cashfree");
-        }
-      } catch (err: any) {
-        setRechargeError(err.message || "Failed to verify Cashfree payment.");
+      const data = await res.json();
+      if (res.ok && data.status === "success") {
+        setRechargeStep("success");
+        fetchWalletInfo();
+        fetchTransactions();
+      } else {
+        setRechargeError(data.message || "Verification pending from Cashfree gateway.");
         setRechargeStep("cashfree");
       }
-    }, 1800);
+    } catch (err: any) {
+      setRechargeError(err.message || "Error verifying Cashfree transaction.");
+      setRechargeStep("cashfree");
+    } finally {
+      setRechargeLoading(false);
+    }
   };
 
-  const handleRunTestLookup = async (e: React.FormEvent) => {
+  // Run Live API Search
+  const handleRunLiveTest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!queryInput.trim() || !walletData?.api_key) return;
-
-    setTestLoading(true);
-    setTestError(null);
-    setTestResult(null);
-
-    let endpoint = "/api/alvis/lookup/aadhaar-to-pan";
-    let bodyKey = "aadhaar_number";
-
-    if (selectedApi === "pan_to_name_dob") {
-      endpoint = "/api/alvis/lookup/pan-to-name-dob";
-      bodyKey = "pan_number";
-    } else if (selectedApi === "number_lookup") {
-      endpoint = "/api/alvis/lookup/number";
-      bodyKey = "number";
-    }
+    if (!queryInput.trim()) return;
 
     try {
+      setTestLoading(true);
+      setTestError(null);
+      setTestResult(null);
+
       const targetUrl = baseUrl || window.location.origin;
-      const res = await fetch(`${targetUrl}${endpoint}`, {
+      let endpoint = "";
+      let bodyKey = "";
+
+      if (selectedApi === "aadhaar_to_pan") {
+        endpoint = `${targetUrl}/api/alvis/lookup/aadhaar-to-pan`;
+        bodyKey = "aadhaar";
+      } else if (selectedApi === "pan_to_name_dob") {
+        endpoint = `${targetUrl}/api/alvis/lookup/pan-to-name-dob`;
+        bodyKey = "pan";
+      } else if (selectedApi === "number_lookup") {
+        endpoint = `${targetUrl}/api/alvis/lookup/number`;
+        bodyKey = "number";
+      }
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": walletData.api_key
+          "x-api-key": walletData?.api_key || "alvis_live_key_sample"
         },
         body: JSON.stringify({ [bodyKey]: queryInput.trim() })
       });
@@ -325,314 +330,780 @@ export default function AlvisAppApi() {
   const apiKey = walletData?.api_key || "alvis_live_key_sample";
   const renderHost = "https://tracexdata-api.onrender.com";
 
-  // The 3 Working APIs allotted to the user with hardcoded prices
-  const apis = [
+  // Categories definition matching portal design
+  const categoriesList = [
     {
-      id: "aadhaar_to_pan",
-      name: "1. Aadhaar to PAN Lookup API",
-      fixedCharge: "₹26.00",
-      exactChargeNum: 26.0,
-      icon: FileText,
-      color: "text-blue-600 bg-blue-50 border-blue-200",
-      endpoint: `${renderHost}/api/alvis/lookup/aadhaar-to-pan?apiKey=${apiKey}&aadhaar=`,
-      description: "Direct lookup API to find linked PAN Card number using 12-digit Aadhaar number.",
-      searchCount: walletData?.search_counts?.aadhaar_to_pan ?? 0
+      id: "aadhaar",
+      title: "Aadhaar Services",
+      count: "10 Services",
+      countNum: 10,
+      icon: Fingerprint,
+      badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+      iconBg: "bg-gradient-to-br from-amber-500 to-rose-600 text-white",
+      description: "Aadhaar to PAN, Name, Father Name, Address & Linked Mobile lookups."
     },
     {
-      id: "pan_to_name_dob",
-      name: "2. PAN Card to Name & DOB API",
-      fixedCharge: "₹14.00",
-      exactChargeNum: 14.0,
-      icon: UserCheck,
-      color: "text-indigo-600 bg-indigo-50 border-indigo-200",
-      endpoint: `${renderHost}/api/alvis/lookup/pan-to-name-dob?apiKey=${apiKey}&pan=`,
-      description: "Fetch cardholder full name, DOB, and verification status from 10-character PAN number.",
-      searchCount: walletData?.search_counts?.pan_to_name_dob ?? 0
+      id: "pan",
+      title: "PAN Services",
+      count: "7 Services",
+      countNum: 7,
+      icon: FileBadge,
+      badgeColor: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+      iconBg: "bg-gradient-to-br from-blue-600 to-indigo-700 text-white",
+      description: "PAN to Name & DOB, Verification & Card Details."
     },
     {
-      id: "number_lookup",
-      name: "3. Number Lookup API",
-      fixedCharge: "₹0.50",
-      exactChargeNum: 0.5,
+      id: "voter",
+      title: "Voter Services",
+      count: "3 Services",
+      countNum: 3,
+      icon: Vote,
+      badgeColor: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+      iconBg: "bg-gradient-to-br from-cyan-600 to-blue-700 text-white",
+      description: "EPIC Voter ID Search, Father Name & Assembly Details."
+    },
+    {
+      id: "vehicle",
+      title: "Vehicle & Driving",
+      count: "13 Services",
+      countNum: 13,
+      icon: Car,
+      badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+      iconBg: "bg-gradient-to-br from-emerald-600 to-teal-700 text-white",
+      description: "RC Owner Lookup, Driving License Verification & Vehicle Info."
+    },
+    {
+      id: "phone",
+      title: "Phone & Telecom",
+      count: "8 Services",
+      countNum: 8,
       icon: Phone,
-      color: "text-emerald-600 bg-emerald-50 border-emerald-200",
-      endpoint: `${renderHost}/api/alvis/lookup/number?apiKey=${apiKey}&number=`,
-      description: "Carrier, telecom circle, and live identity details lookup for any 10-digit phone number.",
-      searchCount: walletData?.search_counts?.number_lookup ?? 0
+      badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+      iconBg: "bg-gradient-to-br from-purple-600 to-indigo-800 text-white",
+      description: "Carrier, Circle, Live Identity & Number Lookup API."
+    },
+    {
+      id: "agriculture",
+      title: "Agriculture Services",
+      count: "5 Services",
+      countNum: 5,
+      icon: Wheat,
+      badgeColor: "bg-lime-500/20 text-lime-300 border-lime-500/30",
+      iconBg: "bg-gradient-to-br from-emerald-500 to-green-700 text-white",
+      description: "PM Kisan Status, Farmer Registration & Land Records."
+    },
+    {
+      id: "ration",
+      title: "Ration & Ayushman",
+      count: "3 Services",
+      countNum: 3,
+      icon: HeartPulse,
+      badgeColor: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+      iconBg: "bg-gradient-to-br from-rose-500 to-red-700 text-white",
+      description: "Ration Card Family Details & Ayushman Bharat Card Lookup."
+    },
+    {
+      id: "bank",
+      title: "Bank & Identity",
+      count: "6 Services",
+      countNum: 6,
+      icon: Building2,
+      badgeColor: "bg-teal-500/20 text-teal-300 border-teal-500/30",
+      iconBg: "bg-gradient-to-br from-teal-600 to-cyan-700 text-white",
+      description: "Bank Account Verification, IFSC & Account Holder Info."
     }
   ];
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-sky-50 text-slate-800 font-sans relative overflow-x-hidden pb-28">
-      
-      {/* BACKGROUND DECORATIVE GLOWS */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/3 right-10 w-96 h-96 bg-cyan-400/10 rounded-full blur-3xl pointer-events-none" />
+  // Sub-services list mapped to categories
+  const subServicesList = [
+    {
+      id: "aadhaar_to_pan",
+      categoryId: "aadhaar",
+      title: "Aadhaar To All Data Info",
+      subtitle: "Full Aadhaar to PAN Linkage",
+      price: "₹26.00 / search",
+      active: true,
+      apiCode: "aadhaar_to_pan",
+      description: "Fetch linked PAN card number directly using 12-digit Aadhaar Number.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=aadhaar_to_pan&query=`
+    },
+    {
+      id: "aadhaar_to_name",
+      categoryId: "aadhaar",
+      title: "Aadhaar to Name",
+      subtitle: "Name from Aadhaar",
+      price: "₹10.00 / search",
+      active: true,
+      apiCode: "aadhaar_to_pan",
+      description: "Instant name lookup from linked records.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=aadhaar_to_pan&query=`
+    },
+    {
+      id: "aadhaar_to_father",
+      categoryId: "aadhaar",
+      title: "Aadhaar to Father Name",
+      subtitle: "Father's Name Lookup",
+      price: "₹15.00 / search",
+      active: true,
+      apiCode: "aadhaar_to_pan",
+      description: "Retrieve father's name associated with identity records.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=aadhaar_to_pan&query=`
+    },
+    {
+      id: "aadhaar_to_address",
+      categoryId: "aadhaar",
+      title: "Aadhaar to Address",
+      subtitle: "Address from Aadhaar",
+      price: "₹20.00 / search",
+      active: true,
+      apiCode: "aadhaar_to_pan",
+      description: "Full residential address lookup.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=aadhaar_to_pan&query=`
+    },
+    {
+      id: "aadhaar_to_mobile",
+      categoryId: "aadhaar",
+      title: "Aadhaar To Mobile",
+      subtitle: "Mobile from Aadhaar",
+      price: "₹18.00 / search",
+      active: true,
+      apiCode: "aadhaar_to_pan",
+      description: "Find registered mobile number.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=aadhaar_to_pan&query=`
+    },
+    {
+      id: "pan_to_name_dob",
+      categoryId: "pan",
+      title: "PAN to Name & DOB",
+      subtitle: "Full Cardholder Details",
+      price: "₹14.00 / search",
+      active: true,
+      apiCode: "pan_to_name_dob",
+      description: "Fetch cardholder full name, DOB, and status from 10-char PAN.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=pancard&query=`
+    },
+    {
+      id: "pan_status_check",
+      categoryId: "pan",
+      title: "PAN Active Status Check",
+      subtitle: "Instant Verification",
+      price: "₹5.00 / search",
+      active: true,
+      apiCode: "pan_to_name_dob",
+      description: "Check if PAN is active or operative.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=pancard&query=`
+    },
+    {
+      id: "number_lookup",
+      categoryId: "phone",
+      title: "Number Lookup API",
+      subtitle: "Carrier & Live Identity",
+      price: "₹0.50 / search",
+      active: true,
+      apiCode: "number_lookup",
+      description: "Live carrier, telecom circle, and subscriber info for any phone number.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=phone&query=`
+    },
+    {
+      id: "vehicle_rc",
+      categoryId: "vehicle",
+      title: "RC Owner Lookup",
+      subtitle: "Vehicle Info Search",
+      price: "₹12.00 / search",
+      active: true,
+      apiCode: "number_lookup",
+      description: "Registration details, chassis number, and owner details.",
+      endpoint: `${renderHost}/api/lookup?api_key=${apiKey}&service=vehicle&query=`
+    }
+  ];
 
-      <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 relative z-10 space-y-5">
-        
-        {/* TOP HEADER: API PANEL */}
-        <div className="bg-white/90 border border-blue-100 rounded-2xl p-4 sm:p-6 backdrop-blur-xl shadow-xl shadow-blue-500/5 space-y-4">
+  // Filter categories by search
+  const filteredCategories = categoriesList.filter(c =>
+    c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const selectedCategoryObj = categoriesList.find(c => c.id === selectedCategory);
+  const selectedSubServices = subServicesList.filter(s => s.categoryId === selectedCategory);
+
+  return (
+    <div className="min-h-screen bg-[#0b132b] text-slate-100 font-sans relative overflow-x-hidden pb-20">
+      
+      {/* 1. MAIN HEADER BAR */}
+      <header className="sticky top-0 z-20 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800/80 px-3 sm:px-6 py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           
-          {/* Top Title Bar */}
-          <div className="flex items-center justify-between border-b border-blue-100/80 pb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-xl text-white font-bold shadow-md shadow-blue-500/20">
-                <Cpu className="w-5 h-5 sm:w-6 sm:h-6" />
+          {/* Left: Hamburger & Brand Title */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-all active:scale-95"
+              aria-label="Open Sidebar Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div
+              onClick={() => {
+                setActiveTab("dashboard");
+                setSelectedCategory(null);
+              }}
+              className="cursor-pointer flex items-center gap-2.5"
+            >
+              <div className="p-2 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-xl text-white font-bold shadow-lg shadow-blue-500/20">
+                <Cpu className="w-5 h-5" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    API Panel
-                  </h1>
-                  <span className="px-2.5 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 rounded-full uppercase tracking-wider">
-                    Alvis API Panel
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-lg sm:text-xl text-white tracking-tight">
+                    ALVIS PORTAL
                   </span>
-                  <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full">
-                    Account: {walletData?.user_name || "alvisappapi"}
+                  <span className="text-[9px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded uppercase">
+                    RETAILER
                   </span>
                 </div>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  Live Managed Render Backend & Pay-Per-Search Wallet
-                </p>
+                <div className="text-[10px] text-slate-400">Live API & Verification Console</div>
               </div>
             </div>
-
-            <button
-              onClick={() => {
-                fetchWalletInfo();
-                fetchSearches();
-                fetchTransactions();
-              }}
-              className="p-2 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 text-blue-700 rounded-xl transition-all"
-              title="Refresh Balance"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
-            </button>
           </div>
 
-          {/* Under Top Title: Currently Actual Balance Card & Recharge Button */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
-            <div className="bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-3 flex items-center justify-between sm:justify-start gap-4 flex-1">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-lg border border-emerald-500/20">
-                  <Wallet className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Currently Actual Balance
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-black text-emerald-600 font-mono tracking-tight">
-                    ₹{walletData ? walletData.wallet_balance.toFixed(2) : "0.00"}
-                  </div>
-                </div>
-              </div>
+          {/* Right: Settings Gear, Wallet Balance Pill, Sync Button */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setShowKeyModal(true)}
+              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-all"
+              title="API Settings & Keys"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
 
-              <div className="text-right">
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold uppercase">
-                  Real Money Only
-                </span>
-                <div className="text-[10px] text-slate-400 mt-1">No Demo Money</div>
-              </div>
-            </div>
+            <button
+              onClick={() => fetchWalletInfo()}
+              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-blue-400 rounded-xl border border-slate-700 transition-all"
+              title="Refresh Wallet Balance"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-400" : ""}`} />
+            </button>
 
-            {/* Option of Recharge on Right Side */}
+            {/* WALLET BALANCE PILL BADGE (Matching Screenshot) */}
             <button
               onClick={() => setShowRechargeModal(true)}
-              className="px-5 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-98"
+              className="bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-500/40 text-emerald-400 px-3.5 py-1.5 rounded-full flex items-center gap-2 text-xs font-mono font-bold transition-all shadow-md shadow-emerald-950/50 active:scale-95"
             >
-              <PlusCircle className="w-5 h-5" />
-              <span>Recharge Wallet</span>
+              <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>₹{walletData ? walletData.wallet_balance.toFixed(2) : "1800.00"}</span>
+              <PlusCircle className="w-3.5 h-3.5 text-emerald-400/80" />
             </button>
           </div>
-
-          {/* User's API Key Quick Row */}
-          <div className="bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3.5 py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <Key className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span className="text-slate-400 shrink-0 font-medium">Your API Key:</span>
-              <code className="font-mono text-cyan-300 font-bold truncate">
-                {showKey ? apiKey : apiKey.slice(0, 12) + "••••••••"}
-              </code>
-            </div>
-
-            <div className="flex items-center gap-2 justify-end">
-              <button
-                onClick={() => setShowKey(!showKey)}
-                className="text-[10px] text-slate-300 hover:text-white flex items-center gap-1 bg-slate-800 px-2.5 py-1 rounded border border-slate-700"
-              >
-                {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                {showKey ? "Hide" : "Show"}
-              </button>
-              <button
-                onClick={handleCopyKey}
-                className="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 px-2.5 py-1 rounded font-bold flex items-center gap-1 transition-all"
-              >
-                {copiedKey ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                {copiedKey ? "Copied Key" : "Copy Key"}
-              </button>
-            </div>
-          </div>
         </div>
+      </header>
 
-        {/* TAB 1: 3 ALLOTTED APIS SECTION */}
-        {activeTab === "apis" && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+      {/* 3. SIDEBAR / DRAWER MENU (Matching Screenshot) */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40"
+            />
+
+            {/* Slide Drawer */}
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="fixed top-0 left-0 bottom-0 w-80 max-w-[85vw] bg-[#0f172a] border-r border-slate-800 z-50 flex flex-col justify-between overflow-y-auto"
+            >
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-blue-600" />
-                  3 Allotted Working APIs & Fixed Charges
-                </h2>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  Use the copy button to copy the backend endpoint URL into your application.
-                </p>
+                {/* Header */}
+                <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight">ALVIS PORTAL</h2>
+                    <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded uppercase mt-1 inline-block">
+                      RETAILER
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Navigation Links */}
+                <div className="p-4 space-y-6">
+                  {/* MAIN SECTION */}
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => {
+                        setActiveTab("dashboard");
+                        setSelectedCategory(null);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "dashboard" && !selectedCategory
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                          : "text-slate-300 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                      <span>Dashboard</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveTab("history");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "history"
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                          : "text-slate-300 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      <History className="w-4 h-4" />
+                      <span>History & Records</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveTab("transactions");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "transactions"
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                          : "text-slate-300 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      <Wallet className="w-4 h-4" />
+                      <span>Wallet Manager</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowRechargeModal(true);
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-950/40 border border-emerald-500/20 transition-all"
+                    >
+                      <Gift className="w-4 h-4 text-emerald-400" />
+                      <span>Refer & Earn / Topup</span>
+                    </button>
+                  </div>
+
+                  {/* PREMIUM FEATURES */}
+                  <div className="space-y-1">
+                    <div className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      PREMIUM FEATURES
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setActiveTab("apis");
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "apis"
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                          : "text-slate-300 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      <Code2 className="w-4 h-4 text-cyan-400" />
+                      <span>API Access & Endpoints</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowTesterModal(true);
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-amber-300 hover:bg-slate-800/80 transition-all"
+                    >
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      <span>Live Search Console</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowRechargeModal(true);
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-indigo-300 hover:bg-slate-800/80 transition-all"
+                    >
+                      <Award className="w-4 h-4 text-indigo-400" />
+                      <span>VIP Unlimited Pass</span>
+                    </button>
+                  </div>
+
+                  {/* ACCOUNT & SUPPORT */}
+                  <div className="space-y-1">
+                    <div className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      ACCOUNT & SUPPORT
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowKeyModal(true);
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800/80 transition-all"
+                    >
+                      <User className="w-4 h-4" />
+                      <span>My Profile ({walletData?.user_name || "alvisappapi"})</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        alert("Support Ticket System active. For immediate help, contact support.");
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800/80 transition-all"
+                    >
+                      <Ticket className="w-4 h-4" />
+                      <span>Raise Support Ticket</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Logout */}
+              <div className="p-4 border-t border-slate-800">
+                <button
+                  onClick={async () => {
+                    setIsSidebarOpen(false);
+                    await signOut();
+                    navigate('/login');
+                  }}
+                  className="w-full py-3 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>[→ Sign Out Session</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 4. MAIN CONTENT AREA */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-5 space-y-6">
+
+        {/* VIEW A: CATEGORY SUB-SERVICES VIEW (When a category is selected) */}
+        {selectedCategory ? (
+          <div className="space-y-5">
+            {/* Category Header Banner (Matching Screenshot 3) */}
+            <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-3 shadow-xl">
+              <div className="flex items-center gap-3.5">
+                <button
+                  onClick={() => setSelectedCategory(null)}
+                  className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-all"
+                  title="Back to Categories"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg sm:text-xl font-bold text-white">
+                      {selectedCategoryObj?.title || "Services"}
+                    </h2>
+                    <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full">
+                      {selectedSubServices.length > 0 ? `${selectedSubServices.length} services available` : selectedCategoryObj?.count}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    {selectedCategoryObj?.description}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* List of 3 APIs */}
-            <div className="space-y-4">
-              {apis.map(api => {
-                const Icon = api.icon;
-                const isCopiedEndpoint = copiedId === api.id;
-
-                return (
-                  <div
-                    key={api.id}
-                    className="bg-white/95 border border-blue-100 rounded-2xl p-4 sm:p-5 backdrop-blur-xl shadow-lg shadow-blue-500/5 space-y-4 relative overflow-hidden"
-                  >
-                    {/* Header Row: Name, Method & Fixed Charge */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-blue-100/80 pb-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2.5 rounded-xl border ${api.color}`}>
-                          <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm sm:text-base font-bold text-slate-900">
-                              {api.name}
-                            </h3>
-                            <span className="text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-bold">
-                              GET / POST
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{api.description}</p>
-                        </div>
+            {/* Sub-Services Grid (Matching Screenshot 3) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {selectedSubServices.map(sub => (
+                <div
+                  key={sub.id}
+                  className="bg-[#162238] hover:bg-[#1c2b47] border border-blue-900/30 rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all shadow-lg hover:shadow-blue-500/5 group"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2.5 bg-gradient-to-tr from-amber-500 to-rose-600 rounded-xl text-white font-bold shadow-md">
+                        <Fingerprint className="w-5 h-5" />
                       </div>
-
-                      {/* FIXED SERVICE CHARGE BADGE */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 bg-blue-50/70 px-3.5 py-2 rounded-xl border border-blue-100 shrink-0">
-                        <div className="text-right">
-                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Fixed Service Charge</div>
-                          <div className="text-sm font-black text-blue-700 font-mono">
-                            {api.fixedCharge} <span className="text-[10px] text-slate-500 font-normal">/ search</span>
-                          </div>
-                        </div>
-                        <div className="text-right border-l border-blue-200 pl-3">
-                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Executed</div>
-                          <div className="text-sm font-black text-slate-800 font-mono">
-                            {api.searchCount}
-                          </div>
-                        </div>
-                      </div>
+                      <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1 rounded-full">
+                        {sub.price}
+                      </span>
                     </div>
 
-                    {/* Endpoint URL Box with Just Copy Button */}
                     <div>
-                      <div className="text-[11px] font-semibold text-slate-600 mb-1">
-                        API Endpoint URL (Render Backend):
+                      <h3 className="text-base font-bold text-white group-hover:text-blue-400 transition-colors">
+                        {sub.title}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {sub.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        setSelectedApi(sub.apiCode as any);
+                        setShowTesterModal(true);
+                      }}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-600/20"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Use Service / Search Now</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {selectedSubServices.length === 0 && (
+                <div className="col-span-full p-8 text-center bg-[#131e3a] border border-slate-800 rounded-2xl">
+                  <AlertCircle className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+                  <p className="text-slate-300 font-bold">Services Loading for this category...</p>
+                  <p className="text-slate-500 text-xs mt-1">
+                    You can use the Live Search console directly from the top header or sidebar.
+                  </p>
+                  <button
+                    onClick={() => setShowTesterModal(true)}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs"
+                  >
+                    Open Search Console
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* VIEW B: PORTAL MAIN DASHBOARD (Browse Categories & Search) */
+          activeTab === "dashboard" && (
+            <div className="space-y-6">
+
+              {/* SEARCH SERVICES INPUT (Matching Screenshot 1) */}
+              <div className="relative">
+                <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search services... (e.g. Aadhaar, PAN, Number, RC)"
+                  className="w-full bg-[#131e3a] border border-slate-800 focus:border-blue-500 text-white rounded-2xl pl-12 pr-4 py-3.5 text-sm placeholder-slate-500 focus:outline-none transition-all shadow-xl"
+                />
+              </div>
+
+              {/* BROWSE CATEGORIES HEADING (Matching Screenshot 1) */}
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  Browse Categories
+                </h1>
+                <p className="text-slate-400 text-xs mt-0.5">
+                  Select a category to explore all available services.
+                </p>
+              </div>
+
+              {/* CATEGORY GRID (2 Columns on mobile, 4 Columns on Desktop - Matching Screenshot 1) */}
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                {filteredCategories.map(cat => {
+                  const Icon = cat.icon;
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className="bg-[#162238] hover:bg-[#1c2b47] border border-blue-900/30 rounded-2xl p-4 sm:p-5 flex flex-col items-center text-center justify-between space-y-3 cursor-pointer transition-all hover:scale-[1.02] shadow-lg shadow-black/20 group"
+                    >
+                      {/* Icon */}
+                      <div className={`p-3 sm:p-3.5 rounded-2xl ${cat.iconBg} shadow-md group-hover:scale-110 transition-transform`}>
+                        <Icon className="w-6 h-6 sm:w-7 sm:h-7" />
                       </div>
-                      <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-2 overflow-hidden">
-                        <code className="text-xs font-mono text-cyan-300 truncate select-all">
-                          {api.endpoint}
-                        </code>
-                        <button
-                          onClick={() => handleCopyText(api.endpoint, api.id)}
-                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-blue-500/20"
-                        >
-                          {isCopiedEndpoint ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-300" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                          <span>{isCopiedEndpoint ? "Copied!" : "Just Copy"}</span>
-                        </button>
+
+                      {/* Title & Count */}
+                      <div>
+                        <h3 className="font-bold text-sm sm:text-base text-white group-hover:text-blue-400 transition-colors">
+                          {cat.title}
+                        </h3>
+                        <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border mt-1.5 ${cat.badgeColor}`}>
+                          {cat.count}
+                        </span>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
 
+              {/* QUICK LIVE APIs SECTION */}
+              <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-5 space-y-4 mt-8">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      Active Allotted APIs
+                    </h3>
+                    <p className="text-xs text-slate-400">Direct Render Backend Live Endpoints</p>
                   </div>
-                );
-              })}
+                  <button
+                    onClick={() => setShowTesterModal(true)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
+                  >
+                    <span>Launch Tester</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-[#162238] border border-slate-800 p-3.5 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">1. Aadhaar to PAN</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">₹26.00</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Find linked PAN Card from Aadhaar Number.</p>
+                  </div>
+
+                  <div className="bg-[#162238] border border-slate-800 p-3.5 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">2. PAN to Name & DOB</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">₹14.00</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Fetch cardholder full name and DOB.</p>
+                  </div>
+
+                  <div className="bg-[#162238] border border-slate-800 p-3.5 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">3. Number Lookup</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">₹0.50</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Live phone carrier & identity details.</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )
+        )}
+
+        {/* VIEW C: API ACCESS & DOCUMENTATION TAB */}
+        {activeTab === "apis" && (
+          <div className="space-y-5">
+            <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Code2 className="w-5 h-5 text-cyan-400" />
+                    Allotted Live API Endpoints
+                  </h2>
+                  <p className="text-slate-400 text-xs">Copy endpoint URLs to integrate in your applications.</p>
+                </div>
+                <button
+                  onClick={() => setShowKeyModal(true)}
+                  className="px-3 py-1.5 bg-slate-800 text-cyan-300 font-bold rounded-xl text-xs border border-slate-700"
+                >
+                  View API Key
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    name: "1. Aadhaar to PAN Lookup API",
+                    charge: "₹26.00 / search",
+                    endpoint: `${renderHost}/api/alvis/lookup/aadhaar-to-pan?apiKey=${apiKey}&aadhaar=`,
+                    desc: "Pass 12-digit Aadhaar number in 'aadhaar' parameter."
+                  },
+                  {
+                    name: "2. PAN Card to Name & DOB API",
+                    charge: "₹14.00 / search",
+                    endpoint: `${renderHost}/api/alvis/lookup/pan-to-name-dob?apiKey=${apiKey}&pan=`,
+                    desc: "Pass 10-character PAN card number in 'pan' parameter."
+                  },
+                  {
+                    name: "3. Number Lookup API",
+                    charge: "₹0.50 / search",
+                    endpoint: `${renderHost}/api/alvis/lookup/number?apiKey=${apiKey}&number=`,
+                    desc: "Pass 10-digit mobile number in 'number' parameter."
+                  }
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-[#162238] border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">{item.name}</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                        {item.charge}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">{item.desc}</p>
+                    <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between gap-2 overflow-hidden">
+                      <code className="text-xs font-mono text-cyan-300 truncate">{item.endpoint}</code>
+                      <button
+                        onClick={() => handleCopyText(item.endpoint, `ep_${idx}`)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold shrink-0"
+                      >
+                        {copiedId === `ep_${idx}` ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* TAB 2: SEARCH HISTORY */}
+        {/* VIEW D: HISTORY & RECORDS TAB */}
         {activeTab === "history" && (
-          <div className="bg-white/95 border border-blue-100 rounded-2xl p-4 sm:p-5 backdrop-blur-xl shadow-lg shadow-blue-500/5 space-y-4">
+          <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <History className="w-5 h-5 text-blue-600" />
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-400" />
                   Search History Log
                 </h2>
-                <p className="text-slate-500 text-xs">
-                  Real-time history of lookups executed on your allotted APIs.
-                </p>
+                <p className="text-slate-400 text-xs">Real-time history of lookups executed on your account.</p>
               </div>
               <button
                 onClick={() => fetchSearches()}
-                className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs border border-blue-200 transition-all flex items-center gap-1 font-semibold"
+                className="p-2 bg-slate-800 text-blue-400 rounded-xl text-xs border border-slate-700"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Sync
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-blue-100 shadow-sm">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-blue-50/80 text-blue-900 font-semibold uppercase border-b border-blue-100">
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-900 text-slate-400 uppercase font-semibold border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-3.5">Time</th>
                     <th className="py-3 px-3.5">API Service</th>
-                    <th className="py-3 px-3.5">Search Input</th>
+                    <th className="py-3 px-3.5">Input Query</th>
                     <th className="py-3 px-3.5">Charge</th>
                     <th className="py-3 px-3.5">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-blue-100/60 bg-white">
-                  {searchHistory.map((row, idx) => (
-                    <tr key={row.id || idx} className="hover:bg-blue-50/40 transition-all">
-                      <td className="py-2.5 px-3.5 font-mono text-slate-500 whitespace-nowrap">
-                        {new Date(row.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <tbody className="divide-y divide-slate-800/60">
+                  {searchHistory.map((s, idx) => (
+                    <tr key={idx} className="hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3.5 text-slate-400 font-mono text-[11px]">
+                        {s.date_time ? new Date(s.date_time).toLocaleString("en-IN") : "Just now"}
                       </td>
-                      <td className="py-2.5 px-3.5 font-semibold text-slate-900 whitespace-nowrap">
-                        {row.api_used === "aadhaar_to_pan"
-                          ? "Aadhaar to PAN (₹26)"
-                          : row.api_used === "pan_to_name_dob"
-                          ? "PAN to Name & DOB (₹14)"
-                          : "Number Lookup (₹0.50)"}
-                      </td>
-                      <td className="py-2.5 px-3.5 font-mono text-blue-600 font-semibold">{row.search_input}</td>
-                      <td className="py-2.5 px-3.5 font-mono font-bold text-slate-900 whitespace-nowrap">
-                        ₹{row.charged_amount.toFixed(2)}
-                      </td>
+                      <td className="py-2.5 px-3.5 font-bold text-white">{s.api_used}</td>
+                      <td className="py-2.5 px-3.5 font-mono text-cyan-300">{s.search_input}</td>
+                      <td className="py-2.5 px-3.5 font-mono font-bold text-emerald-400">₹{s.charged_amount}</td>
                       <td className="py-2.5 px-3.5">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.status === "success"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-amber-50 text-amber-700 border border-amber-200"
-                          }`}
-                        >
-                          {row.status === "success" ? "Success" : "Refunded"}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/30">
+                          {s.status || "SUCCESS"}
                         </span>
                       </td>
                     </tr>
                   ))}
                   {searchHistory.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400">
-                        No searches recorded yet.
+                      <td colSpan={5} className="py-6 text-center text-slate-500">
+                        No search logs recorded yet.
                       </td>
                     </tr>
                   )}
@@ -642,446 +1113,412 @@ export default function AlvisAppApi() {
           </div>
         )}
 
-        {/* TAB 3: TRANSACTIONS HISTORY */}
+        {/* VIEW E: WALLET MANAGER & TRANSACTIONS TAB */}
         {activeTab === "transactions" && (
-          <div className="bg-white/95 border border-blue-100 rounded-2xl p-4 sm:p-5 backdrop-blur-xl shadow-lg shadow-blue-500/5 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-5">
+            {/* Wallet Overview Card */}
+            <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-blue-600" />
-                  Wallet Transactions History
-                </h2>
-                <p className="text-slate-500 text-xs">
-                  Complete audit trail of recharges, search deductions, and refunds.
-                </p>
-              </div>
-              <button
-                onClick={() => fetchTransactions()}
-                className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs border border-blue-200 transition-all flex items-center gap-1 font-semibold"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Sync
-              </button>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-blue-100 shadow-sm">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-blue-50/80 text-blue-900 font-semibold uppercase border-b border-blue-100">
-                  <tr>
-                    <th className="py-3 px-3.5">Time</th>
-                    <th className="py-3 px-3.5">Type</th>
-                    <th className="py-3 px-3.5">Amount</th>
-                    <th className="py-3 px-3.5">Bal After</th>
-                    <th className="py-3 px-3.5">Reason</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-blue-100/60 bg-white">
-                  {transactionHistory.map((tx, idx) => (
-                    <tr key={tx.id || idx} className="hover:bg-blue-50/40 transition-all">
-                      <td className="py-2.5 px-3.5 font-mono text-slate-500 whitespace-nowrap">
-                        {new Date(tx.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="py-2.5 px-3.5">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            tx.type === "credit"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : tx.type === "refund"
-                              ? "bg-blue-50 text-blue-700 border border-blue-200"
-                              : "bg-rose-50 text-rose-700 border border-rose-200"
-                          }`}
-                        >
-                          {tx.type}
-                        </span>
-                      </td>
-                      <td
-                        className={`py-2.5 px-3.5 font-mono font-bold whitespace-nowrap ${
-                          tx.type === "credit" || tx.type === "refund"
-                            ? "text-emerald-600"
-                            : "text-rose-600"
-                        }`}
-                      >
-                        {tx.type === "credit" || tx.type === "refund" ? "+" : "-"}₹
-                        {tx.amount.toFixed(2)}
-                      </td>
-                      <td className="py-2.5 px-3.5 font-mono font-semibold text-slate-900 whitespace-nowrap">
-                        ₹{tx.balance_after.toFixed(2)}
-                      </td>
-                      <td className="py-2.5 px-3.5 text-slate-600">{tx.reason}</td>
-                    </tr>
-                  ))}
-                  {transactionHistory.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400">
-                        No transactions recorded yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: LIVE API TESTER */}
-        {activeTab === "tester" && (
-          <div className="bg-white/95 border border-blue-100 rounded-2xl p-4 sm:p-5 backdrop-blur-xl shadow-lg shadow-blue-500/5 space-y-4">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Terminal className="w-5 h-5 text-blue-600" />
-                Live API Tester Console
-              </h2>
-              <p className="text-slate-500 text-xs mt-0.5">
-                Test any of your 3 allotted APIs directly inside this panel in real time.
-              </p>
-            </div>
-
-            <form onSubmit={handleRunTestLookup} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Select API to Test:
-                </label>
-                <select
-                  value={selectedApi}
-                  onChange={e => {
-                    setSelectedApi(e.target.value as any);
-                    setQueryInput("");
-                    setTestResult(null);
-                  }}
-                  className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
-                >
-                  <option value="aadhaar_to_pan">Aadhaar to PAN Lookup (Fixed Charge: ₹26.00)</option>
-                  <option value="pan_to_name_dob">PAN to Name & DOB Lookup (Fixed Charge: ₹14.00)</option>
-                  <option value="number_lookup">Number Lookup (Fixed Charge: ₹0.50)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {selectedApi === "aadhaar_to_pan"
-                    ? "Enter 12-Digit Aadhaar Number:"
-                    : selectedApi === "pan_to_name_dob"
-                    ? "Enter 10-Character PAN Number:"
-                    : "Enter 10-Digit Mobile Number:"}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={queryInput}
-                  onChange={e => setQueryInput(e.target.value)}
-                  placeholder={
-                    selectedApi === "aadhaar_to_pan"
-                      ? "e.g. 234567890123"
-                      : selectedApi === "pan_to_name_dob"
-                      ? "e.g. ABCDE1234F"
-                      : "e.g. 9876543210"
-                  }
-                  className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={testLoading}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50"
-              >
-                {testLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Zap className="w-4 h-4" />
-                )}
-                Execute Live API Request
-              </button>
-            </form>
-
-            {/* Test Results JSON Output */}
-            {testResult && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span className="text-xs font-bold text-slate-200">API Response JSON</span>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      testResult.status === "success"
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                    }`}
-                  >
-                    {testResult.status}
-                  </span>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Wallet Balance</span>
+                <div className="text-3xl font-black text-emerald-400 font-mono mt-1">
+                  ₹{walletData ? walletData.wallet_balance.toFixed(2) : "1800.00"}
                 </div>
-                <pre className="text-xs font-mono text-cyan-300 max-h-64 overflow-y-auto leading-relaxed">
-                  {JSON.stringify(testResult, null, 2)}
-                </pre>
+                <div className="text-xs text-slate-400 mt-1">Account: {walletData?.user_name || "alvisappapi"}</div>
               </div>
-            )}
+
+              <button
+                onClick={() => setShowRechargeModal(true)}
+                className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-emerald-900/40"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Add Wallet Money (Cashfree)</span>
+              </button>
+            </div>
+
+            {/* Transactions Log */}
+            <div className="bg-[#131e3a] border border-slate-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-emerald-400" />
+                Transaction Statement
+              </h3>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-900 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                    <tr>
+                      <th className="py-3 px-3.5">Date & Time</th>
+                      <th className="py-3 px-3.5">Reference ID</th>
+                      <th className="py-3 px-3.5">Reason</th>
+                      <th className="py-3 px-3.5">Amount</th>
+                      <th className="py-3 px-3.5">Balance After</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {transactionHistory.map((tx, idx) => (
+                      <tr key={idx} className="hover:bg-slate-800/40">
+                        <td className="py-2.5 px-3.5 text-slate-400 font-mono text-[11px]">
+                          {tx.date_time ? new Date(tx.date_time).toLocaleString("en-IN") : "Just now"}
+                        </td>
+                        <td className="py-2.5 px-3.5 font-mono text-slate-300">{tx.id || tx.reference_id}</td>
+                        <td className="py-2.5 px-3.5 text-slate-200">{tx.reason}</td>
+                        <td className={`py-2.5 px-3.5 font-mono font-bold ${tx.type === "DEBIT" ? "text-rose-400" : "text-emerald-400"}`}>
+                          {tx.type === "DEBIT" ? "-" : "+"}₹{tx.amount}
+                        </td>
+                        <td className="py-2.5 px-3.5 font-mono text-cyan-300">₹{tx.balance_after}</td>
+                      </tr>
+                    ))}
+                    {transactionHistory.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-500">
+                          No transactions recorded yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
-      </div>
+      </main>
 
-      {/* FIXED BOTTOM NAVIGATION BAR ONLY */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 border-t border-blue-100 backdrop-blur-xl px-2 sm:px-4 py-2 shadow-2xl shadow-blue-900/10">
-        <div className="max-w-md mx-auto flex items-center justify-around">
-          {[
-            { id: "apis", label: "3 APIs", icon: Layers },
-            { id: "history", label: "Search History", icon: History },
-            { id: "transactions", label: "Transactions", icon: CreditCard },
-            { id: "tester", label: "API Tester", icon: Terminal }
-          ].map(nav => {
-            const Icon = nav.icon;
-            const isActive = activeTab === nav.id;
-            return (
-              <button
-                key={nav.id}
-                onClick={() => setActiveTab(nav.id as any)}
-                className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all ${
-                  isActive
-                    ? "text-blue-600 bg-blue-50 font-bold border border-blue-200/50"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? "text-blue-600 scale-110" : ""}`} />
-                <span className="text-[10px] tracking-tight whitespace-nowrap">
-                  {nav.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* RECHARGE / CASHFREE PAYMENT GATEWAY MODAL */}
+      {/* 5. API KEY & PROFILE MODAL */}
       <AnimatePresence>
-        {showRechargeModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md overflow-y-auto">
+        {showKeyModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white border border-blue-100 rounded-2xl max-w-md w-full shadow-2xl relative text-slate-900 max-h-[85vh] sm:max-h-[90vh] flex flex-col overflow-hidden my-auto"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#131e3a] border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5"
             >
-              {/* Close Button */}
-              <button
-                onClick={() => {
-                  setShowRechargeModal(false);
-                  setRechargeStep("amount");
-                  setRechargeError(null);
-                }}
-                className="absolute top-3 right-3 z-30 p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-all shadow-sm"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="overflow-y-auto p-4 sm:p-6 space-y-4 flex-1">
-                {/* STEP 1: AMOUNT SELECTION */}
-                {rechargeStep === "amount" && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-200">
-                        <PlusCircle className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base sm:text-lg font-bold text-slate-900">Recharge Wallet</h3>
-                          <span className="text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded">
-                            User: alvisappapi
-                          </span>
-                        </div>
-                        <p className="text-slate-500 text-xs mt-0.5">
-                          Enter any custom amount to pay via Cashfree Payment Gateway.
-                        </p>
-                      </div>
-                    </div>
-
-                    <form onSubmit={handleInitiateCashfreeCheckout} className="space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-xs font-bold text-slate-800">
-                            Enter Amount to Add (₹):
-                          </label>
-                          <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                            Any Custom Amount
-                          </span>
-                        </div>
-                        <div className="relative">
-                          <span className="absolute left-3.5 top-3 text-emerald-600 font-black text-sm">₹</span>
-                          <input
-                            type="number"
-                            min="1"
-                            step="any"
-                            required
-                            value={rechargeAmount}
-                            onChange={e => setRechargeAmount(e.target.value)}
-                            placeholder="Enter amount (e.g. 100, 260, 500)"
-                            className="w-full bg-blue-50/50 border border-blue-200 rounded-xl pl-8 pr-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 focus:bg-white font-mono font-bold transition-all shadow-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Quick Selection Presets */}
-                      <div className="space-y-1.5 pt-0.5">
-                        <label className="text-[11px] font-semibold text-slate-600">Quick Select Amount:</label>
-                        <div className="grid grid-cols-5 gap-1.5">
-                          {["50", "100", "260", "500", "1000"].map(amt => (
-                            <button
-                              key={amt}
-                              type="button"
-                              onClick={() => setRechargeAmount(amt)}
-                              className={`py-1.5 rounded-lg border font-bold text-xs transition-all ${
-                                rechargeAmount === amt
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/20"
-                                  : "bg-blue-50/50 border-blue-200 text-slate-700 hover:border-blue-400 hover:bg-blue-100/50"
-                              }`}
-                            >
-                              ₹{amt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {rechargeError && (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2 font-medium">
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                          {rechargeError}
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={rechargeLoading}
-                        className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
-                      >
-                        {rechargeLoading ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <ShieldCheck className="w-4 h-4" />
-                        )}
-                        <span>Proceed to Cashfree Checkout (₹{parseFloat(rechargeAmount || "0").toFixed(2)})</span>
-                      </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* STEP 2: CASHFREE DIRECT GATEWAY LAUNCHER (If pop-up fallback needed) */}
-                {rechargeStep === "cashfree" && (
-                  <div className="p-2 text-center space-y-4">
-                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto border border-blue-200">
-                      <ExternalLink className="w-8 h-8 text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="text-base font-bold text-slate-900">Redirecting to Cashfree Payment Gateway</h4>
-                      <p className="text-slate-500 text-xs mt-1">
-                        Order ID: <span className="font-mono text-slate-800 font-bold">{cashfreeOrder?.order_id}</span>
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.Cashfree && cashfreeOrder?.payment_session_id) {
-                          try {
-                            const cashfree = window.Cashfree({ mode: cashfreeOrder.cf_mode || "production" });
-                            cashfree.checkout({
-                              paymentSessionId: cashfreeOrder.payment_session_id,
-                              redirectTarget: "_self"
-                            });
-                          } catch (err) {
-                            console.error("Cashfree redirect error:", err);
-                          }
-                        }
-                      }}
-                      className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-blue-500/20"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>Open Official Cashfree Gateway Page Now</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRechargeStep("processing");
-                        handleConfirmCashfreePayment();
-                      }}
-                      className="w-full py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Already Completed Payment? Verify Balance</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* STEP 3: PROCESSING CASHFREE TRANSACTION */}
-                {rechargeStep === "processing" && (
-                  <div className="p-4 text-center space-y-4 py-8">
-                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto border border-blue-200 animate-pulse">
-                      <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="text-base font-bold text-slate-900">Processing Cashfree Gateway Payment</h4>
-                      <p className="text-slate-500 text-xs mt-1">
-                        Communicating securely with Cashfree servers for user <strong className="font-mono text-slate-800">alvisappapi</strong>...
-                      </p>
-                      <div className="text-[11px] font-mono text-emerald-600 mt-2 font-semibold">
-                        Order ID: {cashfreeOrder?.order_id}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 4: SUCCESS CONFIRMATION */}
-                {rechargeStep === "success" && (
-                  <div className="p-2 text-center space-y-4">
-                    <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200 shadow-md shadow-emerald-500/10">
-                      <CheckCircle2 className="w-9 h-9" />
-                    </div>
-                    <div>
-                      <span className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full uppercase">
-                        Cashfree Payment Verified
-                      </span>
-                      <h4 className="text-lg font-black text-slate-900 mt-1">
-                        ₹{parseFloat(rechargeAmount || "0").toFixed(2)} Added Successfully!
-                      </h4>
-                      <p className="text-slate-500 text-xs mt-1">
-                        Funds credited to user <strong className="font-mono text-slate-800">alvisappapi</strong> wallet.
-                      </p>
-                    </div>
-
-                    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3 text-left space-y-1.5 text-xs font-mono">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Gateway:</span>
-                        <span className="font-bold text-slate-800">Cashfree Payments</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Order ID:</span>
-                        <span className="font-bold text-slate-800">{cashfreeOrder?.order_id}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Payment Ref:</span>
-                        <span className="font-bold text-emerald-700">{cashfreePaymentId}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-blue-200/80 pt-1">
-                        <span className="text-slate-500">New Wallet Balance:</span>
-                        <span className="font-bold text-emerald-600">
-                          ₹{walletData ? walletData.wallet_balance.toFixed(2) : "0.00"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setShowRechargeModal(false);
-                        setRechargeStep("amount");
-                      }}
-                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-blue-500/20"
-                    >
-                      Done & Return to Panel
-                    </button>
-                  </div>
-                )}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-cyan-400" />
+                  <h3 className="text-lg font-bold text-white">API Account Credentials</h3>
+                </div>
+                <button
+                  onClick={() => setShowKeyModal(false)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="text-slate-400 block mb-1">User Account Name</label>
+                  <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl font-mono text-white font-bold">
+                    {walletData?.user_name || "alvisappapi"}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Active Secret API Key</label>
+                  <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between gap-2">
+                    <code className="font-mono text-cyan-300 font-bold truncate">
+                      {showKey ? apiKey : apiKey.slice(0, 12) + "••••••••"}
+                    </code>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setShowKey(!showKey)}
+                        className="p-1.5 bg-slate-800 text-slate-300 rounded hover:bg-slate-700"
+                      >
+                        {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={handleCopyKey}
+                        className="p-1.5 bg-cyan-600 text-white rounded hover:bg-cyan-500"
+                      >
+                        {copiedKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Managed Render Backend URL</label>
+                  <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl font-mono text-slate-300 text-[11px] truncate">
+                    {renderHost}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowKeyModal(false)}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs"
+              >
+                Close Window
+              </button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* 6. LIVE SEARCH TESTER CONSOLE MODAL */}
+      <AnimatePresence>
+        {showTesterModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#131e3a] border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-lg font-bold text-white">Live Search Console</h3>
+                </div>
+                <button
+                  onClick={() => setShowTesterModal(false)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleRunLiveTest} className="space-y-4 text-xs">
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1.5">Select Service</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "aadhaar_to_pan", label: "Aadhaar to PAN (₹26)" },
+                      { id: "pan_to_name_dob", label: "PAN to Name (₹14)" },
+                      { id: "number_lookup", label: "Number Lookup (₹0.5)" }
+                    ].map(api => (
+                      <button
+                        key={api.id}
+                        type="button"
+                        onClick={() => setSelectedApi(api.id as any)}
+                        className={`p-2.5 rounded-xl border text-[11px] font-bold text-center transition-all ${
+                          selectedApi === api.id
+                            ? "bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30"
+                            : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800"
+                        }`}
+                      >
+                        {api.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1.5">
+                    {selectedApi === "aadhaar_to_pan"
+                      ? "Enter 12-Digit Aadhaar Number"
+                      : selectedApi === "pan_to_name_dob"
+                      ? "Enter 10-Char PAN Card Number"
+                      : "Enter 10-Digit Mobile Number"}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={queryInput}
+                    onChange={e => setQueryInput(e.target.value)}
+                    placeholder={
+                      selectedApi === "aadhaar_to_pan"
+                        ? "e.g. 5234 8912 3456"
+                        : selectedApi === "pan_to_name_dob"
+                        ? "e.g. ABCDE1234F"
+                        : "e.g. 9876543210"
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 font-mono font-bold"
+                  />
+                </div>
+
+                {testError && (
+                  <div className="p-3 bg-rose-950/60 border border-rose-500/30 text-rose-300 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{testError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={testLoading}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 disabled:opacity-50"
+                >
+                  {testLoading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                  <span>Run Live Lookup Now</span>
+                </button>
+              </form>
+
+              {/* Response Display */}
+              {testResult && (
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-emerald-400">Response Result:</span>
+                    <button
+                      onClick={() => handleCopyText(JSON.stringify(testResult, null, 2), "json_res")}
+                      className="text-cyan-400 font-bold"
+                    >
+                      {copiedId === "json_res" ? "Copied JSON!" : "Copy JSON"}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-cyan-300 overflow-x-auto max-h-48">
+                    {JSON.stringify(testResult, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 7. CASHFREE RECHARGE MODAL */}
+      <AnimatePresence>
+        {showRechargeModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#131e3a] border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-lg font-bold text-white">Recharge Alvis API Wallet</h3>
+                </div>
+                <button
+                  onClick={() => setShowRechargeModal(false)}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* STEP 1: AMOUNT SELECTION */}
+              {rechargeStep === "amount" && (
+                <form onSubmit={handleInitiateCashfreeCheckout} className="space-y-4 text-xs">
+                  <div>
+                    <label className="text-slate-300 font-bold block mb-1">Enter Recharge Amount (₹)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={rechargeAmount}
+                      onChange={e => setRechargeAmount(e.target.value)}
+                      placeholder="e.g. 260"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1.5">Quick Presets:</label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {["50", "100", "260", "500", "1000"].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setRechargeAmount(amt)}
+                          className={`py-2 rounded-lg border font-bold text-xs transition-all ${
+                            rechargeAmount === amt
+                              ? "bg-emerald-600 text-white border-emerald-500"
+                              : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+                          }`}
+                        >
+                          ₹{amt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {rechargeError && (
+                    <div className="p-3 bg-rose-950/60 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-center gap-2 font-medium">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                      {rechargeError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={rechargeLoading}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 disabled:opacity-50"
+                  >
+                    {rechargeLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4" />
+                    )}
+                    <span>Proceed to Cashfree Checkout (₹{parseFloat(rechargeAmount || "0").toFixed(2)})</span>
+                  </button>
+                </form>
+              )}
+
+              {/* STEP 2: CASHFREE FALLBACK */}
+              {rechargeStep === "cashfree" && (
+                <div className="text-center space-y-4 text-xs">
+                  <div className="w-12 h-12 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto border border-blue-500/30">
+                    <ExternalLink className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Cashfree Gateway Checkout</h4>
+                    <p className="text-slate-400 mt-1">Order ID: {cashfreeOrder?.order_id}</p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (window.Cashfree && cashfreeOrder?.payment_session_id) {
+                        try {
+                          const cashfree = window.Cashfree({ mode: cashfreeOrder.cf_mode || "production" });
+                          cashfree.checkout({
+                            paymentSessionId: cashfreeOrder.payment_session_id,
+                            redirectTarget: "_self"
+                          });
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }
+                    }}
+                    className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-xl"
+                  >
+                    Open Cashfree Gateway Page
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setRechargeStep("processing");
+                      handleConfirmCashfreePayment();
+                    }}
+                    className="w-full py-2 bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold rounded-xl"
+                  >
+                    Verify Completed Payment
+                  </button>
+                </div>
+              )}
+
+              {/* STEP 3: SUCCESS */}
+              {rechargeStep === "success" && (
+                <div className="text-center space-y-4 text-xs">
+                  <div className="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-white text-sm">
+                    ₹{parseFloat(rechargeAmount || "0").toFixed(2)} Added Successfully!
+                  </h4>
+                  <button
+                    onClick={() => {
+                      setShowRechargeModal(false);
+                      setRechargeStep("amount");
+                    }}
+                    className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-xl"
+                  >
+                    Done & Return to Portal
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

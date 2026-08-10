@@ -4429,15 +4429,35 @@ async def aadhaar_to_pan_endpoint(request: Request):
 import json
 import math
 import re
+import sqlite3
 from fastapi.responses import JSONResponse
 
 ALVIS_STORE_FILE = os.path.join(os.getcwd(), ".alvis_store.json")
+ALVIS_DB_FILE = os.path.join(os.getcwd(), "alvis_database.db")
+
+def _init_alvis_sqlite_db():
+    try:
+        conn = sqlite3.connect(ALVIS_DB_FILE)
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS alvis_store (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                store_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ALVIS_SQLITE_PY] Init error: {e}")
+
+_init_alvis_sqlite_db()
 
 def _get_default_alvis_store():
     return {
         "user_name": "Alvis API Panel",
         "api_key": "alvis_live_key_" + secrets.token_hex(8),
-        "wallet_balance": 0.0,
+        "wallet_balance": 1800.0,
         "total_searches": 0,
         "pricing": {
             "aadhaar_to_pan": {
@@ -4467,7 +4487,21 @@ def _get_default_alvis_store():
 
 def load_alvis_store():
     try:
-        if os.path.exists(ALVIS_STORE_FILE):
+        if os.path.exists(ALVIS_DB_FILE):
+            conn = sqlite3.connect(ALVIS_DB_FILE)
+            c = conn.cursor()
+            c.execute("SELECT store_json FROM alvis_store WHERE id = 1")
+            row = c.fetchone()
+            conn.close()
+            if row and row[0]:
+                data = json.loads(row[0])
+                default_data = _get_default_alvis_store()
+                if "pricing" in data:
+                    for k in default_data["pricing"]:
+                        if k not in data["pricing"]:
+                            data["pricing"][k] = default_data["pricing"][k]
+                return data
+        elif os.path.exists(ALVIS_STORE_FILE):
             with open(ALVIS_STORE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 default_data = _get_default_alvis_store()
@@ -4475,6 +4509,7 @@ def load_alvis_store():
                     for k in default_data["pricing"]:
                         if k not in data["pricing"]:
                             data["pricing"][k] = default_data["pricing"][k]
+                save_alvis_store(data)
                 return data
     except Exception as e:
         print(f"[ALVIS_PYTHON_STORE] Error reading store: {e}")
@@ -4485,9 +4520,22 @@ def load_alvis_store():
 
 def save_alvis_store(data):
     data["updated_at"] = datetime.utcnow().isoformat()
+    json_str = json.dumps(data, indent=2)
+    
+    # Save to SQLite Database
+    try:
+        conn = sqlite3.connect(ALVIS_DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO alvis_store (id, store_json, updated_at) VALUES (1, ?, ?)", (json_str, data["updated_at"]))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ALVIS_SQLITE_PY] Error saving store to database: {e}")
+        
+    # Backup JSON file
     try:
         with open(ALVIS_STORE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+            f.write(json_str)
     except Exception as e:
         print(f"[ALVIS_PYTHON_STORE] Error saving store: {e}")
 
@@ -5202,6 +5250,182 @@ async def post_alvis_admin_reset_key(request: Request, body: dict = Body(None)):
         "status": "success",
         "message": "New API Key generated successfully for Alvis App.",
         "new_api_key": new_key
+    }
+
+# -----------------------------------------------------------------------------------------
+# DEMO DEVELOPMENT API ENDPOINTS FOR PYTHON FASTAPI SERVER
+# -----------------------------------------------------------------------------------------
+def get_py_demo_response(service: str, query: str) -> dict:
+    svc = (service or "phone").lower().strip()
+    qry = (query or "9876543210").strip()
+    
+    if "phone" in svc or "number" in svc:
+        return {
+            "name": "Rajesh Kumar (DEMO)",
+            "mobile": qry,
+            "alt_mobile": "9810987654",
+            "father_name": "Sohan Lal Sharma",
+            "aadhar_number": "XXXX-XXXX-9812",
+            "operator": "Jio Digital / Bharti Airtel",
+            "state_circle": "Delhi NCR",
+            "address": "H.No 104, Block B, Sector 15, Rohini, New Delhi 110085",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "telegram" in svc or "tg" in svc:
+        return {
+            "telegram_id": "5829104821",
+            "username": qry.lstrip("@"),
+            "name": "Developer Test Account (DEMO)",
+            "mobile": "9876543210",
+            "bio": "Software developer testing TRACEXDATA Intelligence API",
+            "photo_url": "https://api.dicebear.com/7.x/bottts/svg?seed=tracex",
+            "status": "Active / Traceable",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "adhr" in svc or "identity" in svc or "aadhar" in svc:
+        return {
+            "aadhar_number": qry,
+            "name": "AMIT SHARMA (DEMO)",
+            "father_name": "RAMESH SHARMA",
+            "dob": "1994-08-15",
+            "gender": "MALE",
+            "address": "FLAT 402, SUNSHINE APTS, MG ROAD, JAIPUR, RAJASTHAN 302001",
+            "pincode": "302001",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "pan" in svc or "pn" in svc:
+        return {
+            "pan_number": qry.upper(),
+            "full_name": "VIKRAM SINGH (DEMO)",
+            "father_name": "MAHENDER SINGH",
+            "dob": "1991-05-20",
+            "status": "VALID & ACTIVE IN ITD DATABASE",
+            "linked_aadhaar": "XXXX-XXXX-4512",
+            "category": "INDIVIDUAL",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "veh_owner" in svc or "owner" in svc:
+        return {
+            "vehicle_number": qry.upper(),
+            "owner_name": "SURESH VERMA (DEMO)",
+            "owner_mobile": "9812345670",
+            "alt_contact": "9899001122",
+            "rto_location": "DL01 - Central Delhi RTO",
+            "rc_status": "ACTIVE",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "vehicle" in svc or "rc" in svc:
+        return {
+            "vehicle_number": qry.upper(),
+            "owner_name": "SURESH VERMA (DEMO)",
+            "vehicle_class": "MOTOR CYCLE / SCOOTER",
+            "maker_model": "HERO MOTOCORP LTD / SPLENDOR PLUS",
+            "fuel_type": "PETROL",
+            "engine_number": "HA10E-9102834",
+            "chassis_number": "MBLHA10EX-8291038",
+            "registration_date": "2021-03-10",
+            "insurance_upto": "2026-11-20",
+            "fitness_upto": "2036-03-09",
+            "rto_name": "DL01 - Central Delhi",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "bnk" in svc or "ifsc" in svc or "bank" in svc:
+        return {
+            "ifsc_code": qry.upper(),
+            "bank_name": "STATE BANK OF INDIA",
+            "branch": "MAIN BRANCH NEW DELHI",
+            "city": "NEW DELHI",
+            "district": "NEW DELHI",
+            "state": "DELHI",
+            "micr_code": "110002001",
+            "address": "11 PARLIAMENT STREET, NEW DELHI 110001",
+            "contact": "011-23374829",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "email" in svc or "mail" in svc:
+        return {
+            "email": qry,
+            "full_name": "Aman Preet (DEMO)",
+            "google_id": "10984719284712984",
+            "linked_phone": "9876XXXX12",
+            "breaches_count": 2,
+            "breached_services": ["Canva (2019)", "LinkedIn (2021)"],
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "rasion" in svc or "ration" in svc:
+        return {
+            "ration_card_no": qry,
+            "head_of_family": "Smt. Sunita Devi (DEMO)",
+            "card_type": "PHH / PRIORITY HOUSEHOLD",
+            "address": "Village Rampur, Dist Karnal, Haryana",
+            "family_members_count": 4,
+            "fps_dealer": "M/s Fair Price Shop #102",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+    elif "aadhaar_to_pan" in svc or "adhr2pan" in svc:
+        return {
+            "aadhaar_number": qry,
+            "pan_number": "ABCDE1234F",
+            "full_name": "PRIYA SHARMA (DEMO)",
+            "link_status": "LINKED AND VERIFIED",
+            "demo_note": "This is a Demo Development API response. No credits were deducted."
+        }
+        
+    return {
+        "query": qry,
+        "service": svc,
+        "status": "SUCCESS",
+        "sample_data": "Demo Development Response — All systems operational.",
+        "demo_note": "This is a Demo Development API response. No credits were deducted."
+    }
+
+@app.get("/api/demo_api.php")
+@app.post("/api/demo_api.php")
+@app.get("/api/demo-lookup")
+@app.post("/api/demo-lookup")
+async def api_demo_lookup(service: Optional[str] = Query(None), query: Optional[str] = Query(None), type: Optional[str] = Query(None), term: Optional[str] = Query(None)):
+    svc = service or type or "phone"
+    qry = query or term or "9876543210"
+    results = get_py_demo_response(svc, qry)
+    return {
+        "status": "success",
+        "demo_mode": True,
+        "message": "Demo Development API — Returns sample response payload. Zero credits deducted.",
+        "service": svc,
+        "query": qry,
+        "cost_deducted": 0,
+        "remaining_wallet_balance": 9999.00,
+        "results": results
+    }
+
+@app.get("/api/developer_api.php")
+@app.post("/api/developer_api.php")
+async def api_developer_api_php(api_key: Optional[str] = Query(None), key: Optional[str] = Query(None), service: Optional[str] = Query(None), query: Optional[str] = Query(None), demo: Optional[str] = Query(None)):
+    active_key = api_key or key or ""
+    is_demo = demo == "true" or active_key == "DEMO_KEY_TRACEXDATA" or active_key == "DEMO_KEY" or demo == "1"
+    
+    if is_demo or not active_key:
+        svc = service or "phone"
+        qry = query or "9876543210"
+        results = get_py_demo_response(svc, qry)
+        return {
+            "status": "success",
+            "demo_mode": True,
+            "message": "Demo Development API — Returns sample response payload. Zero credits deducted.",
+            "service": svc,
+            "query": qry,
+            "cost_deducted": 0,
+            "remaining_wallet_balance": 9999.00,
+            "results": results
+        }
+    
+    # Return message if key passed
+    return {
+        "status": "success",
+        "message": "Developer API Request Processed.",
+        "api_key": active_key,
+        "service": service,
+        "query": query
     }
 
 

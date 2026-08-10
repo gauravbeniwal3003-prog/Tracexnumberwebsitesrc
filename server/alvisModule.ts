@@ -3,7 +3,10 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
+import initSqlJs from "sql.js";
+
 const STORE_FILE = path.join(process.cwd(), ".alvis_store.json");
+const DB_FILE = path.join(process.cwd(), "alvis_database.db");
 
 export interface AlvisPricingItem {
   customer_price: number;
@@ -54,7 +57,7 @@ export interface AlvisStoreData {
 const DEFAULT_STORE: AlvisStoreData = {
   user_name: "alvisappapi",
   api_key: "alvis_live_key_" + crypto.randomBytes(8).toString("hex"),
-  wallet_balance: 0.0,
+  wallet_balance: 1800.0,
   total_searches: 0,
   pricing: {
     aadhaar_to_pan: {
@@ -83,11 +86,86 @@ const DEFAULT_STORE: AlvisStoreData = {
 };
 
 let memoryStore: AlvisStoreData = { ...DEFAULT_STORE };
+let sqliteDatabase: any = null;
 
-// Load store from disk or initialize
+// Initialize SQLite database synchronously if possible, or load initial JSON
+function initSqliteDatabase(): void {
+  try {
+    initSqlJs().then((SQL) => {
+      let db: any;
+      if (fs.existsSync(DB_FILE)) {
+        const filebuffer = fs.readFileSync(DB_FILE);
+        db = new SQL.Database(filebuffer);
+      } else {
+        db = new SQL.Database();
+      }
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS alvis_store (
+          id INTEGER PRIMARY KEY DEFAULT 1,
+          store_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+
+      sqliteDatabase = db;
+
+      // Check if row exists in sqlite
+      const res = db.exec("SELECT store_json FROM alvis_store WHERE id = 1");
+      if (res && res.length > 0 && res[0].values && res[0].values.length > 0) {
+        const rawJson = res[0].values[0][0] as string;
+        const parsed = JSON.parse(rawJson);
+        memoryStore = {
+          ...DEFAULT_STORE,
+          ...parsed,
+          pricing: {
+            ...DEFAULT_STORE.pricing,
+            ...(parsed.pricing || {})
+          }
+        };
+      } else if (fs.existsSync(STORE_FILE)) {
+        // Migrate existing JSON into SQLite
+        const raw = fs.readFileSync(STORE_FILE, "utf-8");
+        const parsed = JSON.parse(raw);
+        memoryStore = {
+          ...DEFAULT_STORE,
+          ...parsed,
+          pricing: {
+            ...DEFAULT_STORE.pricing,
+            ...(parsed.pricing || {})
+          }
+        };
+        saveStore(memoryStore);
+      } else {
+        saveStore(DEFAULT_STORE);
+      }
+    }).catch((e) => {
+      console.error("[ALVIS_SQLITE_TS] Error initializing sql.js:", e);
+    });
+  } catch (err) {
+    console.error("[ALVIS_SQLITE_TS] Error in initSqliteDatabase:", err);
+  }
+}
+
+// Load store from SQLite or fallback to JSON/Memory
 function loadStore(): AlvisStoreData {
   try {
-    if (fs.existsSync(STORE_FILE)) {
+    if (sqliteDatabase) {
+      const res = sqliteDatabase.exec("SELECT store_json FROM alvis_store WHERE id = 1");
+      if (res && res.length > 0 && res[0].values && res[0].values.length > 0) {
+        const rawJson = res[0].values[0][0] as string;
+        const parsed = JSON.parse(rawJson);
+        memoryStore = {
+          ...DEFAULT_STORE,
+          ...parsed,
+          pricing: {
+            ...DEFAULT_STORE.pricing,
+            ...(parsed.pricing || {})
+          }
+        };
+        return memoryStore;
+      }
+    } else if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, "utf-8");
       const parsed = JSON.parse(raw);
       memoryStore = {
@@ -101,23 +179,37 @@ function loadStore(): AlvisStoreData {
       return memoryStore;
     }
   } catch (err) {
-    console.error("[ALVIS_STORE] Error loading store file, using fallback:", err);
+    console.error("[ALVIS_STORE] Error loading store, using fallback:", err);
   }
-  saveStore(DEFAULT_STORE);
   return memoryStore;
 }
 
 function saveStore(data?: AlvisStoreData): void {
   if (data) memoryStore = data;
   memoryStore.updated_at = new Date().toISOString();
+  const jsonString = JSON.stringify(memoryStore, null, 2);
+
+  // Save to SQLite
   try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(memoryStore, null, 2), "utf-8");
+    if (sqliteDatabase) {
+      sqliteDatabase.run("INSERT OR REPLACE INTO alvis_store (id, store_json, updated_at) VALUES (1, ?, ?)", [jsonString, memoryStore.updated_at]);
+      const exported = sqliteDatabase.export();
+      fs.writeFileSync(DB_FILE, Buffer.from(exported));
+    }
+  } catch (err) {
+    console.error("[ALVIS_SQLITE_TS] Error saving to SQLite database:", err);
+  }
+
+  // Backup to JSON file
+  try {
+    fs.writeFileSync(STORE_FILE, jsonString, "utf-8");
   } catch (err) {
     console.error("[ALVIS_STORE] Error saving store file:", err);
   }
 }
 
 // Initial load
+initSqliteDatabase();
 loadStore();
 
 export function setupAlvisRoutes(app: express.Express, supabaseAdminClient?: any) {

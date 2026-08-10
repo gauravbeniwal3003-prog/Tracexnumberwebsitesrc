@@ -461,8 +461,8 @@ export default function PanFind() {
       </div>
 
       {/* Footer Details */}
-      <footer className="p-6 text-center text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 bg-sky-50/50 border-t border-sky-100 relative z-10">
-        TRACEXDATA Security Engine — Managed by Gaurav Beniwal
+      <footer className="p-6 text-center text-xs font-semibold text-slate-500 bg-sky-50/50 border-t border-sky-100 relative z-10">
+        © {new Date().getFullYear()} TRACEXDATA. All rights reserved.
       </footer>
     </div>
   );

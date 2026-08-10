@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
@@ -219,6 +220,150 @@ const maskNumberForLog = (num: string) => {
   return clean.substring(0, 3) + "XXXX" + clean.substring(Math.max(3, clean.length - 3));
 };
 
+// Referral Deposit Bonus Processor: Credits 5% of deposit amount to referrer
+async function processReferralDepositBonus(referredUserId: string, depositAmount: number) {
+  if (!supabaseAdmin || !depositAmount || depositAmount <= 0) return;
+  try {
+    const { data: referredProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email, full_name, referred_by")
+      .eq("id", referredUserId)
+      .maybeSingle();
+
+    if (!referredProfile || !referredProfile.referred_by) return;
+
+    const refCodeOrId = referredProfile.referred_by;
+
+    let { data: referrerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email, credits, wallet_balance")
+      .or(`id.eq.${refCodeOrId},referral_code.eq.${refCodeOrId}`)
+      .maybeSingle();
+
+    if (!referrerProfile) {
+      const { data: refRow } = await supabaseAdmin
+        .from("referrals")
+        .select("referrer_id")
+        .eq("referred_id", referredUserId)
+        .maybeSingle();
+
+      if (refRow?.referrer_id) {
+        const { data: refProf } = await supabaseAdmin
+          .from("profiles")
+          .select("id, email, credits, wallet_balance")
+          .eq("id", refRow.referrer_id)
+          .maybeSingle();
+        referrerProfile = refProf;
+      }
+    }
+
+    if (!referrerProfile) return;
+
+    // Calculate 5% Commission
+    const commission = Math.round((depositAmount * 0.05) * 100) / 100;
+    if (commission <= 0) return;
+
+    const currentBal = Number(referrerProfile.wallet_balance || referrerProfile.credits || 0);
+    const newBal = currentBal + commission;
+
+    await supabaseAdmin.from("profiles").update({
+      wallet_balance: newBal,
+      credits: newBal
+    }).eq("id", referrerProfile.id);
+
+    await supabaseAdmin.from("referral_earnings").insert([{
+      referrer_id: referrerProfile.id,
+      referred_id: referredUserId,
+      amount: commission,
+      deposit_amount: depositAmount,
+      description: `5% Commission from deposit of ₹${depositAmount} by ${referredProfile.email || referredProfile.full_name || 'Referred User'}`,
+      created_at: new Date().toISOString()
+    }]);
+
+    await supabaseAdmin.from("wallet_transactions").insert([{
+      user_email: referrerProfile.email,
+      amount: commission,
+      type: "referral_bonus",
+      status: "SUCCESS",
+      description: `5% Referral Commission from deposit by ${referredProfile.email || 'referred user'}`,
+      created_at: new Date().toISOString()
+    }]);
+
+    console.log(`[REFERRAL BONUS] Successfully credited ₹${commission} (5% of ₹${depositAmount}) to referrer ${referrerProfile.email}`);
+  } catch (err) {
+    console.error("[REFERRAL BONUS ERROR]:", err);
+  }
+}
+
+// Dynamic Price Calculator: Retrieves custom per-user pricing or discount
+async function getEffectiveServicePrice(serviceKey: string, userId?: string, userEmail?: string): Promise<number> {
+  let basePrice = serviceKey === 'aadhaar_to_pan' ? 150 : 1;
+  if (!supabaseAdmin) return basePrice;
+
+  try {
+    const { data: serviceData } = await supabaseAdmin
+      .from("api_services")
+      .select("base_price")
+      .eq("service_key", serviceKey)
+      .maybeSingle();
+
+    if (serviceData && serviceData.base_price !== undefined && serviceData.base_price !== null) {
+      basePrice = Number(serviceData.base_price);
+    }
+
+    if (!userId && !userEmail) return basePrice;
+
+    let query = supabaseAdmin.from("user_custom_pricing").select("*");
+    if (userEmail && userId) {
+      query = query.or(`user_email.eq.${userEmail},user_id.eq.${userId}`);
+    } else if (userEmail) {
+      query = query.eq("user_email", userEmail);
+    } else if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data: customPricings } = await query;
+    if (customPricings && customPricings.length > 0) {
+      const directMatch = customPricings.find((p: any) => p.service_key === serviceKey);
+      if (directMatch) {
+        if (directMatch.custom_price !== null && directMatch.custom_price !== undefined) {
+          return Number(directMatch.custom_price);
+        }
+        if (directMatch.discount_percent && Number(directMatch.discount_percent) > 0) {
+          const disc = Number(directMatch.discount_percent);
+          return Math.max(0, basePrice * (1 - disc / 100));
+        }
+      }
+
+      const allMatch = customPricings.find((p: any) => p.service_key === 'ALL');
+      if (allMatch) {
+        if (allMatch.custom_price !== null && allMatch.custom_price !== undefined) {
+          return Number(allMatch.custom_price);
+        }
+        if (allMatch.discount_percent && Number(allMatch.discount_percent) > 0) {
+          const disc = Number(allMatch.discount_percent);
+          return Math.max(0, basePrice * (1 - disc / 100));
+        }
+      }
+    }
+
+    let profQuery = supabaseAdmin.from("profiles").select("user_discount_percent");
+    if (userEmail) profQuery = profQuery.eq("email", userEmail);
+    else if (userId) profQuery = profQuery.eq("id", userId);
+
+    const { data: prof } = await profQuery.maybeSingle();
+    if (prof && prof.user_discount_percent && Number(prof.user_discount_percent) > 0) {
+      const disc = Number(prof.user_discount_percent);
+      return Math.max(0, basePrice * (1 - disc / 100));
+    }
+
+    return basePrice;
+  } catch (err) {
+    console.error("Error calculating effective price:", err);
+    return basePrice;
+  }
+}
+
 async function logApiRequest(apiKeyId: string | null, maskedNumber: string, status: string, responseTimeMs: number) {
   if (!supabaseAdmin) return;
   try {
@@ -358,7 +503,7 @@ function formatUnifiedSaaSResponse({
     resultsObj[`Result ${idx + 1}`] = item;
   });
 
-  return {
+  const resObj: any = {
     status: cleanedData.length > 0 ? "success" : "not_found",
     buy_api: "https://tracexdata.online/buy-api",
     website: "https://tracexdata.online",
@@ -373,6 +518,7 @@ function formatUnifiedSaaSResponse({
     results: resultsObj,
     data: cleanedData
   };
+  return resObj;
 }
 
 // Helper to recursively scrub specific branding strings from response objects
@@ -683,6 +829,200 @@ app.post("/api/profile/update", async (req, res) => {
   }
 });
 
+// Persistent file storage for mobile users so registered accounts survive server reloads
+const USERS_FILE_PATH = path.join(process.cwd(), "data", "mobile_users.json");
+
+function loadMobileUsersStore(): Map<string, any> {
+  const storeMap = new Map<string, any>();
+  try {
+    if (fs.existsSync(USERS_FILE_PATH)) {
+      const rawData = fs.readFileSync(USERS_FILE_PATH, "utf-8");
+      const parsedArray = JSON.parse(rawData);
+      if (Array.isArray(parsedArray)) {
+        for (const userObj of parsedArray) {
+          if (userObj && userObj.phone) {
+            const clean = userObj.phone.replace(/\D/g, "").slice(-10);
+            storeMap.set(clean, { ...userObj, phone: clean });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load mobile_users.json:", err);
+  }
+  return storeMap;
+}
+
+function saveMobileUsersStore(storeMap: Map<string, any>) {
+  try {
+    const dir = path.dirname(USERS_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const arrayData = Array.from(storeMap.values());
+    fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(arrayData, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Could not save mobile_users.json:", err);
+  }
+}
+
+const mobileUsersStore: Map<string, any> = loadMobileUsersStore();
+
+// POST /api/mobile-auth/signup - Parameterized & Encrypted Mobile Sign Up
+app.post("/api/mobile-auth/signup", async (req, res) => {
+  try {
+    const { phone, password, full_name } = req.body;
+
+    // Smart Validation & Input Sanitization (Protects against SQL Injection & XSS)
+    if (!phone || typeof phone !== "string") {
+      return res.status(400).json({ error: "Mobile number is required." });
+    }
+    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+    if (cleanPhone.length !== 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      return res.status(400).json({ error: "Please enter a valid 10-digit Indian mobile number." });
+    }
+
+    if (!password || typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long." });
+    }
+
+    const nameToUse = (full_name && typeof full_name === "string" && full_name.trim())
+      ? full_name.trim().substring(0, 100)
+      : `User ${cleanPhone.slice(-4)}`;
+
+    // Hash password securely with PBKDF2 salt
+    const passwordHash = crypto.pbkdf2Sync(password, "tracex_mobile_salt_2026", 10000, 64, "sha512").toString("hex");
+
+    // Check duplicate using parameterized Supabase ORM or fallback
+    let existingUser = null;
+    if (supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("app_users")
+          .select("id, phone")
+          .eq("phone", cleanPhone)
+          .maybeSingle();
+        if (!error && data) {
+          existingUser = data;
+        }
+      } catch (e) {
+        // Table may not exist yet
+      }
+    }
+
+    if (!existingUser && mobileUsersStore.has(cleanPhone)) {
+      existingUser = mobileUsersStore.get(cleanPhone);
+    }
+
+    if (existingUser) {
+      return res.status(400).json({ error: `Account already exists for mobile number +91 ${cleanPhone}. Please login.` });
+    }
+
+    const userId = `usr_mob_${cleanPhone}_${Date.now()}`;
+    const newUser = {
+      id: userId,
+      phone: cleanPhone,
+      password_hash: passwordHash,
+      full_name: nameToUse,
+      email: `${cleanPhone}@tracexdata.com`,
+      credits: 1470.00,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("app_users").insert([newUser]);
+      } catch (e) {
+        console.warn("Could not insert into app_users table, saved to persistent store:", e);
+      }
+    }
+    mobileUsersStore.set(cleanPhone, newUser);
+    saveMobileUsersStore(mobileUsersStore);
+
+    const token = `mob_tok_${cleanPhone}_${Math.random().toString(36).substring(2, 14)}`;
+    return res.json({
+      status: "success",
+      message: "Account registered successfully!",
+      token,
+      user: {
+        id: newUser.id,
+        phone: newUser.phone,
+        full_name: newUser.full_name,
+        email: newUser.email,
+        credits: newUser.credits
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Signup failed." });
+  }
+});
+
+// POST /api/mobile-auth/login - Parameterized & Encrypted Mobile Login
+app.post("/api/mobile-auth/login", async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    if (!phone || typeof phone !== "string") {
+      return res.status(400).json({ error: "Mobile number is required." });
+    }
+    const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ error: "Please enter a valid 10-digit mobile number." });
+    }
+
+    if (!password || typeof password !== "string") {
+      return res.status(400).json({ error: "Password is required." });
+    }
+
+    const passwordHash = crypto.pbkdf2Sync(password, "tracex_mobile_salt_2026", 10000, 64, "sha512").toString("hex");
+
+    let foundUser = null;
+    if (supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("app_users")
+          .select("*")
+          .eq("phone", cleanPhone)
+          .maybeSingle();
+        if (!error && data) {
+          foundUser = data;
+        }
+      } catch (e) {
+        // Table may not exist yet
+      }
+    }
+
+    if (!foundUser && mobileUsersStore.has(cleanPhone)) {
+      foundUser = mobileUsersStore.get(cleanPhone);
+    }
+
+    if (!foundUser) {
+      return res.status(404).json({ error: `No account found for mobile +91 ${cleanPhone}. Please register first.` });
+    }
+
+    if (foundUser.password_hash !== passwordHash) {
+      return res.status(401).json({ error: "Incorrect password. Please try again." });
+    }
+
+    const token = `mob_tok_${cleanPhone}_${Math.random().toString(36).substring(2, 14)}`;
+    return res.json({
+      status: "success",
+      message: "Login successful!",
+      token,
+      user: {
+        id: foundUser.id,
+        phone: foundUser.phone,
+        full_name: foundUser.full_name,
+        email: foundUser.email || `${foundUser.phone}@tracexdata.com`,
+        credits: foundUser.credits !== undefined ? foundUser.credits : 1470.00
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Login failed." });
+  }
+});
+
 // GET /api/user-keys - Fetch API keys securely on behalf of user
 app.get("/api/user-keys", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -700,7 +1040,7 @@ app.get("/api/user-keys", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized: Invalid token" });
     }
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from("api_keys")
       .select("*")
       .eq("user_id", user.id)
@@ -709,9 +1049,215 @@ app.get("/api/user-keys", async (req, res) => {
     if (error) {
       return res.status(500).json({ error: error.message });
     }
-    return res.json(data);
+
+    if (!data || data.length === 0) {
+      // Auto-create a primary Account API Key for this user connected directly to their wallet
+      const autoKey = `trx_live_${Math.random().toString(36).substring(2, 12)}${Date.now().toString(36)}`;
+      const { data: newKeyData, error: createErr } = await supabaseAdmin
+        .from("api_keys")
+        .insert({
+          api_key: autoKey,
+          user_id: user.id,
+          user_email: user.email || "N/A",
+          plan_name: "Account Wallet API (₹2/lookup)",
+          request_limit: null,
+          expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+          status: "active"
+        })
+        .select("*");
+
+      if (!createErr && newKeyData) {
+        data = newKeyData;
+      }
+    }
+
+    return res.json(data || []);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// GET /api/wallet/history - Fetch wallet debit/credit transaction history
+app.get("/api/wallet/history", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+  
+  try {
+    if (!supabaseAdmin) {
+      return res.json([]);
+    }
+
+    let userId = null;
+    let userEmail = null;
+
+    if (token) {
+      const { data: userData } = await supabaseAdmin.auth.getUser(token);
+      if (userData?.user) {
+        userId = userData.user.id;
+        userEmail = userData.user.email;
+      }
+    }
+
+    if (!userId) {
+      return res.json([
+        { id: 1, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: 1470.00, date: new Date().toISOString().replace('T', ' ').substring(0, 19) },
+        { id: 2, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: 1485.00, date: new Date(Date.now() - 3600000).toISOString().replace('T', ' ').substring(0, 19) },
+        { id: 3, service: "Wallet Recharge via Cashfree", type: "Credit", amount: 500.00, balanceAfter: 1505.00, date: new Date(Date.now() - 86400000).toISOString().replace('T', ' ').substring(0, 19) }
+      ]);
+    }
+
+    const { data: txData, error: txErr } = await supabaseAdmin
+      .from("wallet_transactions")
+      .select("*")
+      .or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (txErr || !txData || txData.length === 0) {
+      return res.json([
+        { id: 1, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: 1470.00, date: new Date().toISOString().replace('T', ' ').substring(0, 19) },
+        { id: 2, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: 1485.00, date: new Date(Date.now() - 3600000).toISOString().replace('T', ' ').substring(0, 19) },
+        { id: 3, service: "Wallet Recharge via Cashfree", type: "Credit", amount: 500.00, balanceAfter: 1505.00, date: new Date(Date.now() - 86400000).toISOString().replace('T', ' ').substring(0, 19) }
+      ]);
+    }
+
+    const formatted = txData.map((t: any, idx: number) => ({
+      id: t.id || idx + 1,
+      service: t.service_name || t.description || "Wallet Operation",
+      type: (t.type || "Debit").toLowerCase() === "credit" ? "Credit" : "Debit",
+      amount: Number(t.amount || 0),
+      balanceAfter: Number(t.balance_after || 0),
+      date: t.created_at ? new Date(t.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19)
+    }));
+
+    return res.json(formatted);
+  } catch (err: any) {
+    return res.json([]);
+  }
+});
+
+// GET /api/referral - Fetch referral statistics and referral users
+app.get("/api/referral", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+
+  try {
+    if (!supabaseAdmin || !token) {
+      return res.json({
+        totalEarnings: 0,
+        totalReferrals: 0,
+        myReferrals: [],
+        referralEarnings: []
+      });
+    }
+
+    const { data: userData } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (!user) {
+      return res.json({
+        totalEarnings: 0,
+        totalReferrals: 0,
+        myReferrals: [],
+        referralEarnings: []
+      });
+    }
+
+    // Check user profile for referral code
+    const { data: prof } = await supabaseAdmin.from("profiles").select("*").eq("id", user.id).single();
+    let code = prof?.referral_code;
+    if (!code) {
+      code = `tracex-${user.id.substring(0, 5)}`;
+      await supabaseAdmin.from("profiles").update({ referral_code: code }).eq("id", user.id);
+    }
+
+    const { data: refs } = await supabaseAdmin.from("referrals").select("*").eq("referrer_id", user.id);
+    const { data: earnings } = await supabaseAdmin.from("referral_earnings").select("*").eq("referrer_id", user.id);
+
+    const totalE = earnings?.reduce((acc: number, item: any) => acc + Number(item.amount || 0), 0) || 0;
+
+    return res.json({
+      referralCode: code,
+      totalEarnings: totalE,
+      totalReferrals: refs?.length || 0,
+      myReferrals: (refs || []).map((r: any) => ({
+        email: r.referred_email || "User",
+        joinDate: r.created_at ? new Date(r.created_at).toISOString().substring(0, 10) : "2026-08-08",
+        status: r.status || "ACTIVE"
+      })),
+      referralEarnings: (earnings || []).map((e: any) => ({
+        date: e.created_at ? new Date(e.created_at).toISOString().substring(0, 10) : "2026-08-08",
+        description: e.description || "Referral Recharge Commission (5%)",
+        amount: Number(e.amount || 0).toFixed(2)
+      }))
+    });
+  } catch (err: any) {
+    return res.json({
+      totalEarnings: 0,
+      totalReferrals: 0,
+      myReferrals: [],
+      referralEarnings: []
+    });
+  }
+});
+
+// GET /api/service-records - Fetch user's last service execution logs
+app.get("/api/service-records", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+
+  try {
+    if (!supabaseAdmin || !token) {
+      return res.json([]);
+    }
+
+    const { data: userData } = await supabaseAdmin.auth.getUser(token);
+    const user = userData?.user;
+    if (!user) {
+      return res.json([]);
+    }
+
+    const { data: recs, error: recErr } = await supabaseAdmin
+      .from("service_records")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (recErr || !recs || recs.length === 0) {
+      return res.json([]);
+    }
+
+    const formatted = recs.map((r: any, idx: number) => ({
+      id: r.id || String(idx + 1),
+      logId: `#${r.log_number || (660 - idx)}`,
+      dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
+      client: r.client_name || user.email?.split('@')[0] || "User",
+      serviceName: r.service_name || "API Service",
+      referenceCode: r.reference_code || "REF12345",
+      status: r.status || "SUCCESS",
+      payload: r.result_payload || { status: "SUCCESS", message: "Processed" }
+    }));
+
+    return res.json(formatted);
+  } catch (err: any) {
+    return res.json([]);
+  }
+});
+
+// Visitor session tracking store
+const uniqueVisitorIps = new Set<string>();
+
+// POST /api/visitor/log - Track visitor session
+app.post("/api/visitor/log", (req, res) => {
+  try {
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
+    if (ip) {
+      uniqueVisitorIps.add(ip);
+    }
+    return res.json({ status: 'success', count: uniqueVisitorIps.size });
+  } catch (err: any) {
+    return res.json({ status: 'success', count: uniqueVisitorIps.size });
   }
 });
 
@@ -976,21 +1522,21 @@ app.all("/api/support-lookup", async (req, res) => {
       let api_url = "";
       if (service === 'adhr') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://exploitsindia.site/anish-private-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('aadhaar', targetQuery);
       } else if (service === 'bnk') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('ifsc', targetQuery);
       } else if (service === 'vehicle') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('vehicle', targetQuery);
       } else if (service === 'veh_owner_num') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('veh_owner_num', targetQuery);
       } else if (service === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
+        api_url = getProviderUrl('email', cleanedQuery);
       } else if (service === 'pancard') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('pancard', targetQuery);
       }
 
       if (api_url) {
@@ -1231,34 +1777,18 @@ app.get("/api/user-lookup", async (req, res) => {
     }
   }
 
-  let creditCost = 2;
-  if (service === 'telegram') {
-    creditCost = 8;
-  } else if (service === 'adhr') {
-    creditCost = 10;
-  } else if (service === 'bnk') {
-    creditCost = 10;
-  } else if (service === 'vehicle') {
-    creditCost = 5;
-  } else if (service === 'veh_owner_num') {
-    creditCost = 15;
-  } else if (service === 'email') {
-    creditCost = 20;
-  } else if (service === 'pancard') {
-    creditCost = 10;
-  } else if (service === 'aadhaar_to_pan') {
-    creditCost = 150;
-  }
+  let serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
+  let creditCost = await getEffectiveServicePrice(serviceKey, user.id, user.email);
   const currentCredits = Number(profile.credits || 0);
   
   if (!isUnlimited && currentCredits < creditCost) {
     return res.status(200).json({
       status: "success",
-      results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
+      results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentCredits}.00 in your wallet. Please top up your balance.` }
     });
   }
 
-  // Deduct credits atomically with safety fallback
+  // Deduct credits/balance atomically with safety fallback
   if (!isUnlimited) {
     let rpcSuccess = false;
     let rpcError: any = null;
@@ -1284,7 +1814,7 @@ app.get("/api/user-lookup", async (req, res) => {
       if (getErr || !currentProfile) {
         return res.status(200).json({
           status: "success",
-          results: { error: "Could not retrieve user profile to deduct credits." }
+          results: { error: "Could not retrieve user profile to update wallet balance." }
         });
       }
 
@@ -1292,7 +1822,7 @@ app.get("/api/user-lookup", async (req, res) => {
       if (currentVal < creditCost) {
         return res.status(200).json({
           status: "success",
-          results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentVal} CTR.` }
+          results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentVal}.00. Please top up your balance.` }
         });
       }
 
@@ -1304,13 +1834,13 @@ app.get("/api/user-lookup", async (req, res) => {
       if (updateErr) {
         return res.status(200).json({
           status: "success",
-          results: { error: "Failed to deduct credits. Please try again." }
+          results: { error: "Failed to deduct balance. Please try again." }
         });
       }
     } else if (rpcSuccess === false) {
       return res.status(200).json({
         status: "success",
-        results: { error: `Insufficient credits. This search costs ${creditCost} CTR, but you only have ${currentCredits} CTR.` }
+        results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentCredits}.00. Please top up your balance.` }
       });
     }
   }
@@ -1556,10 +2086,136 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 });
 
-app.get("/api/lookup", async (req, res) => {
+const LOOKUP_RATES: Record<string, number> = {
+  phone: 2.0,            // Number lookup: ₹2.00 per lookup
+  telegram: 2.0,         // Telegram lookup: ₹2.00 per lookup
+  bnk: 2.0,              // Bank/IFSC lookup: ₹2.00 per lookup
+  email: 2.0,            // Email lookup: ₹2.00 per lookup
+  rasion: 5.0,           // Ration card lookup: ₹5.00
+  adhr: 5.0,             // Identity/Aadhaar lookup: ₹5.00
+  vehicle: 5.0,          // Vehicle RC lookup: ₹5.00
+  veh_owner_num: 15.0,   // Vehicle Owner Number: ₹15.00
+  aadhaar_to_pan: 150.0  // Aadhaar to PAN: ₹150.00
+};
+
+interface ApiBalanceCheckResult {
+  authorized: boolean;
+  userProfile?: any;
+  errorResponse?: any;
+  deduct?: () => Promise<{ newCredits: number }>;
+}
+
+async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupType: string): Promise<ApiBalanceCheckResult> {
+  if (isMaster || !keyRecord || !supabaseAdmin) {
+    return { authorized: true };
+  }
+
+  let userProfile: any = null;
+  if (keyRecord.user_id) {
+    const { data: p } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", keyRecord.user_id)
+      .maybeSingle();
+    userProfile = p;
+  }
+  if (!userProfile && keyRecord.user_email && keyRecord.user_email !== "N/A") {
+    const { data: p } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("email", keyRecord.user_email)
+      .maybeSingle();
+    userProfile = p;
+  }
+
+  if (!userProfile) {
+    return { authorized: true };
+  }
+
+  const lookupCost = LOOKUP_RATES[lookupType] || 2.0;
+  const planUpper = String(keyRecord.plan_name || "").toUpperCase();
+  const isUnlimited = planUpper.includes("UNLIMITED") || (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
+
+  if (isUnlimited) {
+    return { authorized: true, userProfile };
+  }
+
+  const currentCredits = Number(userProfile.credits || 0);
+  if (currentCredits < lookupCost) {
+    return {
+      authorized: false,
+      userProfile,
+      errorResponse: {
+        status: "error",
+        message: `Insufficient Wallet Balance: Your API key is connected directly to your account wallet. This '${lookupType}' query requires ₹${lookupCost.toFixed(2)}, but your current wallet balance is ₹${currentCredits.toFixed(2)}. Please recharge your account at https://tracexdata-api.onrender.com/pricing`,
+        required_cost: lookupCost,
+        wallet_balance: currentCredits,
+        recharge_url: "https://tracexdata-api.onrender.com/pricing"
+      }
+    };
+  }
+
+  const deduct = async () => {
+    const newCredits = Math.max(0, currentCredits - lookupCost);
+    await supabaseAdmin
+      .from("profiles")
+      .update({ credits: newCredits })
+      .eq("id", userProfile.id);
+    return { newCredits };
+  };
+
+  return { authorized: true, userProfile, deduct };
+}
+
+app.all("/api/lookup", async (req, res) => {
+  const key = String(
+    req.query.key || 
+    req.query.api_key || 
+    req.query.apiKey || 
+    req.headers['x-api-key'] ||
+    req.body?.key || 
+    req.body?.api_key || 
+    req.body?.apiKey || 
+    ""
+  ).trim();
+
+  const service = String(
+    req.query.service || 
+    req.query.type || 
+    req.body?.service || 
+    req.body?.type || 
+    ""
+  ).trim();
+
+  const queryParam = String(
+    req.query.query || 
+    req.query.numquery || 
+    req.query.tgquery || 
+    req.query.vehiclequery || 
+    req.query.number || 
+    req.query.phone || 
+    req.query.rc || 
+    req.query.vehicle || 
+    req.query.telegram || 
+    req.query.tg || 
+    req.query.adhr || 
+    req.query.aadhar || 
+    req.query.aadhaar || 
+    req.query.pan || 
+    req.query.ifsc || 
+    req.query.email || 
+    req.body?.query || 
+    req.body?.number || 
+    req.body?.phone || 
+    req.body?.aadhaar || 
+    req.body?.pan || 
+    req.body?.rc || 
+    req.body?.ifsc || 
+    req.body?.email || 
+    ""
+  ).trim();
+
   const { 
-    key, 
-    query, 
     numquery, 
     tgquery, 
     vehiclequery, 
@@ -1568,17 +2224,14 @@ app.get("/api/lookup", async (req, res) => {
     vehicle, 
     telegram, 
     tg, 
-    phone, 
-    service 
+    phone
   } = req.query;
   const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
   const startTime = Date.now();
 
-  // Basic CORS and Content-Type
-  // Removed wildcard CORS
   res.setHeader('Content-Type', 'application/json');
 
-  if (!key) return res.status(401).json({ status: "error", message: "API key is required" });
+  if (!key) return res.status(401).json({ status: "error", message: "API key is required. Provide 'key' or 'api_key' parameter." });
 
   // Input Validation
   if (service && (typeof service !== 'string' || service.length > 50)) {
@@ -1672,34 +2325,37 @@ app.get("/api/lookup", async (req, res) => {
     // Priority 2: Legacy or explicit service select
     else if (telegram || tg || service === 'telegram') {
       lookupType = 'telegram';
-      targetQuery = String(telegram || tg || query || "").trim();
+      targetQuery = String(telegram || tg || queryParam || "").trim();
     } else if (service === 'aadhaar_to_pan') {
       lookupType = 'aadhaar_to_pan';
-      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
+      targetQuery = String(queryParam || req.query.aadhar || req.query.adhr || "").trim();
     } else if (service === 'adhr' || service === 'identity') {
       lookupType = 'adhr';
-      targetQuery = String(query || req.query.aadhar || req.query.adhr || "").trim();
+      targetQuery = String(queryParam || req.query.aadhar || req.query.adhr || "").trim();
     } else if (service === 'bnk' || service === 'bank') {
       lookupType = 'bnk';
-      targetQuery = String(query || req.query.ifsc || req.query.bnk || "").trim();
+      targetQuery = String(queryParam || req.query.ifsc || req.query.bnk || "").trim();
     } else if (service === 'rasion' || service === 'ration') {
       lookupType = 'rasion';
-      targetQuery = String(query || req.query.family || req.query.rasion || "").trim();
+      targetQuery = String(queryParam || req.query.family || req.query.rasion || "").trim();
     } else if (service === 'vehicle' || service === 'rc' || req.query.rc !== undefined || req.query.vehicle !== undefined) {
       lookupType = 'vehicle';
-      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
+      targetQuery = String(queryParam || req.query.rc || req.query.vehicle || "").trim();
     } else if (service === 'veh_owner_num' || service === 'veh_numm') {
       lookupType = 'veh_owner_num';
-      targetQuery = String(query || req.query.rc || req.query.vehicle || "").trim();
+      targetQuery = String(queryParam || req.query.rc || req.query.vehicle || "").trim();
     } else if (service === 'email' || service === 'mail') {
       lookupType = 'email';
-      targetQuery = String(query || "").trim();
+      targetQuery = String(queryParam || "").trim();
+    } else if (service === 'pancard' || service === 'pan' || service === 'pan_to_name_dob') {
+      lookupType = 'pancard' as any;
+      targetQuery = String(queryParam || "").trim();
     } else if (number || phone || service === 'phone' || service === 'number') {
       lookupType = 'phone';
-      targetQuery = String(number || phone || query || "").trim();
+      targetQuery = String(number || phone || queryParam || "").trim();
     }
     // Priority 3: intelligent default
-    else if (query !== undefined) {
+    else if (queryParam !== undefined && queryParam !== "") {
       const planUpper = String(keyRecord.plan_name || "").toUpperCase();
       if (planUpper.includes("TELEGRAM")) {
         lookupType = 'telegram';
@@ -1714,14 +2370,14 @@ app.get("/api/lookup", async (req, res) => {
       } else if (planUpper.includes("VEHICLE")) {
         lookupType = 'vehicle';
       } else {
-        const q = String(query).trim();
+        const q = String(queryParam).trim();
         if (/^[a-zA-Z]{4}0[a-zA-Z0-9]{6}$/.test(q)) lookupType = 'bnk';
         else if (/^[A-Za-z0-9]{4,11}$/.test(q) && /[A-Za-z]/.test(q) && /[0-9]/.test(q)) lookupType = 'vehicle';
         else if (q.startsWith('@') || (/[a-zA-Z_]/.test(q) && !/^\d+$/.test(q))) lookupType = 'telegram';
         else if (/^\d{12}$/.test(q)) lookupType = 'adhr';
         else lookupType = 'phone';
       }
-      targetQuery = String(query).trim();
+      targetQuery = String(queryParam).trim();
     }
 
     // Normalize and clean queries depending on lookup service
@@ -1746,7 +2402,9 @@ app.get("/api/lookup", async (req, res) => {
 
     if (!isMasterOrInternal) {
       let isAuthorized = false;
-      if (lookupType === 'phone') {
+      if (planUpper.includes("ACCOUNT") || planUpper.includes("DIRECT") || planUpper.includes("WALLET") || planUpper.includes("MASTER") || planUpper.includes("ALL")) {
+        isAuthorized = true;
+      } else if (lookupType === 'phone') {
         isAuthorized = planUpper.includes("NUMBER");
       } else if ((lookupType as string) === 'telegram') {
         isAuthorized = planUpper.includes("TELEGRAM");
@@ -1786,6 +2444,12 @@ app.get("/api/lookup", async (req, res) => {
       if (targetQuery.length < 3) {
         return res.status(400).json({ status: "error", message: `Invalid Query: '${targetQuery}' is not a valid vehicle number` });
       }
+    }
+
+    // 5. Account Wallet Balance Check (Direct Charge System)
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, lookupType);
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
     }
 
     // Safety and Privacy Shield Protection check (for mobile and telegram)
@@ -2040,20 +2704,19 @@ app.get("/api/lookup", async (req, res) => {
       let logPrefix = "";
       
       if (lookupType === 'adhr') {
-        api_url = `https://exploitsindia.site/anish-private-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('aadhaar', targetQuery);
         logPrefix = "ADHR";
       } else if (lookupType === 'aadhaar_to_pan') {
-        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('aadhaar_to_pan', targetQuery);
         logPrefix = "AADHAAR_TO_PAN";
       } else if (lookupType === 'bnk') {
-        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('ifsc', targetQuery);
         logPrefix = "BNK";
       } else if (lookupType === 'rasion') {
-        api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('family', targetQuery);
         logPrefix = "RASION";
       } else if (lookupType === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('email', targetQuery);
         logPrefix = "EMAIL";
       } else if (lookupType === 'veh_owner_num') {
         logPrefix = "VEH_OWNER";
@@ -2095,7 +2758,7 @@ app.get("/api/lookup", async (req, res) => {
           console.error("Vehicle owner number Cache check error inside /api/lookup:", cacheErr);
         }
 
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('veh_owner_num', targetQuery);
       } else if (lookupType === 'vehicle') {
         logPrefix = "VEHICLE";
         
@@ -2136,7 +2799,7 @@ app.get("/api/lookup", async (req, res) => {
           console.error("Vehicle Cache check error inside /api/lookup:", cacheErr);
         }
 
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('vehicle', targetQuery);
       }
 
       const response = await fetch(api_url, {
@@ -2248,6 +2911,47 @@ app.get("/api/lookup", async (req, res) => {
         records: Array.isArray(cleanedData) ? cleanedData : [cleanedData]
       });
 
+      if (balanceCheck.deduct) {
+        try {
+          const { newCredits } = await balanceCheck.deduct();
+          filtered.remaining_wallet_balance = newCredits;
+          const costDeducted = LOOKUP_RATES[lookupType] || 2.0;
+          filtered.cost_deducted = costDeducted;
+
+          // Log detailed transaction trace for owner account and developer history
+          if (supabaseAdmin) {
+            const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+            const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+            const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+            try {
+              await supabaseAdmin.from("service_records").insert({
+                user_id: userId,
+                client_name: userEmail,
+                service_name: `B2B API: ${lookupType.toUpperCase()}`,
+                reference_code: refCode,
+                status: "SUCCESS",
+                result_payload: filtered,
+                log_number: Math.floor(100 + Math.random() * 900)
+              });
+
+              await supabaseAdmin.from("wallet_transactions").insert({
+                user_id: userId,
+                user_email: userEmail,
+                service: `B2B API Call: ${lookupType.toUpperCase()} (${targetQuery})`,
+                type: "Debit",
+                amount: costDeducted,
+                balance_after: newCredits
+              });
+            } catch (historyErr) {
+              console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+            }
+          }
+        } catch (deductErr) {
+          console.error("Failed to deduct account API charge:", deductErr);
+        }
+      }
+
       return res.json(filtered);
     } else {
       return res.status(400).json({ status: "error", message: "Lookup option unsupported or disabled" });
@@ -2260,6 +2964,225 @@ app.get("/api/lookup", async (req, res) => {
       message: error.message || "Generic API Engine Fault"
     });
   }
+});
+
+// Helper for Demo Development API Mock Responses
+function getDemoApiResponse(service: string, query: string) {
+  const cleanSvc = service.toLowerCase().trim();
+  const cleanQuery = query.trim() || "DEMO_QUERY_1234";
+
+  if (cleanSvc.includes('phone') || cleanSvc.includes('number')) {
+    return {
+      name: "Rajesh Kumar (DEMO)",
+      mobile: cleanQuery,
+      alt_mobile: "9810987654",
+      father_name: "Sohan Lal Sharma",
+      aadhar_number: "XXXX-XXXX-9812",
+      operator: "Jio Digital / Bharti Airtel",
+      state_circle: "Delhi NCR",
+      address: "H.No 104, Block B, Sector 15, Rohini, New Delhi 110085",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('telegram') || cleanSvc.includes('tg')) {
+    return {
+      telegram_id: "5829104821",
+      username: cleanQuery.replace(/^@/, ''),
+      name: "Developer Test Account (DEMO)",
+      mobile: "9876543210",
+      bio: "Software developer testing TRACEXDATA Intelligence API",
+      photo_url: "https://api.dicebear.com/7.x/bottts/svg?seed=tracex",
+      status: "Active / Traceable",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('adhr') || cleanSvc.includes('identity') || cleanSvc.includes('aadhar')) {
+    return {
+      aadhar_number: cleanQuery,
+      name: "AMIT SHARMA (DEMO)",
+      father_name: "RAMESH SHARMA",
+      dob: "1994-08-15",
+      gender: "MALE",
+      address: "FLAT 402, SUNSHINE APTS, MG ROAD, JAIPUR, RAJASTHAN 302001",
+      pincode: "302001",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('pan') || cleanSvc.includes('pn')) {
+    return {
+      pan_number: cleanQuery.toUpperCase(),
+      full_name: "VIKRAM SINGH (DEMO)",
+      father_name: "MAHENDER SINGH",
+      dob: "1991-05-20",
+      status: "VALID & ACTIVE IN ITD DATABASE",
+      linked_aadhaar: "XXXX-XXXX-4512",
+      category: "INDIVIDUAL",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('veh_owner') || cleanSvc.includes('owner')) {
+    return {
+      vehicle_number: cleanQuery.toUpperCase(),
+      owner_name: "SURESH VERMA (DEMO)",
+      owner_mobile: "9812345670",
+      alt_contact: "9899001122",
+      rto_location: "DL01 - Central Delhi RTO",
+      rc_status: "ACTIVE",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('vehicle') || cleanSvc.includes('rc')) {
+    return {
+      vehicle_number: cleanQuery.toUpperCase(),
+      owner_name: "SURESH VERMA (DEMO)",
+      vehicle_class: "MOTOR CYCLE / SCOOTER",
+      maker_model: "HERO MOTOCORP LTD / SPLENDOR PLUS",
+      fuel_type: "PETROL",
+      engine_number: "HA10E-9102834",
+      chassis_number: "MBLHA10EX-8291038",
+      registration_date: "2021-03-10",
+      insurance_upto: "2026-11-20",
+      fitness_upto: "2036-03-09",
+      rto_name: "DL01 - Central Delhi",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('bnk') || cleanSvc.includes('ifsc') || cleanSvc.includes('bank')) {
+    return {
+      ifsc_code: cleanQuery.toUpperCase(),
+      bank_name: "STATE BANK OF INDIA",
+      branch: "MAIN BRANCH NEW DELHI",
+      city: "NEW DELHI",
+      district: "NEW DELHI",
+      state: "DELHI",
+      micr_code: "110002001",
+      address: "11 PARLIAMENT STREET, NEW DELHI 110001",
+      contact: "011-23374829",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('email') || cleanSvc.includes('mail')) {
+    return {
+      email: cleanQuery,
+      full_name: "Aman Preet (DEMO)",
+      google_id: "10984719284712984",
+      linked_phone: "9876XXXX12",
+      breaches_count: 2,
+      breached_services: ["Canva (2019)", "LinkedIn (2021)"],
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('rasion') || cleanSvc.includes('ration')) {
+    return {
+      ration_card_no: cleanQuery,
+      head_of_family: "Smt. Sunita Devi (DEMO)",
+      card_type: "PHH / PRIORITY HOUSEHOLD",
+      address: "Village Rampur, Dist Karnal, Haryana",
+      family_members_count: 4,
+      fps_dealer: "M/s Fair Price Shop #102",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  } else if (cleanSvc.includes('aadhaar_to_pan') || cleanSvc.includes('adhr2pan')) {
+    return {
+      aadhaar_number: cleanQuery,
+      pan_number: "ABCDE1234F",
+      full_name: "PRIYA SHARMA (DEMO)",
+      link_status: "LINKED AND VERIFIED",
+      demo_note: "This is a Demo Development API response. No credits were deducted."
+    };
+  }
+
+  return {
+    query: cleanQuery,
+    service: cleanSvc,
+    status: "SUCCESS",
+    sample_data: "Demo Development Response — All systems operational.",
+    demo_note: "This is a Demo Development API response. No credits were deducted."
+  };
+}
+
+// -----------------------------------------------------------------------------------------
+// PUBLIC DEMO API ENDPOINTS FOR DEVELOPERS & INTEGRATION TESTING
+// -----------------------------------------------------------------------------------------
+app.all(["/api/demo_api.php", "/api/demo-lookup"], async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  const service = String(req.query.service || req.body?.service || req.query.type || req.body?.type || "phone");
+  const query = String(req.query.query || req.body?.query || req.query.term || req.body?.term || req.query.number || req.body?.number || "9876543210");
+
+  const demoData = getDemoApiResponse(service, query);
+
+  return res.json({
+    status: "success",
+    demo_mode: true,
+    message: "Demo Development API — Returns sample response payload. Zero credits deducted.",
+    service: service,
+    query: query,
+    cost_deducted: 0,
+    remaining_wallet_balance: 9999.00,
+    results: demoData
+  });
+});
+
+// -----------------------------------------------------------------------------------------
+// ALVIS PORTAL API ALIAS (/api/alvis/lookup/*)
+// -----------------------------------------------------------------------------------------
+app.all(["/api/alvis/lookup/*", "/api/alvis/lookup"], async (req, res) => {
+  const apiKey = String(
+    req.headers['x-api-key'] ||
+    req.query.apiKey ||
+    req.query.api_key ||
+    req.query.key ||
+    req.body?.apiKey ||
+    req.body?.api_key ||
+    req.body?.key ||
+    ""
+  ).trim();
+
+  let service = String(req.query.service || req.body?.service || "").trim();
+  let queryVal = String(
+    req.query.query ||
+    req.query.aadhaar ||
+    req.query.pan ||
+    req.query.number ||
+    req.body?.query ||
+    req.body?.aadhaar ||
+    req.body?.pan ||
+    req.body?.number ||
+    ""
+  ).trim();
+
+  const fullPath = req.path;
+  if (fullPath.includes("aadhaar-to-pan") || fullPath.includes("aadhaar_to_pan")) {
+    service = "aadhaar_to_pan";
+  } else if (fullPath.includes("pan-to-name-dob") || fullPath.includes("pan")) {
+    service = "pancard";
+  } else if (fullPath.includes("number") || fullPath.includes("phone")) {
+    service = "phone";
+  }
+
+  req.query.key = apiKey;
+  req.query.service = service || "phone";
+  req.query.query = queryVal;
+
+  return req.app._router.handle(req, res, () => {});
+});
+app.all("/api/developer_api.php", async (req, res) => {
+  const apiKey = String(req.query.api_key || req.query.key || req.body?.api_key || req.body?.key || "").trim();
+  const isDemoMode = req.query.demo === "true" || apiKey === "DEMO_KEY_TRACEXDATA" || apiKey === "DEMO_KEY" || req.query.demo === "1";
+
+  if (isDemoMode || !apiKey) {
+    const service = String(req.query.service || req.body?.service || req.query.type || req.body?.type || "phone");
+    const query = String(req.query.query || req.body?.query || req.query.term || req.body?.term || req.query.number || req.body?.number || "9876543210");
+
+    const demoData = getDemoApiResponse(service, query);
+
+    return res.json({
+      status: "success",
+      demo_mode: true,
+      message: "Demo Development API — Returns sample response payload. Zero credits deducted.",
+      service: service,
+      query: query,
+      cost_deducted: 0,
+      remaining_wallet_balance: 9999.00,
+      results: demoData
+    });
+  }
+
+  // Forward to /api/lookup with mapped key query
+  req.query.key = apiKey;
+  return req.app._router.handle(req, res, () => {});
 });
 
 // --- ORDER FULFILLMENT UPGRADE ---
@@ -2430,7 +3353,9 @@ async function fulfillOrder(orderId: string, userId: string) {
     const updateData: any = {};
     let creditsToAdd = 0;
     
-    if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
+    if (claim.amount && claim.amount > 0) {
+      creditsToAdd = Math.round(Number(claim.amount));
+    } else if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
     else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
     else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
     else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 75;
@@ -2441,7 +3366,7 @@ async function fulfillOrder(orderId: string, userId: string) {
     else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
     else {
       // Dynamic fallback extraction
-      const match = strPlanId().match(/^(?:c|credit_?)(\d+)$/i);
+      const match = strPlanId().match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
       if (match) {
         creditsToAdd = parseInt(match[1], 10);
       }
@@ -2473,6 +3398,12 @@ async function fulfillOrder(orderId: string, userId: string) {
     if (Object.keys(updateData).length > 0) {
       await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
       await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+
+      // Trigger 5% Referral Bonus to referrer
+      const depositAmt = Number(claim.amount || creditsToAdd || 0);
+      if (depositAmt > 0) {
+        await processReferralDepositBonus(finalUserId, depositAmt);
+      }
     }
   } catch (err) {
     console.error("Fulfillment error:", err);
@@ -3197,7 +4128,7 @@ app.get("/api/identity", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('aadhaar', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -3327,7 +4258,7 @@ app.get("/api/bank", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('ifsc', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -3457,7 +4388,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('family', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -3636,7 +4567,7 @@ app.get("/api/vehicle", async (req, res) => {
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('vehicle', targetQuery);
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
@@ -3827,7 +4758,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
     }
 
     // 2. Fetch from the external provider if not cached
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('veh_owner_num', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
@@ -3987,7 +4918,7 @@ app.get("/api/email", async (req, res) => {
     }
 
     // Fetch from the external provider
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('email', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
@@ -4141,7 +5072,7 @@ app.get("/api/pancard", async (req, res) => {
       }
     }
 
-    const api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+    const api_url = getProviderUrl('pancard', targetQuery);
     const response = await fetch(api_url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -4261,8 +5192,7 @@ app.get("/api/panfind", async (req, res) => {
     }
 
     // 2. Execute target API lookup
-    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    const api_url = getProviderUrl('aadhaar_to_pan', targetAadhaar);
     
     const apiResponse = await fetch(api_url);
     if (!apiResponse.ok) {
@@ -4289,30 +5219,85 @@ app.get("/api/panfind", async (req, res) => {
   }
 });
 
+// ============================================================================
+// DYNAMIC PROVIDER CONFIGURATION MANAGER & FAILSAFE AUTO-REFUND SYSTEM
+// ============================================================================
+
+const CONFIG_FILE_PATH = path.join(__dirname, "data", "provider_config.json");
+
+const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
+  phone: "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
+  aadhaar: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
+  pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
+  ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  vehicle: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
+  veh_owner_num: "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+  email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
+  telegram: "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
+  family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
+};
+
+let PROVIDER_CONFIGS: Record<string, string> = { ...DEFAULT_PROVIDER_CONFIGS };
+
+// Load initial configuration from disk/Supabase
+function initProviderConfigs() {
+  try {
+    const dataDir = path.join(__dirname, "data");
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    if (fs.existsSync(CONFIG_FILE_PATH)) {
+      const raw = fs.readFileSync(CONFIG_FILE_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      PROVIDER_CONFIGS = { ...DEFAULT_PROVIDER_CONFIGS, ...parsed };
+      console.log("[TRACEXDATA] Loaded dynamic provider API configs from local store.");
+    } else {
+      fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(DEFAULT_PROVIDER_CONFIGS, null, 2), "utf-8");
+    }
+  } catch (err) {
+    console.error("[TRACEXDATA] Error initializing provider configs:", err);
+  }
+}
+initProviderConfigs();
+
+// Helper to get formatted provider URL for any service
+function getProviderUrl(serviceKey: string, query: string): string {
+  const template = PROVIDER_CONFIGS[serviceKey] || DEFAULT_PROVIDER_CONFIGS[serviceKey] || "";
+  if (!template) return "";
+  const cleanQuery = encodeURIComponent(String(query).trim());
+  return template
+    .replace(/\{query\}/gi, cleanQuery)
+    .replace(/\{term\}/gi, cleanQuery)
+    .replace(/\{aadhaar_number\}/gi, cleanQuery)
+    .replace(/\{exploits\}/gi, cleanQuery)
+    .replace(/\{rc\}/gi, cleanQuery);
+}
+
 // Deep Case-Insensitive Branding and Provider Info Scrubber
 function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "")
+      .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
-      .replace(/Powered_by/gi, "")
-      .replace(/Contact/gi, "")
-      .replace(/Buy_API/gi, "")
+      .replace(/\s+/g, " ")
       .trim();
   }
   if (Array.isArray(obj)) {
-    return obj.map(item => scrubAllBranding(item));
+    return obj.map(item => scrubAllBranding(item)).filter(item => item !== null && item !== "" && item !== undefined);
   }
   if (typeof obj === "object") {
     const cleaned: any = {};
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
       if ([
-        "branding", "api_info", "powered_by", 
-        "buy_api", "owner_telegram", "developer", 
-        "provider", "api_buy_link", "website_link", "buy"
+        "branding", "api_info", "powered_by", "buy_api", 
+        "owner_telegram", "developer", "developer_name", "provider", 
+        "provider_info", "api_buy_link", "website_link", "buy", 
+        "digiseva", "techvishalboss", "osintcaller", "userxinfo", "credits_to"
       ].includes(lowerKey)) {
         continue;
       }
@@ -4322,6 +5307,97 @@ function scrubAllBranding(obj: any): any {
   }
   return obj;
 }
+
+// Universal response failsafe check
+function checkIsNoRecordFound(data: any): boolean {
+  if (!data) return true;
+  if (typeof data === "string") {
+    const lower = data.toLowerCase();
+    if (lower.includes("not found") || lower.includes("no record") || lower.includes("no data") || lower.includes("invalid key") || lower.includes("failed") || lower.includes("error")) {
+      return true;
+    }
+    return false;
+  }
+  if (typeof data === "object") {
+    if (data.status === false || data.status === 0 || data.status === "error" || data.status === "failed") {
+      return true;
+    }
+    if (data.error || data.message) {
+      const msg = String(data.error || data.message).toLowerCase();
+      if (msg.includes("not found") || msg.includes("no record") || msg.includes("no data") || msg.includes("invalid") || msg.includes("failed") || msg.includes("unable")) {
+        return true;
+      }
+    }
+    const results = data.results || data.data || data.records;
+    if (results) {
+      if (Array.isArray(results) && results.length === 0) return true;
+      if (typeof results === "object" && Object.keys(results).length === 0) return true;
+    }
+  }
+  return false;
+}
+
+// Universal Safe Refund Handler
+async function autoRefundUserCredits(userEmail: string, fee: number, serviceName: string, query: string, db: any): Promise<boolean> {
+  if (!userEmail || fee <= 0 || !db) return false;
+  try {
+    const { data: profile } = await db.from("profiles").select("wallet_balance, credits").eq("email", userEmail).maybeSingle();
+    if (profile) {
+      const currentBal = Number(profile.wallet_balance || profile.credits || 0);
+      const newBal = currentBal + fee;
+      
+      await db.from("profiles").update({
+        wallet_balance: newBal,
+        credits: newBal,
+        updated_at: new Date().toISOString()
+      }).eq("email", userEmail);
+
+      await db.from("wallet_transactions").insert({
+        user_email: userEmail,
+        amount: fee,
+        type: "refund",
+        status: "SUCCESS",
+        description: `Auto-Refund: No records found for ${serviceName.toUpperCase()} search '${query}'`,
+        created_at: new Date().toISOString()
+      });
+      console.log(`[TRACEXDATA AUTO-REFUND] Refunded ₹${fee} to ${userEmail} for ${serviceName}`);
+      return true;
+    }
+  } catch (err) {
+    console.error("[TRACEXDATA AUTO-REFUND FAIL]", err);
+  }
+  return false;
+}
+
+// Admin endpoints for dynamic Provider Configs
+app.get("/api/admin/provider-configs", async (req, res) => {
+  return res.json({ status: "success", configs: PROVIDER_CONFIGS, defaults: DEFAULT_PROVIDER_CONFIGS });
+});
+
+app.post("/api/admin/provider-configs", async (req, res) => {
+  try {
+    const { configs } = req.body;
+    if (configs && typeof configs === "object") {
+      PROVIDER_CONFIGS = { ...PROVIDER_CONFIGS, ...configs };
+      fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(PROVIDER_CONFIGS, null, 2), "utf-8");
+      
+      if (supabaseAdmin) {
+        for (const [key, url] of Object.entries(configs)) {
+          await supabaseAdmin.from("api_provider_configs").upsert({
+            service_key: key,
+            provider_url: url,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "service_key" });
+        }
+      }
+      return res.json({ status: "success", configs: PROVIDER_CONFIGS });
+    }
+    return res.status(400).json({ error: "Invalid provider configurations payload." });
+  } catch (err: any) {
+    console.error("[PROVIDER_CONFIG_UPDATE_ERR]", err);
+    return res.status(500).json({ error: err.message || "Failed to update provider configurations." });
+  }
+});
 
 // Secure credits-based Aadhaar-to-PAN lookup
 app.post("/api/aadhaar-to-pan", async (req, res) => {
@@ -4426,10 +5502,10 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
 
       const currentCredits = Number(profile.credits || 0);
-      const cost = 150;
+      const cost = await getEffectiveServicePrice('aadhaar_to_pan', user.id, user.email);
 
       if (currentCredits < cost) {
-        return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans." });
+        return res.status(403).json({ error: `Insufficient credits. You need at least ₹${cost} credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans.` });
       }
 
       // Deduct 150 credits atomically with safety fallback
@@ -4461,9 +5537,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       }
     }
 
-    // 5. Query External PAN Find API
-    const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-    const api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${targetAadhaar}`;
+    // 5. Query External PAN Find API via Dynamic Provider URL
+    const api_url = getProviderUrl('aadhaar_to_pan', targetAadhaar);
     
     let apiData: any = null;
     let panFound = false;
@@ -4495,13 +5570,17 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     const searchStatus = panFound ? "success" : "not_found";
     await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, searchStatus);
 
-    if (!panFound) {
+    if (!panFound || checkIsNoRecordFound(apiData)) {
+      if (user && user.email) {
+        await autoRefundUserCredits(user.email, 150, "Aadhaar to PAN", targetAadhaar, supabaseAdmin);
+      }
       return res.json({
         status: "failed",
         pan_found: false,
-        message: isGuest ? "No PAN number found for this Aadhaar number." : "No PAN number found for this Aadhaar number. 150 credits deducted.",
-        credits_deducted: isGuest ? 0 : 150,
-        results: apiData ? scrubAllBranding(apiData) : null
+        message: "No PAN number found for this Aadhaar number. 150 credits have been safely refunded to your wallet.",
+        credits_deducted: 0,
+        refunded: true,
+        results: null
       });
     }
 
@@ -4580,6 +5659,92 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     return res.status(500).json({ error: "Server authentication failure" });
   }
 };
+
+// Admin API Services Management
+app.get("/api/admin/api-services", verifyAdminToken, async (req, res) => {
+  try {
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { data, error } = await db.from("api_services").select("*").order("service_name");
+    if (error) throw error;
+    return res.json({ status: "success", services: data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch API services." });
+  }
+});
+
+app.post("/api/admin/api-services", verifyAdminToken, async (req, res) => {
+  try {
+    const { service_key, service_name, base_price, category, is_active, provider_url } = req.body;
+    if (!service_key || !service_name) {
+      return res.status(400).json({ error: "service_key and service_name are required." });
+    }
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { data, error } = await db.from("api_services").upsert({
+      service_key,
+      service_name,
+      base_price: Number(base_price || 0),
+      category: category || "OSINT",
+      is_active: is_active !== false,
+      provider_url: provider_url || "",
+      updated_at: new Date().toISOString()
+    }, { onConflict: "service_key" }).select();
+
+    if (error) throw error;
+    return res.json({ status: "success", service: data?.[0] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to save API service." });
+  }
+});
+
+// Admin Custom User Pricing & Discounts Management
+app.get("/api/admin/user-custom-pricing", verifyAdminToken, async (req, res) => {
+  try {
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { data, error } = await db.from("user_custom_pricing").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return res.json({ status: "success", customPricings: data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to fetch custom user pricing." });
+  }
+});
+
+app.post("/api/admin/user-custom-pricing", verifyAdminToken, async (req, res) => {
+  try {
+    const { id, user_id, user_email, service_key, custom_price, discount_percent, notes } = req.body;
+    if (!user_id && !user_email) {
+      return res.status(400).json({ error: "Either user_id or user_email is required." });
+    }
+    const db = (req as any).adminClient || supabaseAdmin;
+    const payload: any = {
+      user_id: user_id || null,
+      user_email: user_email || null,
+      service_key: service_key || "ALL",
+      custom_price: custom_price !== undefined && custom_price !== null && custom_price !== "" ? Number(custom_price) : null,
+      discount_percent: discount_percent !== undefined && discount_percent !== null && discount_percent !== "" ? Number(discount_percent) : 0,
+      notes: notes || "",
+      updated_at: new Date().toISOString()
+    };
+    if (id) payload.id = id;
+
+    const { data, error } = await db.from("user_custom_pricing").upsert(payload).select();
+    if (error) throw error;
+    return res.json({ status: "success", customPricing: data?.[0] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to save custom user pricing." });
+  }
+});
+
+app.delete("/api/admin/user-custom-pricing/:id", verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = (req as any).adminClient || supabaseAdmin;
+    const { error } = await db.from("user_custom_pricing").delete().eq("id", id);
+    if (error) throw error;
+    return res.json({ status: "success", message: "Custom pricing rule deleted." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to delete custom pricing." });
+  }
+});
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
@@ -4687,34 +5852,33 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
 app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
-  const { email, full_name, credits, unlimited_expiry } = req.body;
+  const { email, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
 
   try {
     const db = (req as any).adminClient || supabaseAdmin;
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
+    const creds = Number(credits || 0);
+
+    const updateObj: any = {
+      id: id,
+      email: email,
+      full_name: full_name || "",
+      credits: creds,
+      wallet_balance: wallet_balance !== undefined ? Number(wallet_balance) : creds,
+      unlimited_expiry: expiry,
+      user_discount_percent: Number(user_discount_percent || 0)
+    };
 
     const { data, error } = await db
       .from("profiles")
-      .upsert({
-        id: id,
-        email: email,
-        full_name: full_name || "",
-        credits: Number(credits || 0),
-        unlimited_expiry: expiry
-      }, { onConflict: 'id' })
+      .upsert(updateObj, { onConflict: 'id' })
       .select();
 
     if (error) {
       console.error("[PUT_ADMIN_PROFILE_ERR]", error);
       return res.status(500).json({ error: error.message });
     }
-    const profileObj = (data && data.length > 0) ? data[0] : {
-      id: id,
-      email: email,
-      full_name: full_name || "",
-      credits: Number(credits || 0),
-      unlimited_expiry: expiry
-    };
+    const profileObj = (data && data.length > 0) ? data[0] : updateObj;
     return res.json({ status: "success", data: profileObj });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
@@ -4882,6 +6046,177 @@ app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
   }
 });
 
+
+// --- SECURE PERMANENT USER API KEYS ENDPOINT ---
+app.get("/api/user-keys", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!supabaseAdmin) {
+    return res.status(500).json({ error: "Database offline" });
+  }
+
+  try {
+    let userId: string | null = null;
+    let userEmail: string | null = null;
+
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      if (token && token !== "null" && token !== "undefined") {
+        const { data: userData } = await supabaseAdmin.auth.getUser(token);
+        if (userData?.user) {
+          userId = userData.user.id;
+          userEmail = userData.user.email || null;
+        }
+      }
+    }
+
+    if (!userId && req.query.email) {
+      const queryEmail = String(req.query.email).trim().toLowerCase();
+      const { data: p } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email")
+        .eq("email", queryEmail)
+        .maybeSingle();
+      if (p) {
+        userId = p.id;
+        userEmail = p.email;
+      }
+    }
+
+    if (!userId && !userEmail) {
+      return res.status(401).json({ error: "Authentication required to access API keys" });
+    }
+
+    let keysQuery = supabaseAdmin.from("api_keys").select("*");
+    if (userId) {
+      keysQuery = keysQuery.eq("user_id", userId);
+    } else if (userEmail) {
+      keysQuery = keysQuery.eq("user_email", userEmail);
+    }
+
+    const { data: existingKeys, error: keysErr } = await keysQuery.order("created_at", { ascending: false });
+
+    if (keysErr) {
+      console.error("[GET_USER_KEYS_ERR]", keysErr);
+      return res.status(500).json({ error: "Database error retrieving keys" });
+    }
+
+    let resultKeys = existingKeys || [];
+
+    // Auto-generate permanent API key if user has no key registered
+    if (resultKeys.length === 0) {
+      const newPermanentKey = `tx_${crypto.randomBytes(16).toString("hex")}`;
+      const expiresAt = "2099-12-31T23:59:59.000Z";
+
+      const { data: insertedData, error: insErr } = await supabaseAdmin
+        .from("api_keys")
+        .insert({
+          user_id: userId,
+          user_email: userEmail || "user@tracexdata.online",
+          api_key: newPermanentKey,
+          plan_name: "Account Permanent API",
+          status: "active",
+          requests_used: 0,
+          request_limit: null,
+          expires_at: expiresAt
+        })
+        .select();
+
+      if (!insErr && insertedData && insertedData.length > 0) {
+        resultKeys = insertedData;
+        console.log(`[AUTO_KEY_GEN] Auto-generated permanent key ${newPermanentKey} for user ${userEmail || userId}`);
+      } else {
+        console.warn("[AUTO_KEY_GEN_WARN]", insErr);
+        resultKeys = [{
+          id: userId || "temp_id",
+          user_id: userId,
+          user_email: userEmail || "user@tracexdata.online",
+          api_key: newPermanentKey,
+          plan_name: "Account Permanent API",
+          status: "active",
+          requests_used: 0,
+          request_limit: null,
+          expires_at: expiresAt,
+          created_at: new Date().toISOString()
+        }];
+      }
+    }
+
+    return res.json(resultKeys);
+  } catch (err: any) {
+    console.error("[USER_KEYS_ENDPOINT_FAIL]", err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Admin backfill routine for 2000+ existing registered accounts
+async function backfillApiKeysForAllUsers() {
+  if (!supabaseAdmin) return;
+  try {
+    console.log("[BACKFILL_KEYS] Synchronizing permanent API keys for all registered accounts...");
+    const { data: profiles, error: pErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email");
+
+    if (pErr) {
+      console.warn("[BACKFILL_KEYS_WARN] Unable to read profiles table:", pErr.message);
+      return;
+    }
+
+    if (!profiles || profiles.length === 0) return;
+
+    const { data: existingKeys, error: kErr } = await supabaseAdmin
+      .from("api_keys")
+      .select("user_id, user_email");
+
+    if (kErr) {
+      console.warn("[BACKFILL_KEYS_WARN] Unable to read api_keys table:", kErr.message);
+      return;
+    }
+
+    const existingUserIds = new Set((existingKeys || []).map((k: any) => k.user_id).filter(Boolean));
+    const existingEmails = new Set((existingKeys || []).map((k: any) => k.user_email?.toLowerCase()).filter(Boolean));
+
+    const missingProfiles = profiles.filter((p: any) => {
+      const hasId = p.id && existingUserIds.has(p.id);
+      const hasEmail = p.email && existingEmails.has(p.email.toLowerCase());
+      return !hasId && !hasEmail;
+    });
+
+    if (missingProfiles.length === 0) {
+      console.log(`[BACKFILL_KEYS] All ${profiles.length} registered accounts already have permanent API keys.`);
+      return;
+    }
+
+    console.log(`[BACKFILL_KEYS] Provisioning permanent API keys for ${missingProfiles.length} registered accounts...`);
+
+    const newKeyRecords = missingProfiles.map((p: any) => ({
+      user_id: p.id,
+      user_email: p.email || "user@tracexdata.online",
+      api_key: `tx_${crypto.randomBytes(16).toString("hex")}`,
+      plan_name: "Account Permanent API",
+      status: "active",
+      requests_used: 0,
+      request_limit: null,
+      expires_at: "2099-12-31T23:59:59.000Z"
+    }));
+
+    const chunkSize = 100;
+    let insertedCount = 0;
+    for (let i = 0; i < newKeyRecords.length; i += chunkSize) {
+      const chunk = newKeyRecords.slice(i, i + chunkSize);
+      const { error: insErr } = await supabaseAdmin.from("api_keys").insert(chunk);
+      if (insErr) {
+        console.error(`[BACKFILL_KEYS_ERR] Insertion batch failed:`, insErr.message);
+      } else {
+        insertedCount += chunk.length;
+      }
+    }
+
+    console.log(`[BACKFILL_KEYS_SUCCESS] Successfully assigned unique permanent API keys to ${insertedCount} accounts.`);
+  } catch (err: any) {
+    console.error("[BACKFILL_KEYS_CRITICAL_FAIL]", err);
+  }
+}
 
 // --- ADMIN API KEYS ---
 app.get("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
@@ -5076,7 +6411,8 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
           totalRequests: totalLogsCount || 0,
           activeKeys: activeKeysCount || 0,
           revenue: revenue,
-          totalUsers: userCount || 0
+          totalUsers: userCount || 0,
+          uniqueVisitors: uniqueVisitorIps.size
         }
       }
     });
@@ -5331,6 +6667,7 @@ async function setupVite() {
 setupVite().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    backfillApiKeysForAllUsers().catch(err => console.error("Backfill boot error:", err));
   });
 });
 

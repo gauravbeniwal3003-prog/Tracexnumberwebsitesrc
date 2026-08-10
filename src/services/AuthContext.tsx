@@ -13,9 +13,14 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  isDemoMode: boolean;
+  enterDemoMode: () => void;
+  exitDemoMode: () => void;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<{ error: any }>;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signInWithMobile: (phone: string, password: string) => Promise<{ error: any; user?: any }>;
+  signUpWithMobile: (phone: string, password: string, fullName: string) => Promise<{ error: any; user?: any }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -47,10 +52,51 @@ const dummyProfile = {
   last_weekly_credit_at: new Date().toISOString(),
 } as UserProfile;
 
+const demoUserObj = {
+  id: 'demo-user-id',
+  app_metadata: {},
+  user_metadata: { full_name: 'Demo User' },
+  aud: 'authenticated',
+  created_at: new Date().toISOString(),
+  email: 'demo.user@digiseva.in',
+  phone: '',
+  role: 'authenticated',
+  updated_at: new Date().toISOString(),
+} as any;
+
+const demoProfileObj = {
+  id: 'demo-user-id',
+  email: 'demo.user@digiseva.in',
+  credits: 1470,
+  unlimited_expiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  full_name: 'Demo User (Test Mode)',
+  avatar_url: '',
+  is_free_credit_claimed: true,
+  last_weekly_credit_at: new Date().toISOString(),
+} as UserProfile;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(IS_TESTING_MODE ? dummyUser : null);
-  const [profile, setProfile] = useState<UserProfile | null>(IS_TESTING_MODE ? dummyProfile : null);
+  const [realUser, setUser] = useState<User | null>(IS_TESTING_MODE ? dummyUser : null);
+  const [realProfile, setProfile] = useState<UserProfile | null>(IS_TESTING_MODE ? dummyProfile : null);
   const [loading, setLoading] = useState(IS_TESTING_MODE ? false : true);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    localStorage.removeItem('digi_demo_access');
+  }, []);
+
+  const enterDemoMode = () => {
+    // Disabled in deployment
+  };
+
+  const exitDemoMode = () => {
+    localStorage.removeItem('digi_demo_access');
+    setIsDemoMode(false);
+  };
+
+  // If real user is logged in, use real user. If in demo mode, use demo user.
+  const user = realUser || (isDemoMode ? demoUserObj : null);
+  const profile = realProfile || (isDemoMode ? demoProfileObj : null);
 
   const fetchProfile = async (userId: string) => {
     if (IS_TESTING_MODE) return;
@@ -84,6 +130,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     let mounted = true;
 
+    // Restore mobile auth session if exists
+    try {
+      const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+      if (savedMobileSession) {
+        const parsed = JSON.parse(savedMobileSession);
+        if (parsed?.user) {
+          setUser({
+            id: parsed.user.id,
+            email: parsed.user.email,
+            phone: parsed.user.phone,
+            user_metadata: { full_name: parsed.user.full_name },
+            app_metadata: {},
+            aud: 'authenticated',
+            created_at: new Date().toISOString(),
+            role: 'authenticated',
+            updated_at: new Date().toISOString()
+          } as any);
+          setProfile({
+            id: parsed.user.id,
+            email: parsed.user.email,
+            full_name: parsed.user.full_name,
+            credits: parsed.user.credits || 1470.00,
+            avatar_url: '',
+            is_free_credit_claimed: true,
+            last_weekly_credit_at: new Date().toISOString()
+          } as UserProfile);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not restore mobile session:", e);
+    }
+
     // Single listener for all auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
@@ -93,21 +171,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session) {
           setUser(session.user);
           // Don't let profile fetch block the master loading state clearing
-          // specifically for SIGNED_IN/INITIAL_SESSION where we want to actually show the app
           fetchProfile(session.user.id).catch(err => console.error('Profile fetch error:', err));
-        } else {
+        } else if (!localStorage.getItem('tracex_mobile_session')) {
           setUser(null);
           setProfile(null);
         }
       } catch (err) {
         console.error('Error in auth event handler:', err);
       } finally {
-        // Hide loading after initial state or sign in/out events
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
           setLoading(false);
         }
 
-        // Cleanup PKCE codes from URL
         if (window.location.search.includes('code=')) {
           const url = new URL(window.location.href);
           url.searchParams.delete('code');
@@ -163,7 +238,167 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
+  const signInWithMobile = async (phone: string, password: string) => {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${getApiBaseUrl()}/api/mobile-auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, password })
+      });
+      const data = await res.json();
+      if (!res.ok || data.status === 'error' || data.error) {
+        // Fallback: Check local storage registry if backend server was reloaded or unreachable
+        try {
+          const localReg = localStorage.getItem(`tracex_reg_user_${cleanPhone}`);
+          if (localReg) {
+            const parsedReg = JSON.parse(localReg);
+            if (parsedReg.password === password && parsedReg.user) {
+              localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: 'local_tok_' + Date.now(), user: parsedReg.user }));
+              setUser({
+                id: parsedReg.user.id,
+                email: parsedReg.user.email,
+                phone: parsedReg.user.phone,
+                user_metadata: { full_name: parsedReg.user.full_name },
+                app_metadata: {},
+                aud: 'authenticated',
+                created_at: new Date().toISOString(),
+                role: 'authenticated',
+                updated_at: new Date().toISOString()
+              } as any);
+              setProfile({
+                id: parsedReg.user.id,
+                email: parsedReg.user.email,
+                full_name: parsedReg.user.full_name,
+                credits: parsedReg.user.credits || 1470.00,
+                avatar_url: '',
+                is_free_credit_claimed: true,
+                last_weekly_credit_at: new Date().toISOString()
+              } as UserProfile);
+              return { error: null, user: parsedReg.user };
+            }
+          }
+        } catch (e) {
+          // Ignore fallback error
+        }
+
+        return { error: { message: data.error || data.message || 'Login failed' } };
+      }
+
+      // Save mobile session locally
+      localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: data.token, user: data.user }));
+      localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify({ phone: cleanPhone, password, fullName: data.user.full_name, user: data.user }));
+      
+      setUser({
+        id: data.user.id,
+        email: data.user.email,
+        phone: data.user.phone,
+        user_metadata: { full_name: data.user.full_name },
+        app_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+        role: 'authenticated',
+        updated_at: new Date().toISOString()
+      } as any);
+
+      setProfile({
+        id: data.user.id,
+        email: data.user.email,
+        full_name: data.user.full_name,
+        credits: data.user.credits || 1470.00,
+        avatar_url: '',
+        is_free_credit_claimed: true,
+        last_weekly_credit_at: new Date().toISOString()
+      } as UserProfile);
+
+      return { error: null, user: data.user };
+    } catch (err: any) {
+      // Local storage fallback on connection error
+      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+      try {
+        const localReg = localStorage.getItem(`tracex_reg_user_${cleanPhone}`);
+        if (localReg) {
+          const parsedReg = JSON.parse(localReg);
+          if (parsedReg.password === password && parsedReg.user) {
+            localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: 'local_tok_' + Date.now(), user: parsedReg.user }));
+            setUser({
+              id: parsedReg.user.id,
+              email: parsedReg.user.email,
+              phone: parsedReg.user.phone,
+              user_metadata: { full_name: parsedReg.user.full_name },
+              app_metadata: {},
+              aud: 'authenticated',
+              created_at: new Date().toISOString(),
+              role: 'authenticated',
+              updated_at: new Date().toISOString()
+            } as any);
+            setProfile({
+              id: parsedReg.user.id,
+              email: parsedReg.user.email,
+              full_name: parsedReg.user.full_name,
+              credits: parsedReg.user.credits || 1470.00,
+              avatar_url: '',
+              is_free_credit_claimed: true,
+              last_weekly_credit_at: new Date().toISOString()
+            } as UserProfile);
+            return { error: null, user: parsedReg.user };
+          }
+        }
+      } catch (e) {
+        // Ignore fallback error
+      }
+      return { error: { message: err.message || 'Server error during mobile sign in' } };
+    }
+  };
+
+  const signUpWithMobile = async (phone: string, password: string, fullName: string) => {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${getApiBaseUrl()}/api/mobile-auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, password, full_name: fullName })
+      });
+      const data = await res.json();
+      if (!res.ok || data.status === 'error' || data.error) {
+        return { error: { message: data.error || data.message || 'Registration failed' } };
+      }
+
+      // Save session and account backup locally
+      localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: data.token, user: data.user }));
+      localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify({ phone: cleanPhone, password, fullName, user: data.user }));
+
+      setUser({
+        id: data.user.id,
+        email: data.user.email,
+        phone: data.user.phone,
+        user_metadata: { full_name: data.user.full_name },
+        app_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+        role: 'authenticated',
+        updated_at: new Date().toISOString()
+      } as any);
+
+      setProfile({
+        id: data.user.id,
+        email: data.user.email,
+        full_name: data.user.full_name,
+        credits: data.user.credits || 1470.00,
+        avatar_url: '',
+        is_free_credit_claimed: true,
+        last_weekly_credit_at: new Date().toISOString()
+      } as UserProfile);
+
+      return { error: null, user: data.user };
+    } catch (err: any) {
+      return { error: { message: err.message || 'Server error during mobile registration' } };
+    }
+  };
+
   const signOut = async () => {
+    localStorage.removeItem('tracex_mobile_session');
+    exitDemoMode();
     if (IS_TESTING_MODE) {
       console.log("Sign-out disabled during active Testing Mode.");
       return;
@@ -172,17 +407,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
+    if (realUser) await fetchProfile(realUser.id);
   };
 
   return (
     <AuthContext.Provider value={{ 
       user, 
       profile, 
-      loading, 
+      loading,
+      isDemoMode,
+      enterDemoMode,
+      exitDemoMode,
       signInWithGoogle, 
       signInWithEmail,
       signUpWithEmail,
+      signInWithMobile,
+      signUpWithMobile,
       signOut, 
       refreshProfile 
     }}>

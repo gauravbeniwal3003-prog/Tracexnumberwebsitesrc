@@ -3,13 +3,15 @@ import { motion } from 'motion/react';
 import { Receipt, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
+import HeaderNavbar from '../components/HeaderNavbar';
 
 export default function Refund() {
   return (
-    <div className="relative min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
+    <div className="relative min-h-screen bg-slate-50 text-slate-800 font-sans pb-20">
       <LiquidBackground />
+      <HeaderNavbar title="TRACEXDATA" subtitle="REFUND POLICY" />
       
-      <div className="relative z-10 max-w-3xl mx-auto px-6 py-24">
+      <div className="relative z-10 max-w-3xl mx-auto px-6 py-12">
         <Link 
           to="/" 
           className="inline-flex items-center gap-2 text-slate-600 hover:text-sky-600 transition-colors mb-12 group"

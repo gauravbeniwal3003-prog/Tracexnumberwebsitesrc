@@ -1,28 +1,30 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, Zap, Server, Shield, Code, ChevronRight, ArrowRight, MessageSquare, CreditCard, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, Coins } from 'lucide-react';
+import { Wallet, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, IndianRupee, Plus, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
-import { CREDIT_PLANS, UNLIMITED_PLANS, PricingPlan } from '../types.ts';
-import { getOfferStatus, getPlanPrice } from '../services/promo.ts';
+import HeaderNavbar from '../components/HeaderNavbar';
 import { supabase } from '../services/supabase.ts';
 import { getApiBaseUrl } from '../services/api';
+
+const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
 
 export default function BuyCredits() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  const [selectedAmount, setSelectedAmount] = useState<number>(100);
+  const [customAmountInput, setCustomAmountInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<{ status: 'idle' | 'success' | 'failed', message?: string }>({ status: 'idle' });
 
-  // Self-Healing Missing Credits Recovery State
+  // Self-Healing Verification State
   const [claimOrderId, setClaimOrderId] = useState('');
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimResult, setClaimResult] = useState<{ status: 'idle' | 'success' | 'failed', message: string }>({ status: 'idle', message: '' });
 
-  // Auto-Reconcile Payments on Load
   useEffect(() => {
     const runAutoReconciliation = async () => {
       try {
@@ -33,7 +35,7 @@ export default function BuyCredits() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         });
         if (response.ok) {
@@ -41,7 +43,7 @@ export default function BuyCredits() {
           if (result.recoveredCount > 0) {
             setPaymentStatus({
               status: 'success',
-              message: `Smart Fix: Located ${result.recoveredCount} paid order(s) on Cashfree ledger. Adding credits to your balance!`
+              message: `Smart Fix: Located ${result.recoveredCount} paid order(s). Balance updated!`
             });
             await refreshProfile();
           }
@@ -90,21 +92,26 @@ export default function BuyCredits() {
         setClaimOrderId('');
         await refreshProfile();
       } else {
-        setClaimResult({ status: 'failed', message: resJson.error || 'Fulfillment verification failed.' });
+        setClaimResult({ status: 'failed', message: resJson.error || 'Verification failed.' });
       }
     } catch (err: any) {
-      setClaimResult({ status: 'failed', message: err.message || 'Verification connection failed.' });
+      setClaimResult({ status: 'failed', message: err.message || 'Connection failed.' });
     } finally {
       setClaimLoading(false);
     }
   };
 
-  // Check URL params for order redirect confirmation
   useEffect(() => {
     const orderId = searchParams.get('order_id');
+    const amtParam = searchParams.get('amount');
+    if (amtParam) {
+      const parsed = parseInt(amtParam, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        setSelectedAmount(parsed);
+      }
+    }
     if (orderId) {
       checkPaymentStatus(orderId);
-      // Clean up URL
       window.history.replaceState({}, document.title, "/pricing");
     }
   }, [searchParams]);
@@ -122,9 +129,10 @@ export default function BuyCredits() {
 
       const data = await response.json();
       if (data.order_status === 'PAID') {
+        const addedAmount = data.order_amount || selectedAmount;
         setPaymentStatus({ 
           status: 'success', 
-          message: 'Payment completed successfully! Your credit balance has been updated.'
+          message: `Payment successful! ₹${addedAmount}.00 added to your wallet balance.`
         });
         
         await refreshProfile();
@@ -136,22 +144,25 @@ export default function BuyCredits() {
       }
     } catch (err: any) {
       console.error('Error checking payment status:', err);
-      setPaymentStatus({ status: 'failed', message: err.message || 'Verification failed. Please contact support.' });
+      setPaymentStatus({ status: 'failed', message: err.message || 'Verification failed.' });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handlePurchase = async (plan: PricingPlan) => {
+  const handleAddFunds = async (amountToPay: number) => {
     if (!user) {
-      // Trigger login modal
       window.dispatchEvent(new CustomEvent('open-login'));
+      return;
+    }
+
+    if (!amountToPay || amountToPay < 10) {
+      alert("Please enter a valid amount (minimum ₹10)");
       return;
     }
 
     setIsProcessing(true);
     const backendUrl = getApiBaseUrl();
-    const finalAmount = getPlanPrice(plan);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -165,8 +176,8 @@ export default function BuyCredits() {
         body: JSON.stringify({
           user_id: user.id,
           user_email: user.email,
-          plan_id: plan.id,
-          amount: finalAmount,
+          plan_id: `wallet_${amountToPay}`,
+          amount: amountToPay,
           customer_phone: profile?.mobile || '9999999999',
           customer_name: profile?.name || user.email?.split('@')[0],
           return_url: `${window.location.origin}/pricing?order_id={order_id}`
@@ -179,12 +190,8 @@ export default function BuyCredits() {
           const errorData = await response.json();
           throw new Error(errorData.error || errorData.detail || `Server error: ${response.status}`);
         } else {
-          throw new Error(`Payment Gateway Technical Error (${response.status}). Please check backend logs.`);
+          throw new Error(`Payment Gateway Technical Error (${response.status}).`);
         }
-      }
-
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid response from server. Check if backend is alive.");
       }
 
       const orderData = await response.json();
@@ -194,11 +201,16 @@ export default function BuyCredits() {
       }
 
       if (!orderData.payment_session_id) {
-        throw new Error('Payment session could not be created. Please check backend logs.');
+        throw new Error('Payment session could not be created.');
       }
 
+      if (!window.Cashfree) {
+        throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please refresh the page.');
+      }
+
+      const cashfreeMode = orderData.cf_mode || "production";
       const cashfree = window.Cashfree({
-        mode: "production" 
+        mode: cashfreeMode 
       });
 
       await cashfree.checkout({
@@ -214,76 +226,48 @@ export default function BuyCredits() {
     }
   };
 
+  const finalAmount = customAmountInput ? (parseInt(customAmountInput, 10) || 0) : selectedAmount;
+
   return (
-    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
+    <div className="min-h-screen bg-slate-50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
       <LiquidBackground />
       
-      {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-4 z-[60] flex items-center justify-between bg-white/70 backdrop-blur-md border-b border-sky-100">
-        <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all group cursor-pointer shadow-sm">
-          <div className="w-1.5 h-1.5 rounded-full bg-sky-500 group-hover:animate-ping"></div>
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-800">TRACEXDATA</span>
-        </button>
-        <div className="flex items-center gap-4">
-          {profile && (
-            <div className="hidden xs:flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-xs font-bold text-slate-700 shadow-sm">
-              <span className="text-slate-500">Credits:</span>
-              <span className="text-sky-600 font-extrabold">{profile.credits ?? 0}</span>
-            </div>
-          )}
-          {user ? (
-            <button onClick={() => navigate('/')} className="text-[10px] font-black uppercase tracking-widest text-sky-700 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 hover:bg-sky-200 transition-all cursor-pointer">
-              Dashboard
-            </button>
-          ) : (
-            <button onClick={() => window.dispatchEvent(new CustomEvent('open-login'))} className="text-[10px] font-black uppercase tracking-widest text-sky-600 px-4 py-1.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-all cursor-pointer">
-              Sign In
-            </button>
-          )}
-        </div>
-      </nav>
+      {/* Top Navbar */}
+      <HeaderNavbar title="TRACEXDATA" subtitle="WALLET RECHARGE" />
 
-      <div className="relative z-10 pt-24 pb-20 px-4 max-w-7xl mx-auto">
-        <header className="text-center mb-16">
+      <div className="relative z-10 pt-6 pb-20 px-4 max-w-4xl mx-auto space-y-6">
+        <div>
+          <button onClick={() => navigate('/')} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-sky-200 text-slate-700 hover:text-sky-600 hover:border-sky-300 shadow-2xs transition-all cursor-pointer font-bold text-xs">
+            <ArrowLeft size={16} />
+            <span>Back to Dashboard</span>
+          </button>
+        </div>
+
+        <header className="text-center mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sky-100 border border-sky-200 mb-6 shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sky-100/80 border border-sky-200 mb-4 shadow-2xs"
           >
-            <Zap size={14} className="text-sky-600" />
-            <span className="text-xs font-bold uppercase tracking-widest text-sky-800">Recharge &amp; Subscriptions</span>
+            <Wallet size={14} className="text-sky-700" />
+            <span className="text-xs font-bold uppercase tracking-widest text-sky-800">TRACEXDATA Wallet</span>
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-7xl font-black tracking-tighter mb-6 text-slate-900 font-sans"
+            className="text-3xl md:text-5xl font-black tracking-tight mb-3 text-slate-900"
           >
-            Power Your Insights. <br className="hidden md:block" /> Unlimited Access.
+            Add Funds to Your Wallet
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-slate-600 max-w-xl mx-auto text-sm md:text-lg font-medium"
+            className="text-slate-600 max-w-md mx-auto text-sm font-medium"
           >
-            Select from our fast, high-performance lookup credits or grab an unlimited premium package to bypass all search queue thresholds.
+            Recharge your account balance in Rupees to perform instant pay-as-you-go lookups.
           </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.25 }}
-            className="flex flex-col gap-3 mt-6 max-w-2xl mx-auto"
-          >
-            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800 font-mono text-xs text-center shadow-sm">
-              <Coins size={12} className="shrink-0 text-sky-600" />
-              <span>Daily Free Credits - 10 (Topped up daily if balance is less than 10. If previous day's credits are unspent, i.e., balance ≥ 10, no extra free credits are added)</span>
-            </div>
-            <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-mono text-xs text-center animate-pulse shadow-sm">
-              <Server size={12} className="shrink-0 text-amber-600" />
-              <span>Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.</span>
-            </div>
-          </motion.div>
         </header>
 
         {/* Status Messages */}
@@ -293,231 +277,165 @@ export default function BuyCredits() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className={`p-6 rounded-2xl border flex flex-col gap-4 overflow-hidden mb-8 max-w-4xl mx-auto shadow-sm ${
+              className={`p-5 rounded-2xl border flex items-center justify-between gap-4 overflow-hidden mb-8 shadow-sm ${
                 paymentStatus.status === 'success' 
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
                   : 'bg-red-50 border-red-200 text-red-900'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-600" />
-                  <span className="font-bold uppercase tracking-wider text-[10px]">{paymentStatus.message}</span>
-                </div>
-                <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-black/5 rounded-full">
-                  <X size={14} />
-                </button>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                <span className="font-bold text-xs">{paymentStatus.message}</span>
               </div>
+              <button onClick={() => setPaymentStatus({ status: 'idle' })} className="p-1 hover:bg-black/5 rounded-lg">
+                <X size={16} />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Pricing Layout sections */}
-        <div className="max-w-5xl mx-auto space-y-16">
+        {/* Main Recharge Card */}
+        <div className="bg-white rounded-3xl border border-sky-200/80 shadow-xl overflow-hidden p-6 md:p-10 space-y-8">
           
-          {/* Section 1: Unlimited search plans */}
-          <section>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-2 text-blue-700 font-bold uppercase tracking-[0.25em] text-[10px]">
-                <Zap size={14} />
-                Elite Subscriptions (Bypass limits)
+          {/* Current Balance Display */}
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md shadow-blue-500/10">
+            <div>
+              <span className="text-[10px] uppercase tracking-widest font-extrabold text-sky-100">Current Wallet Balance</span>
+              <div className="text-4xl font-black font-mono text-white mt-1">
+                ₹{profile?.credits || 0}.00
               </div>
-              <div className="h-px flex-1 bg-sky-100" />
             </div>
-            
-            <div className="p-4 mb-8 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono flex items-center gap-3 shadow-sm">
-              <AlertCircle size={16} className="shrink-0 text-amber-600" />
-              <span>
-                <strong>CRITICAL NOTICE:</strong> Aadhaar to PAN lookup is <strong>strictly excluded</strong> from all Unlimited Plans due to third-party server costs. Aadhaar to PAN searches require credit balances (150 Credits per lookup).
-              </span>
+            <div className="px-4 py-2 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs">
+              <ShieldCheck size={16} />
+              <span>Direct Money Charges</span>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {UNLIMITED_PLANS.map((plan) => {
-                const discountedPrice = getPlanPrice(plan);
+          {/* Amount Selection */}
+          <div className="space-y-4">
+            <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <IndianRupee size={15} className="text-sky-600" />
+              <span>Select Recharge Amount</span>
+            </label>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {PRESET_AMOUNTS.map((amt) => {
+                const isSelected = selectedAmount === amt && !customAmountInput;
                 return (
-                  <motion.div
-                    key={plan.id}
-                    whileHover={{ y: -4 }}
-                    className="p-8 rounded-[32px] bg-slate-50/80 border border-sky-100 hover:border-sky-300 hover:bg-sky-50/50 transition-all relative overflow-hidden group flex flex-col justify-between shadow-sm"
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAmount(amt);
+                      setCustomAmountInput('');
+                    }}
+                    className={`py-4 px-5 rounded-2xl font-black text-lg transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                      isSelected
+                        ? 'bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-500/25 scale-[1.02]'
+                        : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-sky-300 hover:bg-sky-50'
+                    }`}
                   >
-                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <Zap size={80} className="text-sky-600" />
-                    </div>
-
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-2 flex-wrap mb-4">
-                        <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
-                          UNLIMITED SEARCH
-                        </span>
-                        <span className="px-2.5 py-1 rounded-full bg-red-100 border border-red-300 text-[9px] font-extrabold text-red-800 uppercase tracking-widest animate-pulse">
-                          50% OFF SPECIAL OFFER
-                        </span>
-                      </div>
-
-                      <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
-                      <p className="text-slate-600 text-xs mb-6 font-medium">Unlimited lookup routing for 100% complete intelligence access.</p>
-
-                      <div className="flex items-baseline gap-2 mb-8 flex-wrap">
-                        <span className="text-4xl font-black text-slate-900">₹{discountedPrice}</span>
-                        {discountedPrice !== plan.price && (
-                          <span className="text-lg text-slate-400 line-through font-semibold">₹{plan.price}</span>
-                        )}
-                        <span className="text-slate-500 font-mono text-xs font-bold">/ period</span>
-                      </div>
-
-                      <ul className="space-y-3 mb-8">
-                        {[
-                          'Totally unlimited lookups & queries',
-                          'Zero wait-time background lookup queues',
-                          'Full visibility of hidden metadata records',
-                          'No per-query charge, 24/7 priority routing',
-                          'Excludes Aadhaar to PAN (Requires Credits)'
-                        ].map((feat, fIdx) => (
-                          <li key={fIdx} className={`flex items-center gap-2.5 text-xs font-medium ${feat.includes('Excludes') ? 'text-amber-800 font-extrabold' : 'text-slate-700'}`}>
-                            <CheckCircle2 size={14} className={`${feat.includes('Excludes') ? 'text-amber-600' : 'text-sky-600'} shrink-0`} />
-                            <span>{feat}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <button
-                      disabled={isProcessing}
-                      onClick={() => handlePurchase(plan)}
-                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold text-xs hover:from-sky-600 hover:to-blue-700 uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10 shadow-md cursor-pointer"
-                    >
-                      {isProcessing ? <Loader2 size={14} className="animate-spin" /> : 'Unlock Access Now'}
-                    </button>
-                  </motion.div>
+                    <span>₹{amt}</span>
+                  </button>
                 );
               })}
             </div>
-          </section>
+          </div>
 
-          {/* Section 2: Credit lookup plans */}
-          <section>
-            <div className="flex items-center gap-4 mb-8">
-              <div className="flex items-center gap-2 text-sky-700 font-bold uppercase tracking-[0.25em] text-[10px]">
-                <CreditCard size={14} />
-                Lookup Credits (Pay as you go)
-              </div>
-              <div className="h-px flex-1 bg-sky-100" />
+          {/* Custom Amount */}
+          <div className="space-y-2">
+            <label htmlFor="buy-credits-custom-amount" className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <Plus size={15} className="text-sky-600" />
+              <span>Enter Custom Amount</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-lg">₹</span>
+              <input
+                id="buy-credits-custom-amount"
+                type="number"
+                min="10"
+                max="100000"
+                placeholder="Enter custom amount (e.g. 350)"
+                value={customAmountInput}
+                onChange={(e) => {
+                  setCustomAmountInput(e.target.value);
+                  if (e.target.value) {
+                    setSelectedAmount(parseInt(e.target.value, 10) || 0);
+                  }
+                }}
+                className="w-full pl-9 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-extrabold text-base focus:outline-none focus:border-sky-500 focus:bg-white transition-all font-mono"
+              />
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {CREDIT_PLANS.map((plan) => {
-                const discountedPrice = getPlanPrice(plan);
-                return (
-                  <motion.div
-                    key={plan.id}
-                    whileHover={{ y: -4 }}
-                    className="p-8 rounded-[32px] bg-slate-50/80 border border-sky-100 hover:border-sky-300 hover:bg-sky-50/50 transition-all relative overflow-hidden group flex flex-col justify-between shadow-sm"
-                  >
-                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <CreditCard size={80} className="text-sky-600" />
-                    </div>
+          {/* Alert Note */}
+          <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-sky-900 text-xs font-medium flex items-start gap-3">
+            <AlertCircle size={18} className="text-sky-600 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">
+              Money added to your wallet never expires. Every lookup on TRACEXDATA automatically charges the cost directly in Rupees from your wallet balance.
+            </span>
+          </div>
 
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-2 flex-wrap mb-4">
-                        <span className="px-2.5 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest">
-                          QUICK RECHARGE
-                        </span>
-                        <span className="px-2.5 py-1 rounded-full bg-red-100 border border-red-300 text-[9px] font-extrabold text-red-800 uppercase tracking-widest animate-pulse">
-                          50% OFF SPECIAL OFFER
-                        </span>
-                      </div>
-
-                      <h3 className="text-2xl font-black text-slate-900 mb-2">{plan.name}</h3>
-                      <p className="text-slate-600 text-xs mb-6 font-medium">Instantly reload search credits. Non-expiring high-performance lookups.</p>
-
-                      <div className="flex items-baseline gap-2 mb-8 flex-wrap">
-                        <span className="text-4xl font-black text-slate-900">₹{discountedPrice}</span>
-                        {discountedPrice !== plan.price && (
-                          <span className="text-lg text-slate-400 line-through font-semibold">₹{plan.price}</span>
-                        )}
-                        <span className="text-slate-500 font-mono text-xs font-bold">/ {plan.value} lookups</span>
-                      </div>
-
-                      <ul className="space-y-3 mb-8">
-                        {[
-                          'Credits never expire, run searches whenever you need',
-                          'Access to Phone & Telegram Lookup modules',
-                          'Standard routing priorities with high-speed query servers',
-                          'Frictionless checkouts with automated balance loading'
-                        ].map((feat, fIdx) => (
-                          <li key={fIdx} className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
-                            <CheckCircle2 size={14} className="text-sky-600 shrink-0" />
-                            <span>{feat}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <button
-                      disabled={isProcessing}
-                      onClick={() => handlePurchase(plan)}
-                      className="w-full py-4 rounded-2xl bg-white border border-sky-200 group-hover:bg-sky-600 group-hover:text-white text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 pt-4 relative z-10 shadow-sm cursor-pointer"
-                    >
-                      {isProcessing ? <Loader2 size={14} className="animate-spin" /> : 'Buy Credits'}
-                    </button>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </section>
-
+          {/* Action Button */}
+          <button
+            disabled={isProcessing || !finalAmount || finalAmount < 10}
+            onClick={() => handleAddFunds(finalAmount)}
+            className="w-full py-5 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-black text-base uppercase tracking-wider shadow-lg shadow-sky-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3.5 cursor-pointer"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                <span>Redirecting to Cashfree Gateway...</span>
+              </>
+            ) : (
+              <>
+                <Wallet size={20} />
+                <span>Add ₹{finalAmount || 0}.00 to Wallet</span>
+              </>
+            )}
+          </button>
         </div>
 
-        {/* Anti-Flicker / Smart Self-Healing & Missing Credits Recovery Panel */}
-        <section className="mt-16 max-w-4xl mx-auto p-8 rounded-[32px] bg-gradient-to-br from-sky-50 via-white to-blue-50 border border-sky-200 shadow-md relative z-10 overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10">
-            <ShieldCheck size={120} className="text-sky-600" />
-          </div>
+        {/* Self-Healing Manual Order Reconciliation Form */}
+        <section className="mt-12 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="max-w-md">
-              <span className="px-3 py-1 rounded-full bg-sky-100 border border-sky-200 text-[9px] font-extrabold text-sky-800 uppercase tracking-widest block w-fit mb-3 font-sans">
-                Payment Reconciliation Gateway
-              </span>
-              <h3 className="text-lg font-black text-slate-900 mb-2 flex items-center gap-2 font-sans">
-                <ShieldCheck size={18} className="text-sky-600 animate-pulse" />
-                Missing Credits? Self-Heal Verification
+              <h3 className="text-base font-black text-slate-900 mb-1 flex items-center gap-2">
+                <ShieldCheck size={18} className="text-sky-600" />
+                Missing Payment? Self-Heal Verification
               </h3>
-              <p className="text-slate-600 text-xs leading-relaxed font-sans font-medium">
-                If you completed a transaction but your account credits didn't post, enter your Cashfree **Order ID** below. The server will reconcile with Cashfree in real-time to credit your account immediately.
+              <p className="text-slate-600 text-xs font-medium">
+                If you completed payment but balance wasn't updated, enter your Cashfree Order ID below to reconcile immediately.
               </p>
             </div>
 
-            <form onSubmit={handleClaimManual} className="w-full md:w-auto flex-grow max-w-sm flex flex-col gap-3">
+            <form onSubmit={handleClaimManual} className="w-full md:w-auto flex-grow max-w-sm flex flex-col gap-2">
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={claimOrderId}
                   onChange={(e) => setClaimOrderId(e.target.value)}
-                  placeholder="order_171881..."
-                  className="flex-grow h-11 bg-white border border-sky-200 rounded-xl px-4 outline-none text-xs text-slate-900 focus:border-sky-500 transition-all font-mono shadow-sm"
+                  placeholder="Order ID (e.g. order_12345)"
+                  className="flex-grow h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 outline-none text-xs font-mono text-slate-900 focus:border-sky-500 focus:bg-white transition-all"
                   disabled={claimLoading}
                 />
                 <button
                   type="submit"
                   disabled={claimLoading}
-                  className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 disabled:opacity-50 font-sans cursor-pointer shadow-sm"
+                  className="h-11 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 cursor-pointer"
                 >
-                  {claimLoading ? <Loader2 size={13} className="animate-spin" /> : 'Reconcile'}
+                  {claimLoading ? <Loader2 size={14} className="animate-spin" /> : 'Claim'}
                 </button>
               </div>
 
               {claimResult.status !== 'idle' && (
                 <div
-                  className={`p-3 rounded-lg text-xs leading-relaxed border transition-all ${
+                  className={`p-3 rounded-xl text-xs border ${
                     claimResult.status === 'success'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-medium'
-                      : 'bg-red-50 border-red-200 text-red-900 font-sans font-medium'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : 'bg-red-50 border-red-200 text-red-900'
                   }`}
                 >
-                  <p className="font-extrabold uppercase tracking-wider text-[9px] mb-1 font-sans">
-                    {claimResult.status === 'success' ? 'Self-Heal Success' : 'Reconciliation Failed'}
-                  </p>
                   {claimResult.message}
                 </div>
               )}
@@ -525,53 +443,7 @@ export default function BuyCredits() {
           </div>
         </section>
 
-        {/* Security & Features Banner */}
-        <section className="mt-24 max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
-            <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
-              <ShieldCheck size={20} />
-            </div>
-            <h4 className="font-extrabold text-slate-900 text-sm">Secure Merchant Gateway</h4>
-            <p className="text-slate-600 text-xs leading-relaxed font-medium">Payments are fully secured via PCI-DSS compliant direct merchant gateways.</p>
-          </div>
-          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
-            <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center text-sky-600">
-              <Zap size={20} />
-            </div>
-            <h4 className="font-extrabold text-slate-900 text-sm">Instant Recharge Posting</h4>
-            <p className="text-slate-600 text-xs leading-relaxed font-medium">Your lookups adjust instantly post-checkout. Refresh dashboard to see newly posted balances.</p>
-          </div>
-          <div className="p-6 rounded-2xl bg-white border border-sky-100 flex flex-col gap-3 shadow-sm">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
-              <Server size={20} />
-            </div>
-            <h4 className="font-extrabold text-slate-900 text-sm">Priority Lookup Routing</h4>
-            <p className="text-slate-600 text-xs leading-relaxed font-medium">Premium members consume secondary intelligence pipelines optimizing access speeds.</p>
-          </div>
-        </section>
-
-        {/* Support link */}
-        <section className="mt-20 text-center">
-          <p className="text-slate-600 text-xs mb-3 font-medium">Questions about transaction processing or customization?</p>
-          <a
-            href="https://t.me/Gaurav_beni_0001"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-sky-50 border border-sky-200 hover:bg-sky-100 text-xs font-extrabold text-sky-800 transition-all shadow-sm"
-          >
-            <MessageSquare size={14} className="text-sky-600" />
-            <span>Chat support on Telegram</span>
-          </a>
-        </section>
       </div>
-
-      <footer className="py-20 text-center border-t border-sky-100 bg-sky-50/50">
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Secured by TraceXData Infrastructure</p>
-        <div className="flex items-center justify-center gap-6">
-          <button onClick={() => navigate('/contactus')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Support</button>
-          <button onClick={() => navigate('/')} className="text-slate-600 hover:text-slate-900 transition-colors text-xs font-bold uppercase tracking-widest cursor-pointer">Trace Home</button>
-        </div>
-      </footer>
     </div>
   );
 }

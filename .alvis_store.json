@@ -1,7 +1,7 @@
 {
   "user_name": "alvisappapi",
   "api_key": "alvis_live_key_77c38c3e9a596cbe",
-  "wallet_balance": 2500,
+  "wallet_balance": 1800.0,
   "total_searches": 15,
   "pricing": {
     "aadhaar_to_pan": {
@@ -27,11 +27,11 @@
     {
       "id": "tx_deb_1786029125357_608",
       "date_time": "2026-08-06T15:12:05.357Z",
-      "amount": 0.5,
+      "amount": 1463.5,
       "type": "debit",
       "status": "completed",
-      "balance_after": 499.5,
-      "reason": "Number Lookup search for 987****210"
+      "balance_after": 1800.0,
+      "reason": "Set Alvis API wallet balance to \u20b91800"
     },
     {
       "id": "tx_deb_1786029126141_131",
@@ -166,7 +166,7 @@
       "type": "manual_adjustment",
       "status": "completed",
       "balance_after": 2500,
-      "reason": "Set Alvis API wallet balance to ₹2500"
+      "reason": "Set Alvis API wallet balance to \u20b92500"
     }
   ],
   "searches": [

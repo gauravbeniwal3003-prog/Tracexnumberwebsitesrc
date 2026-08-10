@@ -5,12 +5,11 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff, Menu, Moon, Sun, Crown, Gift, Headphones, AlertTriangle, ExternalLink, Building2, Car, Vote, Sprout, Landmark, Wallet } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
 import SubscriptionBadge from './components/SubscriptionBadge.tsx';
-import SubscriptionModal from './components/SubscriptionModal.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
 import ProtectNumberModal from './components/ProtectNumberModal.tsx';
 import { lookupNumber, ApiResponse, getApiBaseUrl } from './services/api.ts';
@@ -20,16 +19,15 @@ import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
 import { initNotificationEngine } from './services/notifications.ts';
 
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import HeaderNavbar from './components/HeaderNavbar.tsx';
 import ScrollToTop from './components/ScrollToTop.tsx';
 import Terms from './pages/Terms.tsx';
 import Contact from './pages/Contact.tsx';
 import Refund from './pages/Refund.tsx';
 import SEOPage from './pages/SEO.tsx';
 import AboutGaurav from './pages/AboutGaurav.tsx';
-import BuyApi from './pages/BuyApi.tsx';
 import BuyCredits from './pages/BuyCredits.tsx';
-import ApiDashboard from './pages/ApiDashboard.tsx';
 import AdminDashboard from './pages/AdminDashboard.tsx';
 import ApiDocs from './pages/ApiDocs.tsx';
 import PgPaymentPage from './pages/PgPaymentPage.tsx';
@@ -38,10 +36,14 @@ import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
 import SupportGauravBeniwalPage from './pages/SupportGauravBeniwalPage.tsx';
 import AlvisAppApi from './pages/AlvisAppApi.tsx';
+import ReferralPage from './pages/ReferralPage.tsx';
+import WalletHistory from './pages/WalletHistory.tsx';
+import ServiceRecords from './pages/ServiceRecords.tsx';
+import { DashboardServicesView } from './components/DashboardServicesView.tsx';
+
+import LandingPage from './pages/LandingPage.tsx';
 
 export default function App() {
-  const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [pendingPayment, setPendingPayment] = useState<any>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isProtectOpen, setIsProtectOpen] = useState(false);
   const [protectTab, setProtectTab] = useState<'mobile' | 'telegram'>('mobile');
@@ -49,8 +51,14 @@ export default function App() {
   useEffect(() => {
     const handleLoginEvent = () => setIsLoginOpen(true);
     const handleLaunchPayment = (e: any) => {
-      setPendingPayment(e.detail);
-      setIsPricingOpen(true);
+      const detail = e.detail;
+      if (detail?.type === 'api' && detail?.planId) {
+        window.location.href = `/buy-api/${detail.planId}`;
+      } else if (detail?.amount) {
+        window.location.href = `/pricing?amount=${detail.amount}`;
+      } else {
+        window.location.href = '/pricing';
+      }
     };
     const handleProtectEvent = (e: any) => {
       if (e.detail && e.detail.tab) {
@@ -65,17 +73,20 @@ export default function App() {
     window.addEventListener('launch-payment', handleLaunchPayment);
     window.addEventListener('open-protect', handleProtectEvent as EventListener);
 
-    // Auto-open subscription modal to process returned payments
+    // Redirect returned payments to dedicated pricing page
     const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.get('order_id')) {
-      setIsPricingOpen(true);
+    const returnedOrderId = searchParams.get('order_id');
+    if (returnedOrderId) {
+      window.location.href = `/pricing?order_id=${returnedOrderId}`;
     }
 
     // Track visitor session via their IP address
     fetch(`${getApiBaseUrl()}/api/visitor/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
-    }).catch(err => console.error("Error logging visitor:", err));
+    }).catch(() => {
+      // Ignore background analytics network errors
+    });
 
     // Initialize true local notification engine
     try {
@@ -95,7 +106,15 @@ export default function App() {
     <Router>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<Home service="phone" />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/signup" element={<LoginScreen isSignUpInitial={true} />} />
+        <Route path="/register" element={<LoginScreen isSignUpInitial={true} />} />
+        <Route path="/dashboard" element={<Home service="phone" />} />
+        <Route path="/category/:categoryId" element={<Home service="phone" />} />
+        <Route path="/service/:subserviceId" element={<Home service="phone" />} />
+        <Route path="/alvisappapi" element={<AlvisAppApi />} />
+        <Route path="/Alvisappapi" element={<AlvisAppApi />} />
         <Route path="/telegram" element={<Home service="telegram" />} />
         <Route path="/identity" element={<Home service="adhr" />} />
         <Route path="/bank" element={<Home service="bnk" />} />
@@ -109,13 +128,21 @@ export default function App() {
         <Route path="/trends" element={<SEOPage />} />
         <Route path="/about-gaurav-beniwal" element={<AboutGaurav />} />
         <Route path="/about" element={<AboutGaurav />} />
-        <Route path="/buy-api" element={<BuyApi />} />
-        <Route path="/buy-api/:planId" element={<BuyApi />} />
+        <Route path="/buy-api" element={<ApiDocs />} />
+        <Route path="/buy-api/:planId" element={<ApiDocs />} />
         <Route path="/pricing" element={<BuyCredits />} />
         <Route path="/buy-credits" element={<BuyCredits />} />
-        <Route path="/account/api" element={<ApiDashboard />} />
+        <Route path="/account/api" element={<ApiDocs />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/api-docs" element={<ApiDocs />} />
+        <Route path="/api" element={<ApiDocs />} />
+        <Route path="/developer-api" element={<ApiDocs />} />
+        <Route path="/referral" element={<ReferralPage />} />
+        <Route path="/refer" element={<ReferralPage />} />
+        <Route path="/wallet-history" element={<WalletHistory />} />
+        <Route path="/wallet" element={<WalletHistory />} />
+        <Route path="/service-records" element={<ServiceRecords />} />
+        <Route path="/history" element={<ServiceRecords />} />
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         
         {/* Separate Free Public & Payment Pages */}
@@ -125,21 +152,10 @@ export default function App() {
         <Route path="/script" element={<ScriptPurchase />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
         <Route path="/pgpay/:urlAmt" element={<PgPaymentPage fallbackFixed />} />
-        <Route path="/Alvisappapi" element={<AlvisAppApi />} />
-        <Route path="/alvisappapi" element={<AlvisAppApi />} />
         <Route path="/:pgpayCustom" element={<PgPaymentPage customSegment />} />
       </Routes>
 
       <AnimatePresence>
-        {isPricingOpen && (
-          <SubscriptionModal 
-            onClose={() => {
-              setIsPricingOpen(false);
-              setPendingPayment(null);
-            }} 
-            initialPayment={pendingPayment}
-          />
-        )}
         {isProtectOpen && (
           <ProtectNumberModal initialTab={protectTab} onClose={() => setIsProtectOpen(false)} />
         )}
@@ -179,8 +195,15 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 }
 
 function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' | 'veh_owner_num' }) {
-  const { user, profile, loading, signOut, refreshProfile } = useAuth();
+  const { user, profile, loading, isDemoMode, exitDemoMode, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user && !IS_TESTING_MODE) {
+      navigate('/login', { replace: true });
+    }
+  }, [user, loading, navigate]);
   const handleOpenLogin = () => {
     window.dispatchEvent(new CustomEvent('open-login'));
   };
@@ -229,11 +252,23 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   };
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Automatically vanish/clear search results, errors, and input state when page or service changes
+  useEffect(() => {
+    setError(null);
+    setResult(null);
+    setAadhaarPanResult(null);
+    setPhoneNumber('');
+    setIsLoading(false);
+  }, [location.pathname, location.search, service]);
   const [searchHistory, setSearchHistory] = useState<any[]>([]);
   const [copiedStep2, setCopiedStep2] = useState(false);
   const [copiedRawFeed, setCopiedRawFeed] = useState(false);
   const [copiedRawResults, setCopiedRawResults] = useState(false);
   const [copiedResponse, setCopiedResponse] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const getFormattedResponse = () => {
     let targetObj: any = null;
@@ -374,9 +409,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     return () => clearInterval(interval);
   }, [isLoading, service]);
 
-  const handleSearch = useCallback(async (e?: React.FormEvent, forceQuery?: string) => {
+  const handleSearch = useCallback(async (e?: React.FormEvent, forceQuery?: string, customServiceType?: string) => {
     if (e) e.preventDefault();
     if (isLoading) return;
+
+    const activeService = customServiceType || service;
 
     if (!user) {
       setError('Authentication Required: Please Sign In to your TRACEXDATA account to continue searching.');
@@ -392,47 +429,47 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     const targetVal = forceQuery || phoneNumber.trim();
     if (!targetVal) return;
 
-    if (service === 'phone') {
+    if (activeService === 'phone') {
       if (targetVal.length < 10) {
         setError('Please enter a valid 10-digit mobile number.');
         return;
       }
-    } else if (service === 'telegram') {
+    } else if (activeService === 'telegram') {
       if (targetVal.length < 3) {
         setError('Please enter a valid Telegram username.');
         return;
       }
-    } else if (service === 'adhr') {
+    } else if (activeService === 'adhr') {
       if (targetVal.length < 12) {
         setError('Please enter a valid 12-digit Identity/Aadhaar number.');
         return;
       }
-    } else if (service === 'aadhaar_to_pan') {
+    } else if (activeService === 'aadhaar_to_pan') {
       if (targetVal.length < 12) {
         setError('Please enter a valid 12-digit Aadhaar number.');
         return;
       }
-    } else if (service === 'bnk') {
+    } else if (activeService === 'bnk') {
       if (targetVal.length < 11) {
         setError('Please enter a valid 11-digit IFSC code (e.g., ABCD0001325).');
         return;
       }
-    } else if (service === 'vehicle') {
+    } else if (activeService === 'vehicle') {
       if (targetVal.length < 3) {
         setError('Please enter a valid Vehicle Number (e.g., DL1CA1234).');
         return;
       }
-    } else if (service === 'veh_owner_num') {
+    } else if (activeService === 'veh_owner_num') {
       if (targetVal.length < 3) {
         setError('Please enter a valid Vehicle Number (e.g., HR60E3838).');
         return;
       }
-    } else if (service === 'pancard') {
+    } else if (activeService === 'pancard') {
       if (targetVal.length < 5) {
         setError('Please enter a valid PN/PAN Card Number (e.g., ABCDE1234F).');
         return;
       }
-    } else if (service === 'email') {
+    } else if (activeService === 'email') {
       if (!targetVal.includes('@') || !targetVal.includes('.')) {
         setError('Please enter a valid Email Address (e.g., test@gmail.com).');
         return;
@@ -440,26 +477,26 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     }
 
     let creditCost = 2;
-    if (service === 'telegram') {
+    if (activeService === 'telegram') {
       creditCost = 8;
-    } else if (service === 'adhr') {
+    } else if (activeService === 'adhr') {
       creditCost = 10;
-    } else if (service === 'bnk') {
+    } else if (activeService === 'bnk') {
       creditCost = 10;
-    } else if (service === 'vehicle') {
+    } else if (activeService === 'vehicle') {
       creditCost = 5;
-    } else if (service === 'veh_owner_num') {
+    } else if (activeService === 'veh_owner_num') {
       creditCost = 15;
-    } else if (service === 'pancard') {
+    } else if (activeService === 'pancard') {
       creditCost = 10;
-    } else if (service === 'aadhaar_to_pan') {
+    } else if (activeService === 'aadhaar_to_pan') {
       creditCost = 150;
-    } else if (service === 'email') {
+    } else if (activeService === 'email') {
       creditCost = 20;
     }
 
-    if (!hasUnlimitedAction() && (profile?.credits || 0) < creditCost) {
-      setError(`Insufficient Credits: This lookup costs ${creditCost} CTR, but you only have ${profile?.credits || 0} CTR. Please top up your wallet.`);
+    if ((profile?.credits || 0) < creditCost) {
+      setError(`Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but your current balance is ₹${profile?.credits || 0}.00. Please top up your wallet.`);
       handleOpenPricing();
       return;
     }
@@ -644,7 +681,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   };
 
   return (
-    <div className={`relative min-h-screen text-slate-800 selection:bg-sky-200 selection:text-sky-900 overflow-x-hidden ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
+    <div className={`relative min-h-screen text-slate-800 selection:bg-sky-200 selection:text-sky-900 overflow-x-hidden bg-slate-50/50 ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
       <LiquidBackground />
       
       {IS_TESTING_MODE && (
@@ -654,278 +691,32 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           <span className="hidden sm:inline bg-white/20 text-white border border-white/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider font-extrabold">Unrestricted Admin Access</span>
         </div>
       )}
-      
-      {/* Top Navbar */}
-      <nav className={`fixed ${IS_TESTING_MODE ? 'top-[36px]' : 'top-0'} left-0 right-0 p-3.5 md:p-4 z-[60] flex items-center justify-between transition-all duration-300 bg-white/70 backdrop-blur-xl border-b border-sky-100/80 shadow-[0_2px_15px_rgba(14,165,233,0.05)]`}>
-        <a 
-          href="https://t.me/Gaurav_beni_0001" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50/90 border border-sky-200/80 backdrop-blur-md hover:bg-sky-100 transition-all group shadow-sm"
-        >
-          <div className="w-2 h-2 rounded-full bg-sky-600 group-hover:animate-ping"></div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-800 group-hover:text-sky-700">TRACEXDATA</span>
-        </a>
 
-        <div className="flex items-center gap-2">
-          <Link
-             to="/buy-api"
-             className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-100/80 border border-sky-200/80 text-sky-800 hover:bg-sky-200/80 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
-          >
-            <Zap size={14} className="text-sky-600" />
-            Buy API
-          </Link>
+      <HeaderNavbar />
 
-          {user && (
-            <Link
-               to="/account/api"
-               className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100/80 border border-slate-200/80 text-slate-700 hover:bg-slate-200/80 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
-            >
-              <Key size={14} className="text-slate-600" />
-              API Dashboard
-            </Link>
-          )}
-
-          {user && (
-            <button
-              onClick={handleOpenProtect}
-              className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-800 hover:bg-amber-100 transition-all text-[10px] font-bold uppercase tracking-widest shadow-sm"
-            >
-              <ShieldCheck size={14} className="text-amber-600" />
-              Protect Number
-            </button>
-          )}
-
-          {!user ? (
-            <button
-              onClick={handleOpenLogin}
-              className="px-4 py-1.5 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] md:text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
-            >
-              Sign In
-            </button>
-          ) : (
-            <AnimatePresence mode="wait">
-              {hasUnlimitedAction() ? (
-                <SubscriptionBadge expiry={profile!.unlimited_expiry} />
-              ) : (
-                <motion.button
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  onClick={handleOpenPricing}
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200/80 text-sky-800 hover:bg-sky-100 transition-all font-mono text-[10px] md:text-xs font-bold shadow-sm"
-                >
-                  <Coins size={14} className="text-sky-600" />
-                  <span>{profile?.credits || 0} CTR</span>
-                  <PlusCircle size={14} className="ml-0.5 text-sky-500" />
-                </motion.button>
-              )}
-            </AnimatePresence>
-          )}
-
-          {user && (
-            <button
-              onClick={() => signOut()}
-              className="p-2 rounded-full bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 border border-slate-200 transition-all shadow-sm"
-            >
-              <LogOut size={16} />
-            </button>
-          )}
-        </div>
-      </nav>
-
-      {/* Header */}
-      <header className="pt-20 md:pt-28 pb-2 md:pb-6 px-4 md:px-6 text-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="inline-flex items-center gap-2 mb-2 md:mb-4 px-3.5 py-1.5 rounded-full bg-sky-100/80 border border-sky-200/80 backdrop-blur-md shadow-sm"
-        >
-          <div className="w-2 h-2 rounded-full bg-sky-600 animate-pulse"></div>
-          <span className="text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] text-sky-800">TRACEXDATA Intelligence VIP</span>
-        </motion.div>
-        
-        <motion.h1 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-2xl md:text-5xl font-black tracking-tight mb-2 md:mb-3 text-slate-900 leading-tight"
-        >
-          {getHeaderTitle()}
-        </motion.h1>
-        
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="text-slate-600 text-xs md:text-base max-w-lg mx-auto leading-relaxed px-4 font-medium"
-        >
-          Access premium datasets with liquid glass precision.
-        </motion.p>
-      </header>
-
-      {/* Main Search Area */}
-      <main className="flex-1 max-w-4xl mx-auto px-4 md:px-6 pb-20 relative z-10 w-full">
-        {/* Service Toggle Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 md:gap-2.5 mb-6 md:mb-8">
-          <Link
-            to="/"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'phone'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            📱 Mobile ID (2 CTR)
-          </Link>
-          <Link
-            to="/telegram"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'telegram'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            ✈️ Telegram (8 CTR)
-          </Link>
-          <Link
-            to="/identity"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'adhr'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            🪪 Identity Card (10 CTR)
-          </Link>
-          <Link
-            to="/bank"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'bnk'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            🏦 BA&NK (10 CTR)
-          </Link>
-          <Link
-            to="/vehicle"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'vehicle'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            🚗 VEHICLE (5 CTR)
-          </Link>
-          <Link
-            to="/veh-owner"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'veh_owner_num'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            🚗 VEH TO OWNER (15 CTR)
-          </Link>
-          <Link
-            to="/pancard"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'pancard'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            💳 PN CARD (10 CTR)
-          </Link>
-          <Link
-            to="/email"
-            className={`px-3.5 py-2 rounded-full border text-[10px] font-extrabold uppercase tracking-widest transition-all backdrop-blur-md flex items-center gap-1.5 shadow-sm ${
-              service === 'email'
-                ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-500 text-white shadow-[0_4px_15px_rgba(14,165,233,0.3)]'
-                : 'bg-white/80 border-sky-200/80 text-slate-700 hover:bg-sky-50 hover:text-sky-800'
-            }`}
-          >
-            📧 EMAIL (20 CTR)
-          </Link>
-        </div>
-
-        {/* VPS & Data Maintenance Cost Notice */}
-        <div className="text-center mb-6 md:mb-8 text-[11px] md:text-xs text-slate-600 bg-sky-50/90 border border-sky-200/80 px-4 py-3 rounded-2xl max-w-xl mx-auto flex items-center justify-center gap-2 backdrop-blur-md shadow-sm">
-          <Info size={15} className="text-sky-600 shrink-0" />
-          <span className="leading-relaxed font-medium">
-            Note: These credits purely cover our high performance website hosting, VPS, and API data maintenance. We do not charge for earning profit.
-          </span>
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card mb-4 md:mb-8 p-1.5 md:p-2 border-sky-100 bg-white/90 shadow-[0_12px_35px_rgba(14,165,233,0.08)]"
-        >
-          <form onSubmit={(e) => handleSearch(e)} className="flex flex-col md:flex-row gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder={getInputPlaceholder()}
-                value={phoneNumber}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (service === 'phone') {
-                    setPhoneNumber(cleanIndianPhoneNumber(val));
-                  } else if (service === 'bnk') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
-                  } else if (service === 'adhr' || service === 'aadhaar_to_pan') {
-                    setPhoneNumber(val.replace(/[^0-9]/g, '').slice(0, 12));
-                  } else if (service === 'vehicle' || service === 'veh_owner_num') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
-                  } else if (service === 'pancard') {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 15));
-                  } else if (service === 'email') {
-                    setPhoneNumber(val.trim().toLowerCase());
-                  } else {
-                    setPhoneNumber(val.replace(/[^a-zA-Z0-9_\s\-]/g, '').slice(0, 40));
-                  }
-                }}
-                className="w-full glass-input px-6 h-12 md:h-16 text-base md:text-lg font-mono text-slate-900 focus:bg-white placeholder:text-slate-400 font-medium"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isLoading || cooldown > 0 || phoneNumber.trim().length < (service === 'phone' ? 10 : service === 'bnk' ? 11 : (service === 'adhr' || service === 'aadhaar_to_pan') ? 12 : service === 'pancard' ? 5 : 3)}
-              className="w-full md:w-48 h-12 md:h-16 rounded-xl md:rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-cyan-600 hover:from-sky-600 hover:to-blue-700 disabled:opacity-50 text-white font-bold transition-all flex items-center justify-center gap-2 shadow-[0_6px_20px_rgba(14,165,233,0.3)] cursor-pointer active:scale-98"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : cooldown > 0 ? (
-                <span className="text-sm md:text-base">{cooldown}s</span>
-              ) : (
-                <>
-                  <Search size={16} className="md:w-[18px]" />
-                  <span className="text-sm md:text-base font-bold">Trace Now</span>
-                </>
-              )}
-            </button>
-          </form>
-        </motion.div>
-
-        {/* Protection CTA for Mobile/All users */}
-        {user && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="flex md:hidden justify-center mb-8"
-          >
-            <button 
-              onClick={handleOpenProtect}
-              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 font-bold uppercase tracking-[0.2em] text-[10px] w-full justify-center shadow-sm"
-            >
-              <ShieldCheck size={14} className="text-amber-600" />
-              TraceX Shield Protection Active
-            </button>
-          </motion.div>
-        )}
+      {/* 4. MAIN CONTENT AREA (Exact multi-level views matching Screenshots 1, 2, & 3) */}
+      <main className="flex-1 max-w-4xl mx-auto px-4 py-6 relative z-10 w-full space-y-6">
+        <DashboardServicesView
+          initialService={service}
+          user={user}
+          profile={profile}
+          isDemoMode={isDemoMode}
+          onOpenPricing={handleOpenPricing}
+          onOpenLogin={handleOpenLogin}
+          phoneNumber={phoneNumber}
+          setPhoneNumber={setPhoneNumber}
+          isLoading={isLoading}
+          loadingMessage={loadingMessage}
+          error={error}
+          result={result}
+          aadhaarPanResult={aadhaarPanResult}
+          handleSearch={handleSearch}
+          getFormattedResponse={getFormattedResponse}
+          copiedResponse={copiedResponse}
+          setCopiedResponse={setCopiedResponse}
+          hasUnlimitedAction={hasUnlimitedAction}
+          onClearError={() => setError(null)}
+        />
 
         {/* Status Messages */}
         <AnimatePresence mode="wait">
@@ -934,18 +725,33 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="group cursor-pointer flex items-center gap-3 p-4 mb-8 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm font-semibold shadow-sm"
-              onClick={() => {
-                if (error.toLowerCase().includes('sign in')) {
-                  handleOpenLogin();
-                }
-                if (error.includes('credits')) handleOpenPricing();
-                if (error.includes('protected')) handleOpenProtect();
-              }}
+              className="flex items-center gap-3 p-4 mb-8 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm font-semibold shadow-sm"
             >
               <AlertCircle size={18} className="shrink-0 text-red-500" />
-              <span className="flex-1 whitespace-pre-line">{error}</span>
+              <span 
+                className="flex-1 cursor-pointer whitespace-pre-line"
+                onClick={() => {
+                  if (error.toLowerCase().includes('sign in')) {
+                    handleOpenLogin();
+                  }
+                  if (error.includes('credits')) handleOpenPricing();
+                  if (error.includes('protected')) handleOpenProtect();
+                }}
+              >
+                {error}
+              </span>
               {(error.includes('credits') || error.includes('sign in') || error.includes('protected')) && <ChevronRight size={16} />}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setError(null);
+                }}
+                className="p-1 rounded-lg text-red-400 hover:text-red-700 hover:bg-red-100 transition-colors shrink-0 cursor-pointer ml-1"
+                title="Dismiss message"
+              >
+                <X size={16} />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1056,127 +862,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 ))}
               </div>
             </motion.div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-              <Info size={40} className="mb-3 text-sky-400" />
-              <p className="text-[10px] font-bold tracking-[0.25em] uppercase text-slate-500">Private Encryption Active</p>
-            </div>
-          )}
+          ) : null}
         </div>
       </main>
 
-      {/* Local Notifications Status Widget */}
-      <div className="max-w-md mx-auto mb-8 text-center px-4 relative z-50">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-4 border-sky-100 bg-white/90 backdrop-blur-3xl rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md"
-        >
-          <div className="flex items-center gap-3 text-left">
-            <div className={`p-2.5 rounded-xl border ${
-              notifPermission === 'granted'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                : notifPermission === 'denied'
-                ? 'bg-red-50 border-red-200 text-red-600'
-                : 'bg-sky-50 border-sky-200 text-sky-600'
-            }`}>
-              {notifPermission === 'granted' ? (
-                <Bell size={18} className="animate-bounce" />
-              ) : (
-                <BellOff size={18} />
-              )}
-            </div>
-            <div>
-              <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider font-mono">
-                {notifPermission === 'granted' ? '🔔 System Alerts Active' : '🔔 Live System Alerts'}
-              </h4>
-              <p className="text-[10px] text-slate-500 leading-tight font-medium">
-                {notifPermission === 'granted'
-                  ? 'True-local alerts will keep you engaged with online nodes.'
-                  : 'Get notified about active OSINT nodes and system status.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {notifPermission === 'default' && (
-              <button
-                onClick={handleRequestPermission}
-                className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all shadow-sm active:scale-[0.97]"
-              >
-                Enable
-              </button>
-            )}
-            {notifPermission === 'granted' && (
-              <button
-                onClick={handleSendTestNotification}
-                className="px-3.5 py-1.5 rounded-lg bg-slate-100 border border-slate-300 hover:border-sky-500 text-slate-700 hover:text-sky-700 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-all active:scale-[0.97] shadow-sm"
-              >
-                Test Notif
-              </button>
-            )}
-            {notifPermission === 'denied' && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md">
-                Blocked
-              </span>
-            )}
-            {notifPermission === 'unsupported' && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
-                Unsupported
-              </span>
-            )}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Footer / Credit */}
-      <footer className="w-full py-6 md:py-10 px-4 md:px-6 flex flex-col items-center justify-center gap-3 relative z-50 bg-white/60 backdrop-blur-md border-t border-sky-100">
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="glass-card px-4 md:px-5 py-2.5 md:py-3 border-sky-200/80 bg-white/90 backdrop-blur-3xl text-[9px] md:text-xs font-semibold flex items-center gap-3 md:gap-4 group shadow-sm"
-        >
-          <span className="text-slate-600">
-            Engine Crafted by 
-            <a 
-              href="https://t.me/Gaurav_beni_0001" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="ml-1 text-sky-700 font-bold hover:text-sky-900 transition-colors pointer-events-auto"
-            >
-              Gaurav Beniwal
-            </a>
-          </span>
-          <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
-          <a 
-            href="https://t.me/Gaurav_beni_0001" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-sky-600 font-extrabold hover:text-sky-800 transition-colors uppercase tracking-widest text-[9px] pointer-events-auto"
-          >
-            Support
-          </a>
-        </motion.div>
-        
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-4">
-          <Link to="/about-gaurav-beniwal" className="hover:text-sky-600 transition-colors text-sky-700">About Gaurav Beniwal</Link>
-          <Link to="/contactus" className="hover:text-sky-600 transition-colors">Contact Us</Link>
-          <Link to="/refund" className="hover:text-sky-600 transition-colors">Refund Policy</Link>
-          <Link to="/terms" className="hover:text-sky-600 transition-colors">Terms & Conditions</Link>
-          <Link to="/api-docs" className="hover:text-sky-600 transition-colors">API Documentation</Link>
-          <Link to="/trends" className="hover:text-sky-600 transition-colors opacity-70">Intelligence Trends</Link>
-        </div>
-        
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="text-[8px] md:text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold text-center leading-relaxed"
-        >
-          TRACEXDATA Intelligence Engine <br className="md:hidden" />
-          <span className="opacity-75">Made for ethical purpose only By GAURAV BENIWAL</span>
-        </motion.p>
+      {/* Clean Corporate Footer */}
+      <footer className="w-full py-6 px-4 flex flex-col items-center justify-center relative z-50 bg-white/60 backdrop-blur-md border-t border-slate-200/80">
+        <p className="text-xs text-slate-500 font-semibold text-center">
+          © {new Date().getFullYear()} TRACEXDATA. All rights reserved.
+        </p>
       </footer>
 
       <AnimatePresence>
