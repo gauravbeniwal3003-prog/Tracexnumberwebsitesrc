@@ -36,7 +36,7 @@ export default function WalletHistory() {
           });
           if (res.ok) {
             const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
+            if (Array.isArray(data)) {
               setTransactions(data);
               setIsLoading(false);
               return;
@@ -47,17 +47,7 @@ export default function WalletHistory() {
         console.error("Error loading wallet transactions:", err);
       }
 
-      // Fallback sample records matching Screenshot 4
-      const fallbackData: TransactionItem[] = [
-        { id: 1, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: balance, date: "2026-08-08 09:34:34" },
-        { id: 2, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: balance + 15, date: "2026-08-08 09:34:34" },
-        { id: 3, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: balance + 35, date: "2026-08-08 09:34:31" },
-        { id: 4, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: balance + 50, date: "2026-08-08 09:34:27" },
-        { id: 5, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: balance + 70, date: "2026-08-07 19:20:41" },
-        { id: 6, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: balance + 85, date: "2026-08-07 19:20:35" },
-        { id: 7, service: "Fee For PAN_360", type: "Debit", amount: 10.00, balanceAfter: balance + 105, date: "2026-08-07 18:46:28" }
-      ];
-      setTransactions(fallbackData);
+      setTransactions([]);
       setIsLoading(false);
     }
 
@@ -109,6 +99,16 @@ export default function WalletHistory() {
             <div className="py-12 text-center space-y-2">
               <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mx-auto" />
               <p className="text-xs text-slate-500 font-bold">Loading transactions...</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="py-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 mx-auto">
+                <History className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800">No Transaction Records</h3>
+                <p className="text-xs text-slate-500 mt-1">Wallet recharge and usage logs will appear here once you perform transactions.</p>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">

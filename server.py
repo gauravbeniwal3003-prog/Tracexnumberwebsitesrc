@@ -525,6 +525,24 @@ async def update_profile(payload: dict = Body(...), request: Request = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+import random, string
+
+def generate_8digit_api_key():
+    chars = string.ascii_uppercase + string.digits
+    return "".join(random.choices(chars, k=8))
+
+def extract_api_key(request: Request, key: Optional[str] = None) -> str:
+    extracted = (
+        key or
+        request.query_params.get("key") or
+        request.query_params.get("api_key") or
+        request.query_params.get("apiKey") or
+        request.headers.get("x-api-key") or
+        request.headers.get("authorization", "").replace("Bearer ", "") or
+        ""
+    ).strip()
+    return extracted
+
 @app.get("/api/user-keys")
 async def get_user_keys(request: Request):
     db = get_supabase()
@@ -537,8 +555,37 @@ async def get_user_keys(request: Request):
         
     try:
         user_id_val = get_user_id(user)
+        user_email_val = getattr(user, 'email', None) or "N/A"
         response = db.table("api_keys").select("*").eq("user_id", user_id_val).execute()
-        sorted_keys = sorted(response.data or [], key=lambda k: k.get("created_at", ""), reverse=True)
+        keys_list = response.data or []
+
+        # Ensure user has an active 8-digit API key
+        has_8digit = any(k.get("api_key") and len(str(k.get("api_key"))) == 8 and k.get("status") == "active" for k in keys_list)
+        if not has_8digit:
+            new_key = generate_8digit_api_key()
+            new_key_data = {
+                "api_key": new_key,
+                "user_id": user_id_val,
+                "user_email": user_email_val,
+                "plan_name": "Account Wallet API (8-Digit)",
+                "request_limit": None,
+                "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat() + "Z",
+                "status": "active"
+            }
+            try:
+                ins_res = db.table("api_keys").insert(new_key_data).execute()
+                if ins_res.data:
+                    keys_list.extend(ins_res.data)
+            except Exception as ins_err:
+                print(f"[Create 8-Digit Key Err] {ins_err}")
+
+        def key_sort_rank(k):
+            ak = str(k.get("api_key", ""))
+            is_8 = 1 if len(ak) == 8 else 0
+            created = k.get("created_at", "")
+            return (is_8, created)
+
+        sorted_keys = sorted(keys_list, key=key_sort_rank, reverse=True)
         return sorted_keys
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1996,6 +2043,70 @@ async def user_lookup(
             "results": {"error": "Search gateway is currently unavailable. Please try again later."}
         })
 
+def check_user_wallet_and_deduct(db, license, service_type: str):
+    if not license or license.get('id') == 'system':
+        return True, "", 0, 999999
+
+    user_id = license.get('user_id')
+    user_email = license.get('user_email')
+    
+    cost_map = {
+        'phone': 2, 'number': 2, 'telegram': 8, 'tg': 8,
+        'adhr': 10, 'aadhaar': 10, 'identity': 10, 'bnk': 10,
+        'bank': 10, 'ifsc': 10, 'vehicle': 5, 'rc': 5,
+        'pancard': 10, 'pan': 10, 'aadhaar_to_pan': 150,
+        'email': 20, 'veh_owner_num': 15, 'veh_numm': 15
+    }
+    required_cost = cost_map.get(str(service_type or 'phone').lower(), 2)
+
+    plan_name = str(license.get('plan_name') or "").upper()
+    if any(p in plan_name for p in ["VIP", "INTERNAL", "SYSTEM", "UNLIMITED"]):
+        return True, "", required_cost, 999999
+
+    profile = None
+    if user_id:
+        p_res = db.table("profiles").select("*").eq("id", user_id).execute()
+        if p_res.data:
+            profile = p_res.data[0]
+    if not profile and user_email and user_email != "N/A":
+        p_res = db.table("profiles").select("*").eq("email", user_email).execute()
+        if p_res.data:
+            profile = p_res.data[0]
+
+    if not profile and user_id:
+        u_res = db.table("app_users").select("*").eq("id", user_id).execute()
+        if u_res.data:
+            profile = u_res.data[0]
+
+    if not profile:
+        return True, "", required_cost, 0
+
+    current_balance = int(profile.get('credits') or 0)
+    
+    unlimited_exp = profile.get('unlimited_expiry')
+    if unlimited_exp:
+        try:
+            clean_exp = str(unlimited_exp).replace('Z', '')
+            if '+' in clean_exp:
+                clean_exp = clean_exp.split('+')[0]
+            exp_dt = datetime.fromisoformat(clean_exp)
+            if exp_dt > datetime.utcnow():
+                return True, "", required_cost, current_balance
+        except:
+            pass
+
+    if current_balance < required_cost:
+        err_msg = f"Insufficient Wallet Balance: Your API key is connected to your account wallet. This '{service_type}' query requires ₹{required_cost}, but your current wallet balance is ₹{current_balance}. Please recharge your account."
+        return False, err_msg, required_cost, current_balance
+
+    try:
+        new_balance = max(0, current_balance - required_cost)
+        db.table("profiles").update({"credits": new_balance}).eq("id", profile['id']).execute()
+    except Exception as e:
+        print(f"[Deduct Error] {e}")
+
+    return True, "", required_cost, current_balance
+
 @app.get("/api/lookup")
 async def saas_lookup(
     request: Request,
@@ -2007,6 +2118,10 @@ async def saas_lookup(
 ):
     start_time = time.time()
     
+    key = extract_api_key(request, key)
+    service = (service or request.query_params.get("service") or request.query_params.get("type") or "").strip()
+    num = (number or query or numquery or request.query_params.get("query") or request.query_params.get("numquery") or request.query_params.get("number") or request.query_params.get("phone") or request.query_params.get("rc") or request.query_params.get("vehicle") or "").strip()
+
     # Route right away if service is passed
     if service:
         service_lower = service.lower()
@@ -2014,22 +2129,22 @@ async def saas_lookup(
             return await identity_lookup(
                 request=request, 
                 key=key, 
-                query=query or number or numquery
+                query=num
             )
         elif service_lower in ["bnk", "bank", "ifsc"]:
             return await bank_lookup(
                 request=request, 
                 key=key, 
-                query=query or number or numquery
+                query=num
             )
         elif service_lower in ["telegram", "tg", "tele"]:
             return await telegram_lookup(
                 request=request, 
                 key=key, 
-                query=query or number or numquery
+                query=num
             )
         elif service_lower in ["vehicle", "rc", "vahan"]:
-            rc_arg = request.query_params.get("rc") or query or number or numquery
+            rc_arg = request.query_params.get("rc") or num
             return await vehicle_lookup(
                 request=request,
                 key=key,
@@ -2039,18 +2154,15 @@ async def saas_lookup(
             return await email_lookup(
                 request=request,
                 key=key,
-                query=query or number or numquery
+                query=num
             )
         elif service_lower in ["veh_owner_num", "veh-owner-num", "veh_numm", "veh-numm"]:
-            rc_arg = request.query_params.get("rc") or query or number or numquery
+            rc_arg = request.query_params.get("rc") or num
             return await veh_owner_num_lookup(
                 request=request,
                 key=key,
                 rc=rc_arg
             )
-
-
-    num = (number or query or numquery or "").strip()
 
     import re
     if not service and num:
@@ -2070,7 +2182,12 @@ async def saas_lookup(
 
         # 2. Key Check (Parameter level check)
         if not key:
-            return make_api_response({"status": "error", "message": "Access Denied: Please provide your 'key' parameter"})
+            return make_api_response({
+                "status": "error", 
+                "message": "Access Denied: Please provide your 'key' or 'api_key' parameter",
+                "api_buy_link": "https://tracexdata.online/buy-api",
+                "website_link": "https://tracexdata.online"
+            })
 
         db = get_supabase()
         if not db:
@@ -2112,6 +2229,18 @@ async def saas_lookup(
             license = {"id": "system", "plan_name": "Internal VIP", "requests_used": 0, "expires_at": "Never"}
             user_id = None
             user_email = None
+
+        # Wallet balance & deduction check
+        authorized, wallet_err, req_cost, curr_bal = check_user_wallet_and_deduct(db, license, service or "phone")
+        if not authorized:
+            return make_api_response({
+                "status": "error",
+                "message": wallet_err,
+                "required_cost": req_cost,
+                "wallet_balance": curr_bal,
+                "api_buy_link": "https://tracexdata.online/buy-api",
+                "website_link": "https://tracexdata.online"
+            })
 
         # Check permission for Number Lookup
         plan_name = license.get('plan_name') or ""

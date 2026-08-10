@@ -1023,6 +1023,15 @@ app.post("/api/mobile-auth/login", async (req, res) => {
   }
 });
 
+function generate8DigitApiKey(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 // GET /api/user-keys - Fetch API keys securely on behalf of user
 app.get("/api/user-keys", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -1050,16 +1059,17 @@ app.get("/api/user-keys", async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    if (!data || data.length === 0) {
-      // Auto-create a primary Account API Key for this user connected directly to their wallet
-      const autoKey = `trx_live_${Math.random().toString(36).substring(2, 12)}${Date.now().toString(36)}`;
+    data = data || [];
+    const has8Digit = data.some((k: any) => k.api_key && String(k.api_key).length === 8 && k.status === "active");
+    if (!has8Digit) {
+      const autoKey = generate8DigitApiKey();
       const { data: newKeyData, error: createErr } = await supabaseAdmin
         .from("api_keys")
         .insert({
           api_key: autoKey,
           user_id: user.id,
           user_email: user.email || "N/A",
-          plan_name: "Account Wallet API (₹2/lookup)",
+          plan_name: "Account Wallet API (8-Digit)",
           request_limit: null,
           expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
           status: "active"
@@ -1067,11 +1077,18 @@ app.get("/api/user-keys", async (req, res) => {
         .select("*");
 
       if (!createErr && newKeyData) {
-        data = newKeyData;
+        data = [...newKeyData, ...data];
       }
     }
 
-    return res.json(data || []);
+    data.sort((a: any, b: any) => {
+      const a8 = a.api_key && String(a.api_key).length === 8 ? 1 : 0;
+      const b8 = b.api_key && String(b.api_key).length === 8 ? 1 : 0;
+      if (a8 !== b8) return b8 - a8;
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+
+    return res.json(data);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
@@ -1098,12 +1115,8 @@ app.get("/api/wallet/history", async (req, res) => {
       }
     }
 
-    if (!userId) {
-      return res.json([
-        { id: 1, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: 1470.00, date: new Date().toISOString().replace('T', ' ').substring(0, 19) },
-        { id: 2, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: 1485.00, date: new Date(Date.now() - 3600000).toISOString().replace('T', ' ').substring(0, 19) },
-        { id: 3, service: "Wallet Recharge via Cashfree", type: "Credit", amount: 500.00, balanceAfter: 1505.00, date: new Date(Date.now() - 86400000).toISOString().replace('T', ' ').substring(0, 19) }
-      ]);
+    if (!userId && !userEmail) {
+      return res.json([]);
     }
 
     const { data: txData, error: txErr } = await supabaseAdmin
@@ -1114,11 +1127,7 @@ app.get("/api/wallet/history", async (req, res) => {
       .limit(50);
 
     if (txErr || !txData || txData.length === 0) {
-      return res.json([
-        { id: 1, service: "B2B API Call: PAN_TO_NAME_DOB", type: "Debit", amount: 15.00, balanceAfter: 1470.00, date: new Date().toISOString().replace('T', ' ').substring(0, 19) },
-        { id: 2, service: "B2B API Call: PANFIND", type: "Debit", amount: 20.00, balanceAfter: 1485.00, date: new Date(Date.now() - 3600000).toISOString().replace('T', ' ').substring(0, 19) },
-        { id: 3, service: "Wallet Recharge via Cashfree", type: "Credit", amount: 500.00, balanceAfter: 1505.00, date: new Date(Date.now() - 86400000).toISOString().replace('T', ' ').substring(0, 19) }
-      ]);
+      return res.json([]);
     }
 
     const formatted = txData.map((t: any, idx: number) => ({
@@ -1216,31 +1225,122 @@ app.get("/api/service-records", async (req, res) => {
       return res.json([]);
     }
 
-    const { data: recs, error: recErr } = await supabaseAdmin
+    // Try search_history first where logSearchHistory records user activity
+    const { data: searchLogs } = await supabaseAdmin
+      .from("search_history")
+      .select("*")
+      .or(`user_id.eq.${user.id},user_email.eq.${user.email}`)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (searchLogs && searchLogs.length > 0) {
+      const formatted = searchLogs.map((r: any, idx: number) => ({
+        id: r.id || String(idx + 1),
+        logId: `#${r.id ? String(r.id).slice(-4) : (1000 - idx)}`,
+        dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
+        client: user.email?.split('@')[0] || "User",
+        serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
+        referenceCode: r.query || "N/A",
+        status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+        payload: {
+          status: r.status || "SUCCESS",
+          search_type: r.search_type,
+          query: r.query,
+          created_at: r.created_at
+        }
+      }));
+      return res.json(formatted);
+    }
+
+    // Secondary check: service_records table
+    const { data: recs } = await supabaseAdmin
       .from("service_records")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(30);
 
-    if (recErr || !recs || recs.length === 0) {
-      return res.json([]);
+    if (recs && recs.length > 0) {
+      const formatted = recs.map((r: any, idx: number) => ({
+        id: r.id || String(idx + 1),
+        logId: `#${r.log_number || (660 - idx)}`,
+        dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
+        client: r.client_name || user.email?.split('@')[0] || "User",
+        serviceName: r.service_name || "API Service",
+        referenceCode: r.reference_code || "REF12345",
+        status: r.status || "SUCCESS",
+        payload: r.result_payload || { status: "SUCCESS", message: "Processed" }
+      }));
+      return res.json(formatted);
     }
 
-    const formatted = recs.map((r: any, idx: number) => ({
-      id: r.id || String(idx + 1),
-      logId: `#${r.log_number || (660 - idx)}`,
-      dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
-      client: r.client_name || user.email?.split('@')[0] || "User",
-      serviceName: r.service_name || "API Service",
-      referenceCode: r.reference_code || "REF12345",
-      status: r.status || "SUCCESS",
-      payload: r.result_payload || { status: "SUCCESS", message: "Processed" }
-    }));
-
-    return res.json(formatted);
+    return res.json([]);
   } catch (err: any) {
     return res.json([]);
+  }
+});
+
+// GET /api/alvis/history/searches - Fetch Alvis API search logs
+app.get("/api/alvis/history/searches", async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.json({ status: "success", searches: [] });
+    }
+    const limit = Number(req.query.limit) || 50;
+    const { data, error } = await supabaseAdmin
+      .from("search_history")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error || !data) {
+      return res.json({ status: "success", searches: [] });
+    }
+
+    const formatted = data.map((s: any) => ({
+      id: s.id,
+      query: s.query,
+      search_type: s.search_type || "api_call",
+      status: s.status || "success",
+      user_email: s.user_email || "Guest",
+      created_at: s.created_at
+    }));
+
+    return res.json({ status: "success", searches: formatted });
+  } catch (err) {
+    return res.json({ status: "success", searches: [] });
+  }
+});
+
+// GET /api/alvis/history/transactions - Fetch Alvis API transaction logs
+app.get("/api/alvis/history/transactions", async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.json({ status: "success", transactions: [] });
+    }
+    const limit = Number(req.query.limit) || 50;
+    const { data, error } = await supabaseAdmin
+      .from("wallet_transactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error || !data) {
+      return res.json({ status: "success", transactions: [] });
+    }
+
+    const formatted = data.map((t: any) => ({
+      id: t.id,
+      service_name: t.service_name || t.description || "API Charge",
+      amount: t.amount,
+      type: t.type || "debit",
+      user_email: t.user_email || "User",
+      created_at: t.created_at
+    }));
+
+    return res.json({ status: "success", transactions: formatted });
+  } catch (err) {
+    return res.json({ status: "success", transactions: [] });
   }
 });
 
@@ -1473,34 +1573,14 @@ app.all("/api/support-lookup", async (req, res) => {
 
     if (service === 'phone') {
       const cleanPhone = cleanedQuery.replace(/\D/g, '');
-      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(cleanPhone)}`;
+      const newApiUrl = getProviderUrl('phone', cleanPhone);
       try {
         const resp = await fetch(newApiUrl, { headers });
         if (resp.ok) {
           const text = await resp.text();
-          let parsed: any;
-          try { parsed = JSON.parse(text); } catch (e) { parsed = parsePhonePlainText(text); }
-          if (parsed && typeof parsed === 'object') {
-            let records = parsed.results || parsed.data || parsed.records;
-            if (!records) {
-              if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
-                records = { "1": parsed };
-              } else {
-                const hasNested = Object.values(parsed).some(v => v && typeof v === 'object');
-                if (hasNested) records = parsed;
-              }
-            }
-            if (records) {
-              if (Array.isArray(records)) {
-                const map: Record<string, any> = {};
-                records.forEach((rec, idx) => { if (rec && typeof rec === 'object') map[`Result ${idx + 1}`] = rec; });
-                responseData = { results: map };
-              } else {
-                responseData = { results: records };
-              }
-            } else {
-              responseData = parsed;
-            }
+          const parsedResults = universalParseAndFormatResponse(text, 'phone', cleanPhone);
+          if (parsedResults && Object.keys(parsedResults).length > 0) {
+            responseData = { results: parsedResults };
           }
         }
       } catch (e) {
@@ -1874,57 +1954,26 @@ app.get("/api/user-lookup", async (req, res) => {
         activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
       }
       
-      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(cleanedQuery)}`;
+      const newApiUrl = getProviderUrl('phone', cleanedQuery);
       const target = `http://127.0.0.1:${PORT}/api/lookup?key=${activeKey}&query=${encodeURIComponent(cleanedQuery)}`;
       
       try {
-        console.log(`Querying new phone API: ${newApiUrl}`);
+        console.log(`Querying phone API: ${newApiUrl}`);
         const response = await fetch(newApiUrl, { headers });
         if (response.ok) {
           const text = await response.text();
-          console.log("New Phone API response preview:", text.slice(0, 300));
-          let parsed: any = null;
-          try {
-            parsed = JSON.parse(text);
-          } catch (e) {
-            console.log("Failed to parse JSON from phone API, trying plaintext parser...");
-            parsed = parsePhonePlainText(text);
-          }
-          if (parsed && typeof parsed === 'object') {
-            let records = parsed.results || parsed.data || parsed.records;
-            if (!records) {
-              if (parsed.name || parsed.mobile || parsed.father_name || parsed.full_name) {
-                records = { "1": parsed };
-              } else {
-                const hasNestedObject = Object.values(parsed).some(v => v && typeof v === 'object');
-                if (hasNestedObject) {
-                  records = parsed;
-                }
-              }
-            }
-            if (records) {
-              if (Array.isArray(records)) {
-                const map: Record<string, any> = {};
-                records.forEach((rec, idx) => {
-                  if (rec && typeof rec === 'object') {
-                    map[`Result ${idx + 1}`] = rec;
-                  }
-                });
-                responseData = { results: map };
-              } else {
-                responseData = { results: records };
-              }
-            } else {
-              responseData = parsed;
-            }
+          console.log("Phone API response preview:", text.slice(0, 300));
+          const parsedResults = universalParseAndFormatResponse(text, 'phone', cleanedQuery);
+          if (parsedResults && Object.keys(parsedResults).length > 0) {
+            responseData = { results: parsedResults };
           }
         }
       } catch (err) {
-        console.error("New phone API failed, falling back to old target:", err);
+        console.error("Phone API failed, falling back to target:", err);
       }
 
       if (!responseData) {
-        console.log(`Falling back to old phone target: ${target}`);
+        console.log(`Falling back to phone target: ${target}`);
         const response = await fetch(target, { headers });
         if (response.ok) {
           const data = await response.json();
@@ -1977,46 +2026,36 @@ app.get("/api/user-lookup", async (req, res) => {
       let api_url = "";
       if (service === 'adhr') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        api_url = `https://exploitsindia.site/osint-api/aadhar.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('aadhaar', targetQuery);
       } else if (service === 'bnk') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/ifsc.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('ifsc', targetQuery);
       } else if (service === 'vehicle') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('vehicle', targetQuery);
       } else if (service === 'veh_owner_num') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('veh_owner_num', targetQuery);
       } else if (service === 'email') {
-        api_url = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanedQuery)}`;
+        api_url = getProviderUrl('email', cleanedQuery);
       } else if (service === 'pancard') {
         const targetQuery = cleanedQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        api_url = `https://exploitsindia.site/osint-api/pancard.php?exploits=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('pancard', targetQuery);
       } else if (service === 'aadhaar_to_pan') {
         const targetQuery = cleanedQuery.replace(/[^0-9]/g, '');
-        const apiKey = "c8117598aafa71238a4bf8377087b0ff";
-        api_url = `https://techvishalboss.com/panfind/api.php?api_key=${apiKey}&aadhaar_number=${encodeURIComponent(targetQuery)}`;
+        api_url = getProviderUrl('aadhaar_to_pan', targetQuery);
       }
 
       if (api_url) {
         const response = await fetch(api_url, { headers });
         if (response.ok) {
           const text = await response.text();
-          // Try to parse JSON first
-          let parsed: any;
-          try {
-            parsed = JSON.parse(text);
-          } catch (e) {
-            // Parse plain text
-            let parseType: 'aadhar' | 'pan' | 'bank' | 'rasion' = 'aadhar';
-            if (service === 'bnk') parseType = 'bank';
-            else if (service === 'pancard') parseType = 'pan';
-            else if (service === 'aadhaar_to_pan') parseType = 'pan';
-            parsed = parsePlainTextLookup(text, parseType);
+          const parsedResults = universalParseAndFormatResponse(text, service, cleanedQuery);
+          if (parsedResults && Object.keys(parsedResults).length > 0) {
+            responseData = { results: parsedResults };
+          } else {
+            responseData = text;
           }
-          responseData = parsed;
-        } else {
-          throw new Error(`API status ${response.status}`);
         }
       }
     }
@@ -2511,12 +2550,12 @@ app.all("/api/lookup", async (req, res) => {
 
     // Forwarding logic based on target lookup Type
     if (lookupType === 'phone') {
-      const newApiUrl = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const newApiUrl = getProviderUrl('phone', targetQuery);
       const searchParams = new URLSearchParams();
       searchParams.set("key", String(key)); 
       searchParams.set("query", targetQuery);
 
-      const target = `https://exploitsindia.site//anish-private-api//number.php?exploits=${encodeURIComponent(targetQuery)}`;
+      const target = getProviderUrl('phone', targetQuery);
       let rawData: any = null;
       let responseStatus = 200;
 
@@ -2624,7 +2663,7 @@ app.all("/api/lookup", async (req, res) => {
       }
     } else if ((lookupType as string) === 'telegram') {
       const target_username = targetQuery.replace(/^@/, "");
-      const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
+      const api_url = getProviderUrl('telegram', target_username);
       const response = await fetch(api_url);
       if (!response.ok) {
         throw new Error(`Telegram Engine Offline: Status ${response.status}`);
@@ -3895,7 +3934,7 @@ app.get("/api/telegram", async (req, res) => {
       console.error("[Telegram Cache Read Error]", cacheErr);
     }
 
-    const api_url = `http://uersxinfo.in/api?key=498wlpajf&type=uers&term=${encodeURIComponent(target_username)}`;
+    const api_url = getProviderUrl('telegram', target_username);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds timeout
 
@@ -5228,9 +5267,11 @@ const CONFIG_FILE_PATH = path.join(__dirname, "data", "provider_config.json");
 const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   phone: "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
   aadhaar: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  adhr: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
   aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
   pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
   ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  bnk: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
   vehicle: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
   veh_owner_num: "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
   email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
@@ -5263,7 +5304,13 @@ initProviderConfigs();
 
 // Helper to get formatted provider URL for any service
 function getProviderUrl(serviceKey: string, query: string): string {
-  const template = PROVIDER_CONFIGS[serviceKey] || DEFAULT_PROVIDER_CONFIGS[serviceKey] || "";
+  const normKey = (serviceKey || "").trim().toLowerCase();
+  let alias = normKey;
+  if (normKey === 'adhr') alias = 'aadhaar';
+  if (normKey === 'bnk') alias = 'ifsc';
+  if (normKey === 'pan') alias = 'pancard';
+
+  const template = PROVIDER_CONFIGS[normKey] || PROVIDER_CONFIGS[alias] || DEFAULT_PROVIDER_CONFIGS[normKey] || DEFAULT_PROVIDER_CONFIGS[alias] || "";
   if (!template) return "";
   const cleanQuery = encodeURIComponent(String(query).trim());
   return template
@@ -5271,7 +5318,9 @@ function getProviderUrl(serviceKey: string, query: string): string {
     .replace(/\{term\}/gi, cleanQuery)
     .replace(/\{aadhaar_number\}/gi, cleanQuery)
     .replace(/\{exploits\}/gi, cleanQuery)
-    .replace(/\{rc\}/gi, cleanQuery);
+    .replace(/\{rc\}/gi, cleanQuery)
+    .replace(/\{ifsc\}/gi, cleanQuery)
+    .replace(/\{pan\}/gi, cleanQuery);
 }
 
 // Deep Case-Insensitive Branding and Provider Info Scrubber
@@ -5306,6 +5355,224 @@ function scrubAllBranding(obj: any): any {
     return cleaned;
   }
   return obj;
+}
+
+function parseRawTextToRecords(text: string, queryVal: string = ''): Record<string, any> {
+  const cleanText = scrubAllBranding(text).trim();
+  if (!cleanText) return {};
+
+  const recordsMap: Record<string, any> = {};
+  let recIdx = 1;
+
+  const blocks = cleanText.split(/📌\s*Additional\s*Result:|---+|===+/gi);
+
+  for (const block of blocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    const rec: Record<string, any> = {};
+
+    for (const line of lines) {
+      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+      const colonIdx = cleanLine.indexOf(':');
+      if (colonIdx !== -1) {
+        const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
+        if (!valRaw || ['none', 'null', 'n/a', '0', ''].includes(valRaw.toLowerCase())) continue;
+
+        let key = keyRaw;
+        if (keyRaw.includes('father') || keyRaw.includes('husband')) key = 'father_name';
+        else if (keyRaw.includes('alt') && (keyRaw.includes('mobile') || keyRaw.includes('phone'))) key = 'alt_mobile';
+        else if (keyRaw.includes('mobile') || keyRaw.includes('phone') || keyRaw.includes('contact')) key = 'mobile';
+        else if (keyRaw.includes('aadhaar') || keyRaw.includes('aadhar') || keyRaw.includes('uid')) key = 'aadhar_number';
+        else if (keyRaw.includes('pancard') || keyRaw.includes('pan')) key = 'pan_number';
+        else if (keyRaw.includes('ifsc')) key = 'ifsc';
+        else if (keyRaw.includes('bank') || keyRaw.includes('branch')) key = 'branch';
+        else if (keyRaw.includes('email') || keyRaw.includes('mail')) key = 'email';
+        else if (keyRaw.includes('telegram') || keyRaw.includes('tg')) key = 'telegram_id';
+        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
+        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('state')) key = 'state_circle';
+        else if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
+
+        rec[key] = valRaw;
+      } else if (cleanLine.includes('|')) {
+        const parts = cleanLine.split('|').map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          parts.forEach((p, i) => {
+            if (i === 0 && !rec.name) rec.name = p;
+            else if (i === 1 && !rec.mobile && /^\d+$/.test(p)) rec.mobile = p;
+            else rec[`detail_${i}`] = p;
+          });
+        }
+      }
+    }
+
+    if (Object.keys(rec).length > 0) {
+      if (!rec.name) {
+        if (rec.father_name) rec.name = "Verified Individual";
+        else if (rec.mobile) rec.name = `Mobile: ${rec.mobile}`;
+        else if (rec.telegram_id) rec.name = `Telegram: ${rec.telegram_id}`;
+        else rec.name = "VERIFIED RECORD";
+      }
+      recordsMap[`Result ${recIdx++}`] = rec;
+    }
+  }
+
+  return recordsMap;
+}
+
+/**
+ * Universal Response Parser & Normalizer
+ * Converts any raw upstream API output (JSON object, JSON array, nested JSON, pipe text, colon text, HTML text)
+ * into a clean, standardized, structured JSON record map matching the website UI format.
+ * Guarantees zero runtime crashes even if provider format changes completely.
+ */
+function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'general', queryVal: string = ''): Record<string, any> {
+  if (!rawInput) return {};
+
+  let textBody = "";
+  let jsonObj: any = null;
+
+  if (typeof rawInput === "object" && rawInput !== null) {
+    jsonObj = rawInput;
+    try {
+      textBody = JSON.stringify(rawInput);
+    } catch (e) {
+      textBody = String(rawInput);
+    }
+  } else if (typeof rawInput === "string") {
+    textBody = rawInput.trim();
+    if (!textBody) return {};
+    try {
+      jsonObj = JSON.parse(textBody);
+    } catch (e) {
+      jsonObj = null;
+    }
+  }
+
+  // Quick check for empty or failure responses
+  const lowerText = textBody.toLowerCase();
+  if (
+    lowerText.includes("no result") ||
+    lowerText.includes("no records found") ||
+    lowerText.includes("no data found") ||
+    lowerText.includes("invalid number") ||
+    lowerText.includes("invalid query") ||
+    lowerText.includes("not found") ||
+    lowerText.includes("unknown field")
+  ) {
+    return {};
+  }
+
+  // Key canonicalization map
+  const mapKey = (rawKey: string): string => {
+    const k = rawKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    if (k.includes('father') || k.includes('husband')) return 'father_name';
+    if (k.includes('alt') && (k.includes('mobile') || k.includes('phone') || k.includes('num'))) return 'alt_mobile';
+    if (k.includes('mobile') || k.includes('phone') || k.includes('contact') || k.includes('num') || k === 'tel') return 'mobile';
+    if (k.includes('aadhaar') || k.includes('aadhar') || k.includes('uid')) return 'aadhar_number';
+    if (k.includes('pancard') || k.includes('pan_card') || k.includes('pan_num') || k === 'pan') return 'pan_number';
+    if (k.includes('ifsc')) return 'ifsc';
+    if (k.includes('branch') || k.includes('bank')) return 'branch';
+    if (k.includes('email') || k.includes('mail')) return 'email';
+    if (k.includes('telegram') || k.includes('tg_user')) return 'telegram_id';
+    if (k.includes('vehicle') || k.includes('reg_no') || k.includes('rc_num')) return 'vehicle_number';
+    if (k.includes('address') || k.includes('location')) return 'address';
+    if (k.includes('circle') || k.includes('operator') || k.includes('state')) return 'state_circle';
+    if (k.includes('name') && !k.includes('father') && !k.includes('bank')) return 'name';
+    
+    return k.replace(/_+/g, '_').replace(/^_|_$/g, '') || 'detail';
+  };
+
+  // Record cleaner
+  const cleanRecordFields = (rec: Record<string, any>): Record<string, any> => {
+    if (!rec || typeof rec !== "object") return {};
+    const cleaned: Record<string, any> = {};
+
+    for (const [rk, rv] of Object.entries(rec)) {
+      if (rv === null || rv === undefined) continue;
+      const valStr = scrubAllBranding(String(rv)).trim();
+      if (!valStr || valStr.toUpperCase() === "NONE" || valStr.toUpperCase() === "NULL" || valStr.toUpperCase() === "N/A" || valStr === "0") continue;
+
+      const normKey = mapKey(rk);
+      cleaned[normKey] = valStr;
+    }
+
+    if (Object.keys(cleaned).length === 0) return {};
+
+    // Ensure main title/name key is present for beautiful display in UI/API
+    if (!cleaned.name) {
+      if (cleaned.father_name) cleaned.name = "Verified Individual";
+      else if (cleaned.mobile) cleaned.name = `Mobile: ${cleaned.mobile}`;
+      else if (cleaned.telegram_id) cleaned.name = `Telegram: ${cleaned.telegram_id}`;
+      else if (cleaned.branch) cleaned.name = cleaned.branch;
+      else if (cleaned.ifsc) cleaned.name = `IFSC: ${cleaned.ifsc}`;
+      else if (cleaned.aadhar_number) cleaned.name = `Aadhaar: ${cleaned.aadhar_number}`;
+      else if (cleaned.vehicle_number) cleaned.name = `Vehicle: ${cleaned.vehicle_number}`;
+      else if (cleaned.email) cleaned.name = cleaned.email;
+      else cleaned.name = "VERIFIED RECORD";
+    }
+
+    return cleaned;
+  };
+
+  const finalRecordsMap: Record<string, any> = {};
+  let recIndex = 1;
+
+  // Case 1: Input parsed as JSON
+  if (jsonObj && typeof jsonObj === "object") {
+    let unwrapped = jsonObj.results || jsonObj.data || jsonObj.records || jsonObj.payload || jsonObj.response || jsonObj;
+
+    if (Array.isArray(unwrapped)) {
+      unwrapped.forEach(item => {
+        if (typeof item === 'object' && item !== null) {
+          const cleaned = cleanRecordFields(item);
+          if (Object.keys(cleaned).length > 0) {
+            finalRecordsMap[`Result ${recIndex++}`] = cleaned;
+          }
+        } else if (typeof item === 'string') {
+          const parsedItem = parseRawTextToRecords(item, queryVal);
+          Object.values(parsedItem).forEach(subRec => {
+            if (subRec && Object.keys(subRec).length > 0) {
+              finalRecordsMap[`Result ${recIndex++}`] = subRec;
+            }
+          });
+        }
+      });
+    } else if (typeof unwrapped === 'object' && unwrapped !== null) {
+      const values = Object.values(unwrapped);
+      const hasSubObjects = values.some(v => v && typeof v === 'object' && !Array.isArray(v));
+
+      if (hasSubObjects) {
+        for (const [k, v] of Object.entries(unwrapped)) {
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            const cleaned = cleanRecordFields(v as Record<string, any>);
+            if (Object.keys(cleaned).length > 0) {
+              finalRecordsMap[`Result ${recIndex++}`] = cleaned;
+            }
+          }
+        }
+      } else {
+        const cleaned = cleanRecordFields(unwrapped as Record<string, any>);
+        if (Object.keys(cleaned).length > 0) {
+          finalRecordsMap[`Result ${recIndex++}`] = cleaned;
+        }
+      }
+    }
+  }
+
+  // Case 2: Plain text or fallback
+  if (Object.keys(finalRecordsMap).length === 0 && textBody) {
+    const textRecords = parseRawTextToRecords(textBody, queryVal);
+    for (const [k, v] of Object.entries(textRecords)) {
+      if (v && typeof v === 'object') {
+        const cleaned = cleanRecordFields(v as Record<string, any>);
+        if (Object.keys(cleaned).length > 0) {
+          finalRecordsMap[`Result ${recIndex++}`] = cleaned;
+        }
+      }
+    }
+  }
+
+  return finalRecordsMap;
 }
 
 // Universal response failsafe check
@@ -5378,16 +5645,44 @@ app.post("/api/admin/provider-configs", async (req, res) => {
   try {
     const { configs } = req.body;
     if (configs && typeof configs === "object") {
-      PROVIDER_CONFIGS = { ...PROVIDER_CONFIGS, ...configs };
-      fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(PROVIDER_CONFIGS, null, 2), "utf-8");
-      
+      const cleanConfigs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(configs)) {
+        if (typeof v === 'string') {
+          cleanConfigs[k.trim()] = v.trim();
+        }
+      }
+
+      PROVIDER_CONFIGS = { ...PROVIDER_CONFIGS, ...cleanConfigs };
+
+      // Mirror aliases
+      if (cleanConfigs.aadhaar) PROVIDER_CONFIGS.adhr = cleanConfigs.aadhaar;
+      if (cleanConfigs.adhr) PROVIDER_CONFIGS.aadhaar = cleanConfigs.adhr;
+      if (cleanConfigs.ifsc) PROVIDER_CONFIGS.bnk = cleanConfigs.ifsc;
+      if (cleanConfigs.bnk) PROVIDER_CONFIGS.ifsc = cleanConfigs.bnk;
+      if (cleanConfigs.pancard) PROVIDER_CONFIGS.pan = cleanConfigs.pancard;
+      if (cleanConfigs.pan) PROVIDER_CONFIGS.pancard = cleanConfigs.pan;
+
+      try {
+        const dataDir = path.join(__dirname, "data");
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true });
+        }
+        fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(PROVIDER_CONFIGS, null, 2), "utf-8");
+      } catch (fsErr) {
+        console.error("[PROVIDER_CONFIG_FS_ERR]", fsErr);
+      }
+
       if (supabaseAdmin) {
-        for (const [key, url] of Object.entries(configs)) {
-          await supabaseAdmin.from("api_provider_configs").upsert({
-            service_key: key,
-            provider_url: url,
-            updated_at: new Date().toISOString()
-          }, { onConflict: "service_key" });
+        try {
+          for (const [key, url] of Object.entries(cleanConfigs)) {
+            await supabaseAdmin.from("api_provider_configs").upsert({
+              service_key: key,
+              provider_url: url,
+              updated_at: new Date().toISOString()
+            }, { onConflict: "service_key" }).catch(() => null);
+          }
+        } catch (subErr) {
+          console.warn("[PROVIDER_CONFIG_SUPABASE_NOTICE]", subErr);
         }
       }
       return res.json({ status: "success", configs: PROVIDER_CONFIGS });

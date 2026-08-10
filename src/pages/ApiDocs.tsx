@@ -386,7 +386,12 @@ export default function ApiDocs() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
-            setApiKey(data[0].api_key);
+            const k8 = data.find((k: any) => k.api_key && String(k.api_key).length === 8 && k.status === 'active');
+            if (k8) {
+              setApiKey(k8.api_key);
+            } else {
+              setApiKey(data[0].api_key);
+            }
           }
         }
       } catch (err) {
@@ -406,12 +411,31 @@ export default function ApiDocs() {
   // Regenerate Token
   const handleRegenerateKey = async () => {
     setIsRegenerating(true);
-    const newKey = `be${Math.random().toString(36).substring(2, 14)}${Date.now().toString(36)}`;
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let newKey = "";
+    for (let i = 0; i < 8; i++) {
+      newKey += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || "";
+      if (token && user?.id) {
+        await supabase.from("api_keys").insert([{
+          api_key: newKey,
+          user_id: user.id,
+          user_email: user.email || "N/A",
+          plan_name: "Account Wallet API (8-Digit)",
+          status: "active"
+        }]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
     setApiKey(newKey);
     setTimeout(() => {
       setIsRegenerating(false);
-      alert("New API Key generated successfully!");
-    }, 600);
+      alert(`New 8-Digit API Key (${newKey}) generated successfully!`);
+    }, 400);
   };
 
   // Live Tester URL

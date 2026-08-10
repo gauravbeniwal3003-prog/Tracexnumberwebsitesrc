@@ -287,14 +287,6 @@ END $$;`;
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                 {isSignUp ? "Create Account" : "Welcome Back"}
               </h2>
-              <button
-                type="button"
-                onClick={() => setShowSqlModal(true)}
-                className="text-[11px] font-bold bg-slate-900 text-amber-300 hover:bg-slate-800 border border-amber-400/40 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-              >
-                <Terminal className="w-3.5 h-3.5 text-amber-300" />
-                <span>Database SQL Query</span>
-              </button>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 font-medium">
               Apne <span className="text-blue-600 font-bold">TraceXData</span> account me {isSignUp ? "register" : "login"} karein
@@ -495,16 +487,6 @@ END $$;`;
           <div className="mt-6 text-center text-[10px] text-slate-400 uppercase tracking-widest font-bold">
             Protected by TraceXData SSL & SQL Injection Shield
           </div>
-        </div>
-
-        {/* Footer Link */}
-        <div className="text-center pt-4">
-          <button
-            onClick={() => navigate('/alvisappapi')}
-            className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-          >
-            Client Alvis App API Management Page →
-          </button>
         </div>
       </div>
 

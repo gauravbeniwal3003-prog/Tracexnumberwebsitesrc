@@ -37,7 +37,7 @@ export default function ServiceRecords() {
           });
           if (res.ok) {
             const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
+            if (Array.isArray(data)) {
               setRecords(data);
               setIsLoading(false);
               return;
@@ -48,114 +48,7 @@ export default function ServiceRecords() {
         console.error("Error loading service records:", err);
       }
 
-      // Fallback records matching Screenshot 5
-      const fallbackData: ServiceRecordItem[] = [
-        {
-          id: "1",
-          logId: "#659",
-          dateTime: "2026-08-08 09:34:34",
-          client: clientName,
-          serviceName: "Pan To Name Dob",
-          referenceCode: "CREPA9736Q",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            message: "Record Retrieved",
-            data: {
-              pan: "CREPA9736Q",
-              name: "Gaurav Beniwal",
-              dob: "1998-05-14",
-              gender: "MALE",
-              aadhaar_linked: true
-            }
-          }
-        },
-        {
-          id: "2",
-          logId: "#658",
-          dateTime: "2026-08-08 09:34:34",
-          client: clientName,
-          serviceName: "Panfind",
-          referenceCode: "992976216375",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            message: "PAN Number Found",
-            data: {
-              aadhaar: "992976216375",
-              pan: "CREPA9736Q",
-              holder_name: "Gaurav Beniwal"
-            }
-          }
-        },
-        {
-          id: "3",
-          logId: "#657",
-          dateTime: "2026-08-08 09:34:31",
-          client: clientName,
-          serviceName: "Pan To Name Dob",
-          referenceCode: "CREPA9736Q",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            data: { pan: "CREPA9736Q", name: "Gaurav Beniwal", dob: "1998-05-14" }
-          }
-        },
-        {
-          id: "4",
-          logId: "#656",
-          dateTime: "2026-08-08 09:34:31",
-          client: clientName,
-          serviceName: "Panfind",
-          referenceCode: "992976216375",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            data: { aadhaar: "992976216375", pan: "CREPA9736Q" }
-          }
-        },
-        {
-          id: "5",
-          logId: "#636",
-          dateTime: "2026-08-07 19:20:41",
-          client: clientName,
-          serviceName: "Pan To Name Dob",
-          referenceCode: "DVIPP5036F",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            data: { pan: "DVIPP5036F", name: "Deepak Sharma", dob: "1994-11-20" }
-          }
-        },
-        {
-          id: "6",
-          logId: "#635",
-          dateTime: "2026-08-07 19:20:40",
-          client: clientName,
-          serviceName: "Panfind",
-          referenceCode: "287433498963",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            data: { aadhaar: "287433498963", pan: "DVIPP5036F" }
-          }
-        },
-        {
-          id: "7",
-          logId: "#632",
-          dateTime: "2026-08-07 18:46:38",
-          client: clientName,
-          serviceName: "Pan 360",
-          referenceCode: "ALQPR2068G",
-          status: "SUCCESS",
-          payload: {
-            status: "SUCCESS",
-            data: { pan: "ALQPR2068G", name: "Ramesh Kumar", category: "Individual", status: "Active" }
-          }
-        }
-      ];
-
-      setRecords(fallbackData);
+      setRecords([]);
       setIsLoading(false);
     }
 
@@ -188,6 +81,16 @@ export default function ServiceRecords() {
             <div className="py-12 text-center space-y-2">
               <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mx-auto" />
               <p className="text-xs text-slate-500 font-bold">Fetching execution logs...</p>
+            </div>
+          ) : records.length === 0 ? (
+            <div className="py-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
+                <ListFilter className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800">No Service Records Found</h3>
+                <p className="text-xs text-slate-500 mt-1">Execute an API query or search to see your service logs history here.</p>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
