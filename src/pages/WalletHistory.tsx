@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Wallet, History, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
+import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 
@@ -29,18 +30,19 @@ export default function WalletHistory() {
     async function loadWalletTransactions() {
       setIsLoading(true);
       try {
-        if (user) {
-          const token = await user.getIdToken();
-          const res = await fetch(`${baseDomain}/api/wallet/history`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-              setTransactions(data);
-              setIsLoading(false);
-              return;
-            }
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token || "";
+        const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
+
+        const res = await fetch(`${baseDomain}/api/wallet/history${emailParam}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setTransactions(data);
+            setIsLoading(false);
+            return;
           }
         }
       } catch (err) {

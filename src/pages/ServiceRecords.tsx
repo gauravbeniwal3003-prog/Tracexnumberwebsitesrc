@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ListFilter, Eye, Check, Clock, X, Terminal, FileText, Search, RefreshCw } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
+import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 
@@ -22,38 +23,47 @@ export default function ServiceRecords() {
 
   const [records, setRecords] = useState<ServiceRecordItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedRecord, setSelectedRecord] = useState<ServiceRecordItem | null>(null);
 
-  const clientName = (profile as any)?.name || user?.email?.split('@')[0] || "Gaurav beniwal";
+  const clientName = (profile as any)?.name || user?.email?.split('@')[0] || "User";
 
-  useEffect(() => {
-    async function loadRecords() {
-      setIsLoading(true);
-      try {
-        if (user) {
-          const token = await user.getIdToken();
-          const res = await fetch(`${baseDomain}/api/service-records`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-              setRecords(data);
-              setIsLoading(false);
-              return;
-            }
-          }
+  const loadRecords = async () => {
+    setIsLoading(true);
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token || "";
+      const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
+      
+      const res = await fetch(`${baseDomain}/api/service-records${emailParam}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setRecords(data);
+          setIsLoading(false);
+          return;
         }
-      } catch (err) {
-        console.error("Error loading service records:", err);
       }
-
-      setRecords([]);
-      setIsLoading(false);
+    } catch (err) {
+      console.error("Error loading service records:", err);
     }
 
+    setRecords([]);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
     loadRecords();
-  }, [user, profile, clientName, baseDomain]);
+  }, [user, profile, baseDomain]);
+
+  const filteredRecords = records.filter(r => 
+    !searchQuery || 
+    r.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.referenceCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.client.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans pb-20">
@@ -63,16 +73,39 @@ export default function ServiceRecords() {
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-6 space-y-6">
         
         {/* HEADER TITLE CARD (Matching Screenshot 5) */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-1">
-          <div className="flex items-center gap-2">
-            <ListFilter className="w-5 h-5 text-indigo-600" />
-            <h1 className="text-xl font-black text-slate-900 tracking-tight uppercase">
-              Service Records
-            </h1>
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ListFilter className="w-5 h-5 text-indigo-600" />
+              <h1 className="text-xl font-black text-slate-900 tracking-tight uppercase">
+                Service Records & Search History
+              </h1>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Real-time log of portal searches and B2B API inquiries executed under your account.
+            </p>
           </div>
-          <p className="text-xs text-slate-500 font-medium">
-            Your last 20 API service execution results.
-          </p>
+
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter history..."
+                className="w-full bg-slate-50 border border-slate-200 text-xs font-semibold rounded-xl pl-9 pr-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
+            <button
+              onClick={loadRecords}
+              disabled={isLoading}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/60 rounded-xl text-indigo-600 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
         </div>
 
         {/* RECORDS TABLE CARD (Matching Screenshot 5) */}
@@ -82,7 +115,7 @@ export default function ServiceRecords() {
               <RefreshCw className="w-6 h-6 text-slate-400 animate-spin mx-auto" />
               <p className="text-xs text-slate-500 font-bold">Fetching execution logs...</p>
             </div>
-          ) : records.length === 0 ? (
+          ) : filteredRecords.length === 0 ? (
             <div className="py-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
                 <ListFilter className="w-6 h-6" />
@@ -106,7 +139,7 @@ export default function ServiceRecords() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-xs text-slate-700">
-                  {records.map((rec) => (
+                  {filteredRecords.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-4 font-mono font-bold text-slate-500 text-[11px]">
                         {rec.logId}

@@ -18,7 +18,8 @@ import {
   FileJson,
   ArrowLeft,
   Wallet,
-  CreditCard
+  CreditCard,
+  Tag
 } from "lucide-react";
 import { getApiBaseUrl } from "../services/api";
 import { useAuth } from "../services/AuthContext";
@@ -36,6 +37,29 @@ interface EndpointSpec {
 }
 
 const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
+  {
+    name: "Account & Wallet",
+    endpoints: [
+      {
+        id: "#0",
+        name: "Check Account Balance API",
+        serviceCode: "balance",
+        price: "FREE (₹0.00)",
+        category: "Account & Wallet",
+        paramPlaceholder: "(No Query Needed)",
+        sampleQuery: "balance"
+      },
+      {
+        id: "#00",
+        name: "Real-Time Service Prices API",
+        serviceCode: "pricing",
+        price: "FREE (₹0.00)",
+        category: "Account & Wallet",
+        paramPlaceholder: "(No Query Needed)",
+        sampleQuery: "pricing"
+      }
+    ]
+  },
   {
     name: "Phone & Telecom",
     endpoints: [
@@ -133,6 +157,44 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
 
 function getEndpointSampleResponse(serviceCode: string) {
   switch (serviceCode) {
+    case "pricing":
+      return {
+        status: "success",
+        message: "Real-time service pricing fetched successfully for user account",
+        api_key: "38920147",
+        user_id: "usr_8829102",
+        user_email: "user@tracexdata.online",
+        plan_name: "API Member Plan",
+        total_services: 9,
+        pricing_updated_at: new Date().toISOString(),
+        services: [
+          { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
+          { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
+          { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
+          { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
+          { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
+          { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 5.00, your_price: 1.00, discount_percent: 80, currency: "INR" },
+          { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 15.00, your_price: 1.00, discount_percent: 93.33, currency: "INR" },
+          { service_key: "aadhaar_to_pan", service_name: "Aadhaar to PAN Find / Link", category: "Identity & Govt", base_price: 150.00, your_price: 150.00, discount_percent: 0, currency: "INR" },
+          { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00, your_price: 0.00, discount_percent: 0, currency: "INR" }
+        ]
+      };
+    case "balance":
+      return {
+        status: "success",
+        message: "Account wallet balance retrieved successfully",
+        service: "user_balance",
+        api_key: "38920147",
+        user_id: "usr_8829102",
+        user_email: "user@tracexdata.online",
+        plan_name: "Account Wallet API (8-Digit)",
+        wallet_balance: 1470.00,
+        currency: "INR",
+        requests_used: 12,
+        request_limit: "Unlimited",
+        key_status: "active",
+        expires_at: "Never"
+      };
     case "adhar2panlink":
       return {
         status: "success",
@@ -438,21 +500,32 @@ export default function ApiDocs() {
     }, 400);
   };
 
+  const [isCopiedBalanceLink, setIsCopiedBalanceLink] = useState(false);
+  const [isCopiedPricingLink, setIsCopiedPricingLink] = useState(false);
+
   // Live Tester URL
-  const currentRequestUrl = `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput)}`;
+  const currentRequestUrl = selectedEndpointCode === 'balance' 
+    ? `${baseDomain}/api/balance?api_key=${apiKey}`
+    : selectedEndpointCode === 'pricing'
+    ? `${baseDomain}/api/pricing?api_key=${apiKey}`
+    : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput)}`;
 
   // Run Live Tester Call
   const handleSendRequest = async () => {
     setIsLoadingTest(true);
     setTestResponse(null);
     try {
-      const endpointUrl = `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput || "998877665544")}`;
+      const endpointUrl = selectedEndpointCode === 'balance'
+        ? `${baseDomain}/api/balance?api_key=${apiKey}`
+        : selectedEndpointCode === 'pricing'
+        ? `${baseDomain}/api/pricing?api_key=${apiKey}`
+        : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput || "998877665544")}`;
+
       const res = await fetch(endpointUrl);
       if (res.ok) {
         const data = await res.json();
         setTestResponse(data);
       } else {
-        // Fallback to rich mock sample payload for realistic testing UI
         setTestResponse(getEndpointSampleResponse(selectedEndpointCode));
       }
     } catch (err: any) {
@@ -551,6 +624,94 @@ export default function ApiDocs() {
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`} />
                   <span>Regenerate Token (Free)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* CHECK ACCOUNT BALANCE API CARD */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
+                  Check Account Balance API
+                </h3>
+              </div>
+
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                Check your wallet balance &amp; request status anytime via API using your pre-filled unique endpoint:
+              </p>
+
+              <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-xl p-3 font-mono text-[11px] break-all select-all font-semibold">
+                {baseDomain}/api/balance?api_key={apiKey}
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${baseDomain}/api/balance?api_key=${apiKey}`);
+                    setIsCopiedBalanceLink(true);
+                    setTimeout(() => setIsCopiedBalanceLink(false), 2000);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+                >
+                  {isCopiedBalanceLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                  <span>{isCopiedBalanceLink ? "Balance API URL Copied!" : "Copy Balance API URL"}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedEndpointCode("balance");
+                    setQueryInput("balance");
+                    handleSendRequest();
+                  }}
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Test Balance API Now</span>
+                </button>
+              </div>
+            </div>
+
+            {/* REAL-TIME SERVICE PRICES API CARD */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
+                  Real-time Prices API
+                </h3>
+              </div>
+
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                Fetch live user-specific per-service pricing &amp; discounts dynamically for integration into external apps:
+              </p>
+
+              <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-xl p-3 font-mono text-[11px] break-all select-all font-semibold">
+                {baseDomain}/api/pricing?api_key={apiKey}
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${baseDomain}/api/pricing?api_key=${apiKey}`);
+                    setIsCopiedPricingLink(true);
+                    setTimeout(() => setIsCopiedPricingLink(false), 2000);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+                >
+                  {isCopiedPricingLink ? <Check className="w-4 h-4 text-indigo-600" /> : <Copy className="w-4 h-4" />}
+                  <span>{isCopiedPricingLink ? "Pricing API URL Copied!" : "Copy Pricing API URL"}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedEndpointCode("pricing");
+                    setQueryInput("pricing");
+                    handleSendRequest();
+                  }}
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Test Pricing API Now</span>
                 </button>
               </div>
             </div>

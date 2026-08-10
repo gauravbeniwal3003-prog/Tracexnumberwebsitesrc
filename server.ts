@@ -102,30 +102,84 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate Limiting
+// Security Guard & Exploit Prevention Middleware
+const securityGuard = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const suspiciousRegex = [
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    /UNION\s+ALL\s+SELECT/gi,
+    /SELECT\s+.+\s+FROM/gi,
+    /DROP\s+TABLE/gi,
+    /DELETE\s+FROM/gi,
+    /UPDATE\s+.+\s+SET/gi,
+    /--\s*$/g,
+    /\.\.\/\.\./g,
+    /\/etc\/passwd/i,
+    /system\(|exec\(|eval\(|passthru\(/i,
+    /\${jndi:/i
+  ];
+
+  const inspectValue = (val: any): boolean => {
+    if (!val) return false;
+    if (typeof val === 'string') {
+      if (val.length > 500) return true;
+      for (const pattern of suspiciousRegex) {
+        if (pattern.test(val)) return true;
+      }
+    } else if (typeof val === 'object') {
+      for (const k of Object.keys(val)) {
+        if (inspectValue(val[k])) return true;
+      }
+    }
+    return false;
+  };
+
+  if (req.path.startsWith('/api/')) {
+    if (inspectValue(req.query) || inspectValue(req.body)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Security Protection: Malicious payload or unaccepted characters detected."
+      });
+    }
+  }
+
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Frame-Options', 'ALLOW-FROM https://ai.studio');
+  next();
+};
+
+app.use(securityGuard);
+
+// Rate Limiting (Adjusted for smooth user experience while protecting against DDoS)
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per windowMs
-  message: { error: "Too many requests from this IP, please try again later." },
+  max: 500, // 500 requests per IP
+  message: { status: "error", message: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use('/api/', globalLimiter);
 
-// Specific Rate Limiters for sensitive endpoints
+// Specific Rate Limiters for lookup and search endpoints
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5, // Limit each IP to 5 requests per minute
-  message: { error: 'Too many requests!' }
+  max: 60, // 60 requests per minute per IP (prevents DDoS without interrupting normal users & API keys)
+  message: { status: "error", message: "Rate limit exceeded. Maximum 60 API searches per minute allowed." }
 });
 app.use('/api/user-lookup', searchLimiter);
 app.use('/api/lookup', searchLimiter);
 app.use('/api/aadhaar-to-pan', searchLimiter);
 app.use('/api/panfind', searchLimiter);
+app.use('/api/balance', searchLimiter);
+app.use('/api/user/balance', searchLimiter);
+app.use('/api/pricing', searchLimiter);
+app.use('/api/user/pricing', searchLimiter);
+app.use('/api/services/pricing', searchLimiter);
+
 const sensitiveLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 50, // Limit each IP to 50 sensitive requests per hour
-  message: { error: "Too many sensitive requests from this IP, please try again later." },
+  max: 100, // 100 sensitive requests per hour
+  message: { status: "error", message: "Too many sensitive requests from this IP, please try again later." },
 });
 app.use('/api/cashfree', sensitiveLimiter);
 app.use('/api/admin', sensitiveLimiter);
@@ -381,40 +435,63 @@ async function logApiRequest(apiKeyId: string | null, maskedNumber: string, stat
   }
 }
 
-async function logSearchHistory(req: express.Request, searchType: string, query: string, status: string, passedClient?: any) {
+async function logSearchHistory(
+  req: express.Request, 
+  searchType: string, 
+  query: string, 
+  status: string, 
+  passedClient?: any,
+  resultsPayload?: any,
+  customUserId?: string,
+  customUserEmail?: string
+) {
   const db = passedClient || supabaseAdmin;
   if (!db) return;
   try {
-    let userId: string | null = null;
-    let userEmail: string | null = null;
+    let userId: string | null = customUserId || null;
+    let userEmail: string | null = customUserEmail || null;
 
     // 1. Try to get user from Authorization token
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      if (token) {
-        try {
-          const client = passedClient || await getRequestClient(token);
-          const { data: { user } } = await client.auth.getUser(token);
-          if (user) {
-            userId = user.id;
-            userEmail = user.email || null;
+    if (!userId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.replace("Bearer ", "").trim();
+        if (token) {
+          try {
+            const client = passedClient || await getRequestClient(token);
+            const { data: { user } } = await client.auth.getUser(token);
+            if (user) {
+              userId = user.id;
+              userEmail = user.email || null;
+            }
+          } catch (authErr) {
+            // Token parse warning ignored
           }
-        } catch (authErr) {
-          console.warn("Auth token resolve error in logSearchHistory:", authErr);
         }
       }
     }
 
-    // 2. If no user from token, check if there's an api key
+    // 2. If no user from token, check if there's an API key in query, headers, or body
     if (!userId) {
-      const key = String(req.query.key || req.body.key || "").trim();
+      const key = String(
+        req.query.key || 
+        req.query.api_key || 
+        req.query.apiKey || 
+        req.headers['x-api-key'] ||
+        req.headers['api_key'] ||
+        req.body?.key || 
+        req.body?.api_key || 
+        req.body?.apiKey || 
+        ""
+      ).trim();
+
       if (key && key !== INTERNAL_MASTER_KEY) {
         const { data: keyRecords } = await db
           .from("api_keys")
           .select("user_id, user_email")
           .eq("api_key", key)
           .limit(1);
+
         if (keyRecords && keyRecords[0]) {
           userId = keyRecords[0].user_id || null;
           userEmail = keyRecords[0].user_email || null;
@@ -422,16 +499,45 @@ async function logSearchHistory(req: express.Request, searchType: string, query:
       }
     }
 
+    if (!userEmail && userId) {
+      try {
+        const { data: prof } = await db.from("profiles").select("email").eq("id", userId).limit(1);
+        if (prof?.[0]?.email) userEmail = prof[0].email;
+      } catch (e) {
+        // profile query ignored
+      }
+    }
+
+    const finalEmail = userEmail || "API User";
+    const nowIso = new Date().toISOString();
+
     // Insert into search_history
     await db.from("search_history").insert({
       user_id: userId,
-      user_email: userEmail || "Guest User",
+      user_email: finalEmail,
       search_type: searchType,
       query: query,
-      status: status
+      status: status,
+      payload: resultsPayload || { status, search_type: searchType, query, created_at: nowIso },
+      created_at: nowIso
     });
+
+    // Also insert into service_records for complete dual-table log compatibility
+    if (userId) {
+      const refCode = query || `QRY-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      await db.from("service_records").insert({
+        user_id: userId,
+        client_name: finalEmail,
+        service_name: (searchType || "Lookup").replace(/_/g, ' ').toUpperCase(),
+        reference_code: refCode,
+        status: status.toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+        result_payload: resultsPayload || { status, search_type: searchType, query, created_at: nowIso },
+        log_number: Math.floor(100 + Math.random() * 900),
+        created_at: nowIso
+      });
+    }
   } catch (err) {
-    console.error("Failed to write search_history:", err);
+    console.error("Failed to write search_history / service_records:", err);
   }
 }
 
@@ -1213,70 +1319,376 @@ app.get("/api/referral", async (req, res) => {
 app.get("/api/service-records", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+  const reqEmail = String(req.query.email || "").trim();
+  const reqUserId = String(req.query.user_id || "").trim();
+  const apiKeyParam = String(req.query.api_key || req.query.key || req.headers['x-api-key'] || "").trim();
 
   try {
-    if (!supabaseAdmin || !token) {
+    if (!supabaseAdmin) {
       return res.json([]);
     }
 
-    const { data: userData } = await supabaseAdmin.auth.getUser(token);
-    const user = userData?.user;
-    if (!user) {
+    let targetUserId: string | null = null;
+    let targetUserEmail: string | null = null;
+
+    if (token) {
+      const { data: userData } = await supabaseAdmin.auth.getUser(token);
+      const user = userData?.user;
+      if (user) {
+        targetUserId = user.id;
+        targetUserEmail = user.email || null;
+      }
+    }
+
+    if (!targetUserId && apiKeyParam) {
+      const { data: keyRecords } = await supabaseAdmin
+        .from("api_keys")
+        .select("user_id, user_email")
+        .eq("api_key", apiKeyParam)
+        .limit(1);
+      if (keyRecords && keyRecords[0]) {
+        targetUserId = keyRecords[0].user_id || null;
+        targetUserEmail = keyRecords[0].user_email || null;
+      }
+    }
+
+    if (!targetUserId && reqUserId) {
+      targetUserId = reqUserId;
+    }
+    if (!targetUserEmail && reqEmail) {
+      targetUserEmail = reqEmail;
+    }
+
+    if (!targetUserId && !targetUserEmail) {
       return res.json([]);
     }
 
-    // Try search_history first where logSearchHistory records user activity
-    const { data: searchLogs } = await supabaseAdmin
-      .from("search_history")
-      .select("*")
-      .or(`user_id.eq.${user.id},user_email.eq.${user.email}`)
-      .order("created_at", { ascending: false })
-      .limit(30);
+    const allFormatted: any[] = [];
+    const seenMap = new Set<string>();
 
-    if (searchLogs && searchLogs.length > 0) {
-      const formatted = searchLogs.map((r: any, idx: number) => ({
-        id: String(r.id || idx + 1),
-        logId: `#${r.id != null ? r.id : (idx + 1)}`,
-        dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
-        client: user.email?.split('@')[0] || "User",
-        serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
-        referenceCode: r.query || "N/A",
-        status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
-        payload: r.results || r.payload || {
-          status: r.status || "SUCCESS",
-          search_type: r.search_type,
-          query: r.query,
-          created_at: r.created_at
-        }
-      }));
-      return res.json(formatted);
+    // 1. Fetch from search_history
+    let querySh = supabaseAdmin.from("search_history").select("*").order("created_at", { ascending: false }).limit(50);
+    if (targetUserId && targetUserEmail) {
+      querySh = querySh.or(`user_id.eq.${targetUserId},user_email.eq.${targetUserEmail}`);
+    } else if (targetUserId) {
+      querySh = querySh.eq("user_id", targetUserId);
+    } else if (targetUserEmail) {
+      querySh = querySh.eq("user_email", targetUserEmail);
     }
 
-    // Secondary check: service_records table
-    const { data: recs } = await supabaseAdmin
-      .from("service_records")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(30);
+    const { data: searchLogs } = await querySh;
 
-    if (recs && recs.length > 0) {
-      const formatted = recs.map((r: any, idx: number) => ({
-        id: r.id || String(idx + 1),
-        logId: `#${r.log_number || (660 - idx)}`,
-        dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
-        client: r.client_name || user.email?.split('@')[0] || "User",
-        serviceName: r.service_name || "API Service",
-        referenceCode: r.reference_code || "REF12345",
-        status: r.status || "SUCCESS",
-        payload: r.result_payload || { status: "SUCCESS", message: "Processed" }
-      }));
-      return res.json(formatted);
+    if (searchLogs && Array.isArray(searchLogs)) {
+      searchLogs.forEach((r: any, idx: number) => {
+        const uniqueKey = `${r.search_type}_${r.query}_${r.created_at}`;
+        seenMap.add(uniqueKey);
+        allFormatted.push({
+          id: String(r.id || `sh_${idx + 1}`),
+          logId: `#${r.id != null ? r.id : (idx + 1)}`,
+          dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
+          client: (r.user_email || targetUserEmail || "User").split('@')[0],
+          serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
+          referenceCode: r.query || "N/A",
+          status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+          payload: r.payload || r.results || {
+            status: r.status || "SUCCESS",
+            search_type: r.search_type,
+            query: r.query,
+            created_at: r.created_at
+          },
+          createdAtTs: r.created_at ? new Date(r.created_at).getTime() : 0
+        });
+      });
     }
 
-    return res.json([]);
+    // 2. Fetch from service_records
+    if (targetUserId) {
+      const { data: recs } = await supabaseAdmin
+        .from("service_records")
+        .select("*")
+        .eq("user_id", targetUserId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (recs && Array.isArray(recs)) {
+        recs.forEach((r: any, idx: number) => {
+          const uniqueKey = `${r.service_name}_${r.reference_code}_${r.created_at}`;
+          if (!seenMap.has(uniqueKey)) {
+            allFormatted.push({
+              id: String(r.id || `sr_${idx + 1}`),
+              logId: `#${r.log_number || (700 - idx)}`,
+              dateTime: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19),
+              client: r.client_name || (targetUserEmail || "User").split('@')[0],
+              serviceName: r.service_name || "API Service",
+              referenceCode: r.reference_code || "N/A",
+              status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+              payload: r.result_payload || { status: r.status || "SUCCESS", message: "Processed" },
+              createdAtTs: r.created_at ? new Date(r.created_at).getTime() : 0
+            });
+          }
+        });
+      }
+    }
+
+    allFormatted.sort((a, b) => b.createdAtTs - a.createdAtTs);
+
+    return res.json(allFormatted.slice(0, 50));
   } catch (err: any) {
+    console.error("Error in /api/service-records:", err);
     return res.json([]);
+  }
+});
+
+// GET or POST /api/user/balance or /api/balance - Dedicated Balance Check API
+app.all(["/api/user/balance", "/api/balance"], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+
+  const key = String(
+    req.query.api_key || 
+    req.query.key || 
+    req.query.apiKey || 
+    req.headers['x-api-key'] ||
+    req.body?.api_key || 
+    req.body?.key || 
+    req.body?.apiKey || 
+    ""
+  ).trim();
+
+  if (!key) {
+    return res.status(401).json({
+      status: "error",
+      message: "API key is required. Pass 'api_key' or 'key' parameter or 'x-api-key' header."
+    });
+  }
+
+  try {
+    if (key === INTERNAL_MASTER_KEY) {
+      return res.json({
+        status: "success",
+        message: "Account wallet balance retrieved successfully",
+        api_key: key,
+        user_id: "master_admin",
+        user_email: "master@tracexdata.online",
+        plan_name: "Internal Master VIP Unlimited API",
+        wallet_balance: 999999.00,
+        currency: "INR",
+        requests_used: 0,
+        request_limit: "UNLIMITED",
+        key_status: "active",
+        expires_at: "Never"
+      });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(500).json({ status: "error", message: "Database offline. Unable to check balance." });
+    }
+
+    const { data: keyRecords, error: keyErr } = await supabaseAdmin
+      .from("api_keys")
+      .select("*")
+      .eq("api_key", key);
+
+    if (keyErr || !keyRecords || keyRecords.length === 0) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid or unauthorized API key."
+      });
+    }
+
+    const keyRecord = keyRecords[0];
+    let walletCredits = 0.00;
+    let userEmail = keyRecord.user_email || "N/A";
+
+    if (keyRecord.user_id) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("credits, email")
+        .eq("id", keyRecord.user_id)
+        .maybeSingle();
+
+      if (profile) {
+        walletCredits = parseFloat(profile.credits || 0);
+        if (profile.email) userEmail = profile.email;
+      }
+    }
+
+    return res.json({
+      status: "success",
+      message: "Account wallet balance retrieved successfully",
+      api_key: key,
+      user_id: keyRecord.user_id || "N/A",
+      user_email: userEmail,
+      plan_name: keyRecord.plan_name || "Account Wallet API",
+      wallet_balance: walletCredits,
+      currency: "INR",
+      requests_used: keyRecord.requests_used || 0,
+      request_limit: keyRecord.request_limit || "Unlimited",
+      key_status: keyRecord.status || "active",
+      expires_at: keyRecord.expires_at || "Never"
+    });
+
+  } catch (err: any) {
+    console.error("Balance API error:", err);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error while fetching balance."
+    });
+  }
+});
+
+// GET or POST /api/pricing, /api/user/pricing, /api/services/pricing - Dedicated Real-Time Pricing API
+app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+
+  const key = String(
+    req.query.api_key || 
+    req.query.key || 
+    req.query.apiKey || 
+    req.headers['x-api-key'] ||
+    req.headers['api_key'] ||
+    req.body?.api_key || 
+    req.body?.key || 
+    req.body?.apiKey || 
+    ""
+  ).trim();
+
+  let tokenUserId: string | null = null;
+  let tokenUserEmail: string | null = null;
+
+  // Check Bearer Auth header if present
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.replace("Bearer ", "").trim();
+    if (token && supabaseAdmin) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user) {
+          tokenUserId = user.id;
+          tokenUserEmail = user.email || null;
+        }
+      } catch (e) {
+        // Auth token lookup fallback
+      }
+    }
+  }
+
+  const defaultServicesList = [
+    { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 1.00 },
+    { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 1.00 },
+    { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 1.00 },
+    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 1.00 },
+    { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 1.00 },
+    { service_key: "rasion", service_name: "Ration Card Search & Family Details", category: "Identity & Govt", base_price: 1.00 },
+    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 5.00 },
+    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 15.00 },
+    { service_key: "aadhaar_to_pan", service_name: "Aadhaar to PAN Find / Link", category: "Identity & Govt", base_price: 150.00 },
+    { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00 }
+  ];
+
+  try {
+    let targetUserId: string | null = tokenUserId;
+    let targetUserEmail: string | null = tokenUserEmail;
+    let planName = "Standard Member Plan";
+
+    if (key === INTERNAL_MASTER_KEY) {
+      targetUserId = "master_admin";
+      targetUserEmail = "master@tracexdata.online";
+      planName = "Internal Master VIP Unlimited";
+    } else if (key && supabaseAdmin && !targetUserId) {
+      const { data: keyRecords } = await supabaseAdmin
+        .from("api_keys")
+        .select("*")
+        .eq("api_key", key)
+        .limit(1);
+
+      if (keyRecords && keyRecords[0]) {
+        targetUserId = keyRecords[0].user_id || null;
+        targetUserEmail = keyRecords[0].user_email || null;
+        planName = keyRecords[0].plan_name || "API Member Plan";
+      }
+    }
+
+    if (!targetUserEmail && targetUserId && supabaseAdmin && targetUserId !== "master_admin") {
+      try {
+        const { data: prof } = await supabaseAdmin.from("profiles").select("email").eq("id", targetUserId).maybeSingle();
+        if (prof?.email) targetUserEmail = prof.email;
+      } catch (e) {
+        // profile fallback
+      }
+    }
+
+    // Fetch dynamic services list from database if available
+    let servicesToProcess = [...defaultServicesList];
+    if (supabaseAdmin) {
+      const { data: dbServices } = await supabaseAdmin
+        .from("api_services")
+        .select("service_key, service_name, base_price, category, is_active")
+        .eq("is_active", true);
+
+      if (dbServices && Array.isArray(dbServices) && dbServices.length > 0) {
+        dbServices.forEach((dbs: any) => {
+          const existing = servicesToProcess.find(s => s.service_key === dbs.service_key);
+          if (existing) {
+            existing.base_price = Number(dbs.base_price ?? existing.base_price);
+            if (dbs.service_name) existing.service_name = dbs.service_name;
+            if (dbs.category) existing.category = dbs.category;
+          } else {
+            servicesToProcess.push({
+              service_key: dbs.service_key,
+              service_name: dbs.service_name || dbs.service_key.toUpperCase(),
+              category: dbs.category || "General",
+              base_price: Number(dbs.base_price || 1.00)
+            });
+          }
+        });
+      }
+    }
+
+    // Calculate effective real-time pricing for each service
+    const pricedServices = await Promise.all(servicesToProcess.map(async (svc) => {
+      let price = svc.base_price;
+      if (svc.service_key === 'balance') {
+        price = 0.00;
+      } else if (key === INTERNAL_MASTER_KEY) {
+        price = 0.00;
+      } else {
+        price = await getEffectiveServicePrice(svc.service_key, targetUserId || undefined, targetUserEmail || undefined);
+      }
+
+      const discAmount = Math.max(0, svc.base_price - price);
+      const discPercent = svc.base_price > 0 && discAmount > 0 
+        ? parseFloat(((discAmount / svc.base_price) * 100).toFixed(2)) 
+        : 0;
+
+      return {
+        service_key: svc.service_key,
+        service_name: svc.service_name,
+        category: svc.category,
+        base_price: parseFloat(svc.base_price.toFixed(2)),
+        your_price: parseFloat(price.toFixed(2)),
+        discount_percent: discPercent,
+        currency: "INR"
+      };
+    }));
+
+    return res.json({
+      status: "success",
+      message: "Real-time service pricing fetched successfully for user account",
+      api_key: key || (targetUserId ? "SESSION_AUTH" : "PUBLIC_DEFAULT"),
+      user_id: targetUserId || "guest",
+      user_email: targetUserEmail || "Guest User",
+      plan_name: planName,
+      total_services: pricedServices.length,
+      pricing_updated_at: new Date().toISOString(),
+      services: pricedServices
+    });
+
+  } catch (err: any) {
+    console.error("Realtime Pricing API Error:", err);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal error retrieving real-time service pricing."
+    });
   }
 });
 

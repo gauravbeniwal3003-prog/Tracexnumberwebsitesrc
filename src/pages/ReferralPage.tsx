@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Gift, Copy, Check, Users, DollarSign, FolderOpen, Receipt } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
+import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 
@@ -23,9 +24,12 @@ export default function ReferralPage() {
     async function loadReferralStats() {
       if (!user) return;
       try {
-        const token = await user.getIdToken();
-        const res = await fetch(`${baseDomain}/api/referral`, {
-          headers: { Authorization: `Bearer ${token}` }
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token || "";
+        const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
+
+        const res = await fetch(`${baseDomain}/api/referral${emailParam}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         if (res.ok) {
           const data = await res.json();
