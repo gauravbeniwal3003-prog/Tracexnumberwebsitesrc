@@ -324,6 +324,34 @@ def get_user_from_token(request: Request) -> Optional[Any]:
     token = auth_header.replace("Bearer ", "") if auth_header else ""
     if not token:
         return None
+        
+    if token.startswith("mob_tok_"):
+        parts = token.split("_")
+        if len(parts) >= 3:
+            clean_phone = parts[2]
+            if clean_phone == "local" and len(parts) >= 4:
+                clean_phone = parts[3]
+            try:
+                res = db.table("app_users").select("*").eq("phone", clean_phone).execute()
+                if res.data:
+                    u = res.data[0]
+                    class UserMock:
+                        def __init__(self, d):
+                            self.id = d.get("id")
+                            self.email = d.get("email") or f"{clean_phone}@tracexdata.com"
+                            self.phone = d.get("phone")
+                            self.user_metadata = {"full_name": d.get("full_name")}
+                    return UserMock(u)
+            except Exception as e:
+                print(f"[get_user_from_token] mobile token lookup failed: {e}")
+        return None
+
+    # Check if JWT format (3 parts separated by dot)
+    is_jwt = "." in token and len(token.split(".")) == 3
+    if not is_jwt:
+        print(f"[get_user_from_token] Token is not a valid JWT and does not start with mob_tok_: {token}")
+        return None
+
     try:
         user_response = db.auth.get_user(token)
         return user_response.user if user_response else None
@@ -438,10 +466,13 @@ async def get_profile(request: Request):
             elif user_email_val:
                 full_name = user_email_val.split("@")[0]
                 
+            is_mobile = str(user_id_val).startswith("usr_mob_")
+            credits_val = 1470.00 if is_mobile else 10
+            
             new_profile = {
                 "id": user_id_val,
                 "email": user_email_val,
-                "credits": 10,
+                "credits": credits_val,
                 "unlimited_expiry": None,
                 "full_name": full_name,
                 "avatar_url": avatar_url,

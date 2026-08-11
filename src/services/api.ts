@@ -15,6 +15,32 @@ export const getApiBaseUrl = (): string => {
   return '';
 };
 
+export const getAuthToken = async (): Promise<string> => {
+  try {
+    const session = await supabase.auth.getSession();
+    if (session.data.session?.access_token) {
+      return session.data.session.access_token;
+    }
+  } catch (e) {
+    console.warn("Could not retrieve Supabase session token:", e);
+  }
+
+  // Check mobile session
+  try {
+    const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+    if (savedMobileSession) {
+      const parsed = JSON.parse(savedMobileSession);
+      if (parsed?.token) {
+        return parsed.token;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not retrieve mobile session token:", e);
+  }
+
+  return '';
+};
+
 export const safeFetchJson = async (response: Response): Promise<any> => {
   const contentType = response.headers.get('content-type') || '';
   const rawText = await response.text();
@@ -250,13 +276,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
   let lastError: any = null;
 
   // Retrieve active token for authorization with our secure backend proxy
-  let token = '';
-  try {
-    const session = await supabase.auth.getSession();
-    token = session.data.session?.access_token || '';
-  } catch (e) {
-    console.warn("Could not retrieve Supabase session token:", e);
-  }
+  const token = await getAuthToken();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -429,8 +449,7 @@ export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> =
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=telegram&query=${encodeURIComponent(cleanTelegram)}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'telegram', cleanTelegram, token);
     
@@ -625,8 +644,7 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'adhr', aadharNo, token);
 
@@ -658,8 +676,7 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'bnk', ifsc, token);
 
@@ -692,8 +709,7 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'vehicle', cleanVehicleNo, token);
     
@@ -729,8 +745,7 @@ export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse>
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=veh_owner_num&query=${cleanVehicleNo}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'veh_owner_num', cleanVehicleNo, token);
     
@@ -767,8 +782,7 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
     
@@ -805,8 +819,7 @@ export const lookupEmail = async (email: string): Promise<ApiResponse> => {
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=email&query=${encodeURIComponent(cleanEmail)}`;
 
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token || '';
+    const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'email', cleanEmail, token);
     
@@ -838,8 +851,7 @@ export const lookupEmail = async (email: string): Promise<ApiResponse> => {
 
 export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
   try {
-    const sessionRes = await supabase.auth.getSession();
-    const token = sessionRes.data.session?.access_token;
+    const token = await getAuthToken();
     
     const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
 

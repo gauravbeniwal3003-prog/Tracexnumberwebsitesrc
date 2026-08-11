@@ -103,6 +103,79 @@ const getRequestClient = async (token: string) => {
   return clientInstance;
 };
 
+const getUserFromToken = async (token: string, client?: any) => {
+  if (!token) return null;
+  
+  if (token.startsWith("mob_tok_") || token.startsWith("local_tok_")) {
+    const parts = token.split("_");
+    let cleanPhone = parts[2];
+    if (cleanPhone === "local" && parts[3]) {
+      cleanPhone = parts[3];
+    } else if (token.startsWith("local_tok_") && parts[2] && parts[2].length >= 10) {
+      cleanPhone = parts[2];
+    }
+    
+    if (!cleanPhone) return null;
+    
+    let foundUser = null;
+    if (supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("app_users")
+          .select("*")
+          .eq("phone", cleanPhone)
+          .maybeSingle();
+        if (!error && data) {
+          foundUser = data;
+        }
+      } catch (e) {
+        console.warn("Could not fetch user from app_users during token resolution:", e);
+      }
+    }
+    if (!foundUser && mobileUsersStore.has(cleanPhone)) {
+      foundUser = mobileUsersStore.get(cleanPhone);
+    }
+    if (!foundUser) return null;
+    
+    return {
+      id: foundUser.id,
+      email: foundUser.email || `${foundUser.phone}@tracexdata.com`,
+      phone: foundUser.phone,
+      user_metadata: { full_name: foundUser.full_name },
+      app_metadata: {},
+      aud: 'authenticated',
+      role: 'authenticated',
+      created_at: foundUser.created_at || new Date().toISOString(),
+      updated_at: foundUser.updated_at || new Date().toISOString()
+    };
+  }
+  
+  // Check if token is a valid JWT format (3 dot-separated parts)
+  const isJwt = token.includes(".") && token.split(".").length === 3;
+  if (!isJwt) {
+    console.warn("getUserFromToken: Token is not a valid JWT and does not start with mob_tok_/local_tok_:", token);
+    return null;
+  }
+  
+  try {
+    const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
+    if (!error && userData?.user) {
+      return userData.user;
+    }
+    // Fallback to client if admin client fails
+    const targetClient = client || await getRequestClient(token);
+    const { data: fallbackData, error: fallbackError } = await targetClient.auth.getUser(token);
+    if (!fallbackError && fallbackData?.user) {
+      return fallbackData.user;
+    }
+    console.warn("getUserFromToken failed to fetch user for token. Admin error:", error, "Fallback error:", fallbackError);
+    return null;
+  } catch (err) {
+    console.error("getUserFromToken caught error:", err);
+    return null;
+  }
+};
+
 // Cashfree Configuration
 const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID;
 const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY;
@@ -502,7 +575,7 @@ async function logSearchHistory(
         if (token) {
           try {
             const client = passedClient || await getRequestClient(token);
-            const { data: { user } } = await client.auth.getUser(token);
+            const user = await getUserFromToken(token, client);
             if (user) {
               userId = user.id;
               userEmail = user.email || null;
@@ -857,9 +930,8 @@ app.get("/api/profile", async (req, res) => {
   }
   try {
     const client = await getRequestClient(token);
-    const { data: userData, error: authErr } = await client.auth.getUser(token);
-    const user = userData?.user;
-    if (authErr || !user) {
+    const user = await getUserFromToken(token, client);
+    if (!user) {
       return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
     }
 
@@ -876,7 +948,7 @@ app.get("/api/profile", async (req, res) => {
     const now = new Date();
 
     if (!profile) {
-      const freeCredits = 10;
+      const freeCredits = user.phone ? 1470.00 : 10;
       const newProfile = {
         id: user.id,
         email: user.email,
@@ -954,9 +1026,8 @@ app.post("/api/profile/update", async (req, res) => {
   }
   try {
     const client = await getRequestClient(token);
-    const { data: userData, error: authErr } = await client.auth.getUser(token);
-    const user = userData?.user;
-    if (authErr || !user) {
+    const user = await getUserFromToken(token, client);
+    if (!user) {
       return res.status(401).json({ error: "Unauthorized: Invalid token" });
     }
 
@@ -1199,9 +1270,8 @@ app.get("/api/user-keys", async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: "Database offline" });
     }
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    const user = userData?.user;
-    if (authErr || !user) {
+    const user = await getUserFromToken(token);
+    if (!user) {
       return res.status(401).json({ error: "Unauthorized: Invalid token" });
     }
 
@@ -1264,10 +1334,10 @@ app.get("/api/wallet/history", async (req, res) => {
     let userEmail = null;
 
     if (token) {
-      const { data: userData } = await supabaseAdmin.auth.getUser(token);
-      if (userData?.user) {
-        userId = userData.user.id;
-        userEmail = userData.user.email;
+      const user = await getUserFromToken(token);
+      if (user) {
+        userId = user.id;
+        userEmail = user.email;
       }
     }
 
@@ -1316,8 +1386,7 @@ app.get("/api/referral", async (req, res) => {
       });
     }
 
-    const { data: userData } = await supabaseAdmin.auth.getUser(token);
-    const user = userData?.user;
+    const user = await getUserFromToken(token);
     if (!user) {
       return res.json({
         totalEarnings: 0,
@@ -1382,8 +1451,7 @@ app.get("/api/service-records", async (req, res) => {
     let targetUserEmail: string | null = null;
 
     if (token) {
-      const { data: userData } = await supabaseAdmin.auth.getUser(token);
-      const user = userData?.user;
+      const user = await getUserFromToken(token);
       if (user) {
         targetUserId = user.id;
         targetUserEmail = user.email || null;
@@ -1611,7 +1679,7 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
     const token = authHeader.replace("Bearer ", "").trim();
     if (token && supabaseAdmin) {
       try {
-        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        const user = await getUserFromToken(token);
         if (user) {
           tokenUserId = user.id;
           tokenUserEmail = user.email || null;
@@ -2173,9 +2241,8 @@ app.get("/api/user-lookup", async (req, res) => {
     }
 
     if (token) {
-      const { data: userData, error: authErr } = await client.auth.getUser(token);
-      user = userData?.user;
-      if (authErr || !user) {
+      user = await getUserFromToken(token, client);
+      if (!user) {
         return res.status(200).json({
           status: "success",
           results: { error: "Invalid or expired session. Please sign in again." }
@@ -2183,12 +2250,40 @@ app.get("/api/user-lookup", async (req, res) => {
       }
     }
 
-    const { data: profileData, error: profileErr } = await client
+    let { data: profileData, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
       
+    if (!profileData && !profileErr && user) {
+      // Lazy creation of profile for mobile user if missing
+      try {
+        const freeCredits = user.phone ? 1470.00 : 10;
+        const newProfile = {
+          id: user.id,
+          email: user.email,
+          credits: freeCredits,
+          unlimited_expiry: null,
+          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+          avatar_url: null,
+          is_free_credit_claimed: true,
+          last_weekly_credit_at: new Date().toISOString(),
+          last_daily_credit_at: new Date().toISOString(),
+        };
+        const { data: inserted, error: insertError } = await supabaseAdmin
+          .from("profiles")
+          .insert(newProfile)
+          .select()
+          .single();
+        if (!insertError && inserted) {
+          profileData = inserted;
+        }
+      } catch (e) {
+        console.warn("Lazy profile creation error inside user-lookup:", e);
+      }
+    }
+
     profile = profileData;
     if (profileErr || !profile) {
       return res.status(200).json({
@@ -3936,8 +4031,8 @@ app.post("/api/cashfree/create-order", async (req, res) => {
   if (authHeader) {
     const token = authHeader.replace("Bearer ", "");
     if (supabaseAdmin) {
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-      if (!error && user) {
+      const user = await getUserFromToken(token);
+      if (user) {
         authenticatedUserId = user.id;
       }
     }
@@ -4125,8 +4220,8 @@ app.get("/api/script/status", async (req, res) => {
   }
 
   try {
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
+    const user = await getUserFromToken(token);
+    if (!user) {
       return res.status(401).json({ error: "Unauthorized. Invalid token." });
     }
 
@@ -4215,8 +4310,8 @@ app.get("/api/script/download-file", async (req, res) => {
   }
 
   try {
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
+    const user = await getUserFromToken(token);
+    if (!user) {
       return res.status(401).json({ error: "Unauthorized. Invalid token." });
     }
 
@@ -6230,11 +6325,11 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: "Database offline. Unable to process lookup." });
     }
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !userData?.user) {
+    const userData = await getUserFromToken(token);
+    if (!userData) {
       return res.status(401).json({ error: "Invalid or expired session. Please sign in again." });
     }
-    user = userData.user;
+    user = userData;
   } catch (err) {
     console.error("Aadhaar to PAN auth error:", err);
     return res.status(401).json({ error: "Authentication failure." });
@@ -6415,9 +6510,8 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     const client = await getRequestClient(token);
-    const { data: { user }, error } = await client.auth.getUser(token);
-    if (error || !user) {
-      console.error("[ADMIN_AUTH_ERROR]", error);
+    const user = await getUserFromToken(token, client);
+    if (!user) {
       return res.status(401).json({ error: "Invalid session key. Please login again." });
     }
 
@@ -6844,10 +6938,10 @@ app.get("/api/user-keys", async (req, res) => {
     if (authHeader) {
       const token = authHeader.replace("Bearer ", "");
       if (token && token !== "null" && token !== "undefined") {
-        const { data: userData } = await supabaseAdmin.auth.getUser(token);
-        if (userData?.user) {
-          userId = userData.user.id;
-          userEmail = userData.user.email || null;
+        const user = await getUserFromToken(token);
+        if (user) {
+          userId = user.id;
+          userEmail = user.email || null;
         }
       }
     }
@@ -7218,8 +7312,8 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
   }
 
   try {
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
+    const user = await getUserFromToken(token);
+    if (!user) {
       return res.status(401).json({ error: "Session has expired or is invalid" });
     }
 
@@ -7314,8 +7408,8 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
   }
 
   try {
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) {
+    const user = await getUserFromToken(token);
+    if (!user) {
       return res.status(401).json({ error: "Session validation failed." });
     }
 

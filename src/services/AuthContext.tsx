@@ -101,8 +101,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (userId: string) => {
     if (IS_TESTING_MODE) return;
     try {
+      let token: string | undefined = undefined;
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      if (session?.access_token) {
+        token = session.access_token;
+      } else {
+        const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+        if (savedMobileSession) {
+          const parsed = JSON.parse(savedMobileSession);
+          if (parsed?.token) {
+            token = parsed.token;
+          }
+        }
+      }
+
       if (!token) return;
 
       const response = await fetch(`${getApiBaseUrl()}/api/profile`, {
@@ -114,7 +126,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const profileData = await response.json();
         setProfile(profileData);
       } else {
-        console.error('Failed to fetch secure profile:', await response.text());
+        const errorText = await response.text();
+        console.error('Failed to fetch secure profile:', errorText);
+        if (response.status === 401) {
+          console.warn('Unauthorized session detected, clearing invalid auth state.');
+          localStorage.removeItem('tracex_mobile_session');
+          await supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setProfile(null);
+        }
       }
     } catch (err) {
       console.error('Error fetching secure profile:', err);
@@ -156,6 +176,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             is_free_credit_claimed: true,
             last_weekly_credit_at: new Date().toISOString()
           } as UserProfile);
+          // Fetch the latest profile from the server to get fresh credits/info
+          fetchProfile(parsed.user.id).catch(err => console.error('Mobile profile fetch error:', err));
         }
       }
     } catch (e) {
@@ -254,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (localReg) {
             const parsedReg = JSON.parse(localReg);
             if (parsedReg.password === password && parsedReg.user) {
-              localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: 'local_tok_' + Date.now(), user: parsedReg.user }));
+              localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: `local_tok_${cleanPhone}_` + Date.now(), user: parsedReg.user }));
               setUser({
                 id: parsedReg.user.id,
                 email: parsedReg.user.email,
@@ -320,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (localReg) {
           const parsedReg = JSON.parse(localReg);
           if (parsedReg.password === password && parsedReg.user) {
-            localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: 'local_tok_' + Date.now(), user: parsedReg.user }));
+            localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: `local_tok_${cleanPhone}_` + Date.now(), user: parsedReg.user }));
             setUser({
               id: parsedReg.user.id,
               email: parsedReg.user.email,
