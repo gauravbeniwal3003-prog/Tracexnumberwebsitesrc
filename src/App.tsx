@@ -292,7 +292,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         } catch (e) {
           targetObj = result.raw_results;
         }
-      } else if (result.results) {
+      } else if (result.results && Object.keys(result.results).length > 0) {
         targetObj = result.results;
       } else {
         targetObj = result;
@@ -615,14 +615,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupEmail(targetVal);
       }
 
-      const hasValidData = (data.results && Object.keys(data.results).length > 0) || (data.raw_results && data.raw_results.trim().length > 0);
-      
-      if (data.status && hasValidData) {
-        // Render results IMMEDIATELY
+      const hasValidData = !!(data.results || data.raw_results || data.error);
+         
+      if (data.status === false && !data.results && !data.raw_results && data.error && (data.error.includes('credits') || data.error.includes('sign in') || data.error.includes('protected'))) {
+        setError(data.error);
+      } else {
         setResult(data);
         setCooldown(5);
-      } else {
-        setError(data.error || "Sorry, we don't have data related to the query.");
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);

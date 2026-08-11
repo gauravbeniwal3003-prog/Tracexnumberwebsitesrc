@@ -272,25 +272,15 @@ export function DashboardServicesView({
         />
 
         {/* Top Header Controls for Terminal View (Screenshot 1) */}
-        <div className="w-full max-w-xl flex items-center justify-between mb-6 relative z-10">
+        <div className="w-full max-w-xl flex items-center justify-start mb-6 relative z-10">
           <button
             type="button"
-            onClick={handleBackToSubServices}
+            onClick={() => navigate('/dashboard')}
             className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200/90 text-slate-800 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
           >
             <ArrowLeft className="w-4 h-4 text-slate-600" />
             <span>Dashboard</span>
           </button>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenPricing}
-              className="bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 font-extrabold text-xs px-3.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              <Coins className="w-4 h-4 text-emerald-600" />
-              <span className="font-mono">₹{profile?.credits || 1470}.00</span>
-            </button>
-          </div>
         </div>
 
         {/* Centered Terminal Container (Screenshot 1) */}

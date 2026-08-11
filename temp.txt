@@ -1,0 +1,17 @@
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
+      if (key && key !== INTERNAL_MASTER_KEY) {
+    if (key === INTERNAL_MASTER_KEY) {
+    if (key === INTERNAL_MASTER_KEY) {
+      } else if (key === INTERNAL_MASTER_KEY) {
+      const activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+      let activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+      let activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = key === INTERNAL_MASTER_KEY;

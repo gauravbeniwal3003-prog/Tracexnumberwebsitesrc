@@ -9,7 +9,6 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
-  "raw_results", "raw_response", "raw_data", "raw_feed", "json_data", "raw", "original_response",
   'developer', 'owner', 'buy_api', 'provider', 'credits', 'telegram', 'site', 
   'website', 'api_buy_link', 'website_link', 'support', 'contact', 'bought_from',
   'vendor', 'bot_owner', 'channel', 'dev', 'admin', 'bot', 'seller', 'paid_by', 
@@ -19,6 +18,7 @@ const BANNED_KEYS = [
 function isBannedKey(key: string): boolean {
   if (!key) return false;
   const k = key.toLowerCase().replace(/[\s\-_]/g, '');
+  if (k === 'telegramid') return false;
   return BANNED_KEYS.some(banned => k === banned || k.includes(banned));
 }
 

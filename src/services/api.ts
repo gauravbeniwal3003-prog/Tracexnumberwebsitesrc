@@ -317,7 +317,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
         return data;
       } else {
         console.log("API VALID RESULTS", 0);
-        return { status: false, results: {}, message: data?.message || 'No Record Found' };
+        return data;
       }
 
     } catch (err: any) {
@@ -344,9 +344,9 @@ export const lookupNumber = async (number: string): Promise<ApiResponse> => {
       return parsed;
     }
     return {
-      status: false,
-      results: {},
-      error: rawData?.results?.error || rawData?.message || "Sorry, we don't have data related to the query."
+      status: true,
+      results: rawData,
+      raw_results: rawData
     };
   } catch (err: any) {
     console.error("Lookup number error:", err);
@@ -373,12 +373,7 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
     const hasStatus = data?.status === true || data?.success === true;
     const rawResults = data?.results || data?.data || (hasStatus ? data : null);
 
-    // 2. Handle "No Record Found" early
-    if (data?.message?.toLowerCase().includes('no record') || 
-        data?.error?.toLowerCase().includes('no record') ||
-        (hasStatus && !rawResults)) {
-      return { status: false, results: {}, error: "Sorry, we don't have data related to the query." };
-    }
+    // 2. Check removed so UI can see exact API JSON response
 
     // 3. Dynamic Normalization (Fast Path)
     if (rawResults && typeof rawResults === 'object') {
@@ -428,7 +423,7 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
 };
 
 export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> => {
-  const cleanTelegram = telegramId.trim().replace(/^@/, '');
+  const cleanTelegram = telegramId.trim();
   
   console.log('Searching TRACEXDATA Telegram Intelligence...');
   try {

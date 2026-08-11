@@ -255,7 +255,7 @@ export default function ScriptPurchase() {
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 p-4 md:p-6 z-[60] flex items-center justify-between">
         <button 
-          onClick={() => navigate('/')} 
+          onClick={() => navigate('/dashboard')} 
           className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-sky-200 backdrop-blur-xl transition-all hover:bg-sky-50 shadow-sm cursor-pointer"
         >
           <ArrowLeft size={14} className="text-sky-600" />

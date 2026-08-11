@@ -1163,6 +1163,163 @@ async def get_status(order_id: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/cashfree/reconcile-user")
+async def reconcile_user(request: Request):
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session has expired or is invalid")
+        
+    user_id_val = get_user_id(user)
+    
+    try:
+        pending_claims = db.table("payment_claims").select("*").eq("user_id", user_id_val).eq("status", "pending").execute()
+    except Exception as e:
+        print(f"[RECONCILE_USER_CLAIMS_ERR] {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+        
+    if not pending_claims.data:
+        return {"status": "success", "recoveredCount": 0, "message": "No pending claims require reconciliation."}
+        
+    recovered_count = 0
+    recovered_orders = []
+    
+    for claim in pending_claims.data:
+        order_id = claim.get("payment_id")
+        try:
+            is_paid = False
+            
+            if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
+                render_backend_url = "https://tracexdata-api.onrender.com"
+                resp = requests.get(f"{render_backend_url}/api/cashfree/status/{order_id}")
+                if resp.status_code == 200:
+                    cf_data = resp.json()
+                    if cf_data.get("order_status") == "PAID":
+                        is_paid = True
+            else:
+                headers = {
+                    "x-client-id": CASHFREE_APP_ID,
+                    "x-client-secret": CASHFREE_SECRET_KEY,
+                    "x-api-version": "2023-08-01"
+                }
+                resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{order_id}", headers=headers)
+                if resp.status_code == 200:
+                    cf_data = resp.json()
+                    if cf_data.get("order_status") == "PAID":
+                        is_paid = True
+                        
+            if is_paid:
+                await fulfill_order(order_id, user_id_val)
+                recovered_count += 1
+                recovered_orders.append(order_id)
+        except Exception as check_err:
+            print(f"[RECONCILE_SYS_ERR] Order status fetch error on {order_id}: {check_err}")
+            
+    return {
+        "status": "success",
+        "recoveredCount": recovered_count,
+        "recoveredOrders": recovered_orders,
+        "message": f"Checked pending ledger matching profile. Automatically claimed and posted {recovered_count} paid order(s)." if recovered_count > 0 else "Reconciliation sweep done. No newly paid transactions found."
+    }
+
+@app.post("/api/cashfree/claim-manual")
+async def claim_manual(payload: dict = Body(...), request: Request = None):
+    order_id = payload.get("order_id")
+    if not order_id or not isinstance(order_id, str) or len(order_id.strip()) == 0 or len(order_id) > 100:
+        raise HTTPException(status_code=400, detail="Please supply a valid Cashfree Order ID.")
+        
+    db = get_supabase()
+    if not db:
+        raise HTTPException(status_code=500, detail="Database offline")
+        
+    user = get_user_from_token(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session token missing. Log in to claim.")
+        
+    user_id_val = get_user_id(user)
+    trimmed_order_id = order_id.strip()
+    
+    try:
+        claim_query = db.table("payment_claims").select("*").eq("payment_id", trimmed_order_id).execute()
+        claim = claim_query.data[0] if claim_query.data else None
+        
+        if claim and claim.get("status") == "success":
+            raise HTTPException(status_code=400, detail="This reference has already been successfully claimed and posted.")
+            
+        if claim and claim.get("user_id") and claim.get("user_id") != user_id_val:
+            raise HTTPException(status_code=403, detail="Unauthorized. This order does not belong to your account.")
+            
+        is_paid = False
+        amount = 0
+        plan_id = claim.get("plan_id") if claim else "credit_10"
+        
+        try:
+            if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
+                render_backend_url = "https://tracexdata-api.onrender.com"
+                resp = requests.get(f"{render_backend_url}/api/cashfree/status/{trimmed_order_id}")
+                if resp.status_code == 200:
+                    cf_data = resp.json()
+                    if cf_data.get("order_status") == "PAID":
+                        is_paid = True
+                        amount = float(cf_data.get("order_amount") or 0)
+            else:
+                headers = {
+                    "x-client-id": CASHFREE_APP_ID,
+                    "x-client-secret": CASHFREE_SECRET_KEY,
+                    "x-api-version": "2023-08-01"
+                }
+                resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{trimmed_order_id}", headers=headers)
+                if resp.status_code == 200:
+                    cf_data = resp.json()
+                    if cf_data.get("order_status") == "PAID":
+                        is_paid = True
+                        amount = float(cf_data.get("order_amount") or 0)
+        except Exception as cf_err:
+            print(f"[MANUAL_CLAIM_CF_API_ERR] {cf_err}")
+            raise HTTPException(status_code=500, detail="Could not contact Cashfree to verify order status.")
+            
+        if not is_paid:
+            raise HTTPException(status_code=400, detail="Cashfree records indicate this order has not been PAID. Please verify ID or try again.")
+            
+        if not claim:
+            if amount >= 1499:
+                plan_id = "api_combo"
+            elif amount >= 999:
+                plan_id = "credit_1000"
+            elif amount >= 499:
+                plan_id = "api_number"
+            elif amount >= 250:
+                plan_id = "credit_100"
+            elif amount >= 140:
+                plan_id = "credit_50"
+            else:
+                plan_id = "credit_10"
+                
+            db.table("payment_claims").insert({
+                "payment_id": trimmed_order_id,
+                "user_id": user_id_val,
+                "plan_id": plan_id,
+                "amount": amount,
+                "status": "pending"
+            }).execute()
+        elif not claim.get("user_id"):
+            db.table("payment_claims").update({"user_id": user_id_val}).eq("payment_id", trimmed_order_id).execute()
+            
+        await fulfill_order(trimmed_order_id, user_id_val)
+        
+        return {
+            "status": "success",
+            "message": f"Verified and posted! Order {trimmed_order_id} credited successfully."
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"[MANUAL_CLAIM_CRITICAL_FAIL] {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 # --- THE "TECH VISHAL" STYLE FORMATTER ---
 def clean_branding_text_line_by_line(raw_text: str) -> str:
     if not raw_text:

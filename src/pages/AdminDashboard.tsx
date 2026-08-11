@@ -119,7 +119,7 @@ export default function AdminDashboard() {
 
     if (!user) {
       const timeout = setTimeout(() => {
-        if (!user) navigate('/');
+        if (!user) navigate('/dashboard');
       }, 500);
       return () => clearTimeout(timeout);
     }
@@ -675,7 +675,7 @@ export default function AdminDashboard() {
       <ShieldAlert size={64} className="text-rose-500 mb-6" />
         <h1 className="text-3xl font-bold mb-2">Access Denied</h1>
         <p className="text-slate-600 text-center max-w-sm mb-8 font-medium">This area is restricted to TraceXData administrators only.</p>
-        <button onClick={() => navigate('/')} className="px-8 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition-all cursor-pointer">Return Home</button>
+        <button onClick={() => navigate('/dashboard')} className="px-8 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition-all cursor-pointer">Return Home</button>
       </div>
     );
   }
@@ -727,7 +727,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="mt-auto pt-4 border-t border-slate-200">
-           <button onClick={() => navigate('/')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 text-xs font-bold transition-all">
+           <button onClick={() => navigate('/dashboard')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 text-xs font-bold transition-all">
              <ChevronRight size={17} />
              Exit Admin Panel
            </button>
@@ -740,7 +740,7 @@ export default function AdminDashboard() {
           <span className="font-extrabold text-xs uppercase tracking-widest text-indigo-600 flex items-center gap-2">
             <ShieldCheck size={16} /> TraceX Admin Core
           </span>
-          <button onClick={() => navigate('/')} className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
+          <button onClick={() => navigate('/dashboard')} className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
             Exit
             <ChevronRight size={14} />
           </button>
