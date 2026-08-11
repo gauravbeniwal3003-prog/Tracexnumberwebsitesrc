@@ -346,14 +346,14 @@ export const lookupNumber = async (number: string): Promise<ApiResponse> => {
     return {
       status: false,
       results: {},
-      error: rawData?.results?.error || rawData?.message || "No records found"
+      error: rawData?.results?.error || rawData?.message || "Sorry, we don't have data related to the query."
     };
   } catch (err: any) {
     console.error("Lookup number error:", err);
     return {
       status: false,
       results: {},
-      error: err.message || "Failed to search record"
+      error: err.message && !err.message.includes("api error") ? err.message : "Sorry, we don't have data related to the query."
     };
   }
 };
@@ -377,7 +377,7 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
     if (data?.message?.toLowerCase().includes('no record') || 
         data?.error?.toLowerCase().includes('no record') ||
         (hasStatus && !rawResults)) {
-      return { status: false, results: {}, error: 'No Record Found for this number.' };
+      return { status: false, results: {}, error: "Sorry, we don't have data related to the query." };
     }
 
     // 3. Dynamic Normalization (Fast Path)
@@ -913,7 +913,7 @@ export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse>
     return {
       status: false,
       results: {},
-      error: err.message || "Failed to search record. Please try again."
+      error: err.message && !err.message.includes("api error") ? err.message : "Sorry, we don't have data related to the query."
     };
   }
 };

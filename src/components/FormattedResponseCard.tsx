@@ -9,6 +9,7 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
+  "raw_results", "raw_response", "raw_data", "raw_feed", "json_data", "raw", "original_response",
   'developer', 'owner', 'buy_api', 'provider', 'credits', 'telegram', 'site', 
   'website', 'api_buy_link', 'website_link', 'support', 'contact', 'bought_from',
   'vendor', 'bot_owner', 'channel', 'dev', 'admin', 'bot', 'seller', 'paid_by', 
@@ -89,13 +90,13 @@ export function extractDisplayEntries(obj: any): Array<[string, string]> {
           targetObj = JSON.parse(trimmed);
         } catch {
           if (!isBannedValue(trimmed)) {
-            entries.push(['RESPONSE', trimmed]);
+            // entries.push(['RESPONSE', trimmed]);
           }
           return entries;
         }
       } else {
         if (!isBannedValue(trimmed)) {
-          entries.push(['RESPONSE', trimmed]);
+          // entries.push(['RESPONSE', trimmed]);
         }
         return entries;
       }
@@ -228,9 +229,9 @@ export function getCleanJsonData(obj: any): string {
 }
 
 export default function FormattedResponseCard({ data, serviceType }: FormattedResponseCardProps) {
-  const isNumber = isNumberLookupService(serviceType, data);
-  // Number lookup defaults to formatted view, all others default to pretty JSON
-  const [viewMode, setViewMode] = useState<'formatted' | 'json'>(isNumber ? 'formatted' : 'json');
+  const isEmail = serviceType?.toLowerCase().trim() === 'email';
+  // Email defaults to JSON and ONLY JSON, everything else defaults to formatted
+  const [viewMode, setViewMode] = useState<'formatted' | 'json'>(isEmail ? 'json' : 'formatted');
   const [copiedJson, setCopiedJson] = useState(false);
 
   const entries = extractDisplayEntries(data);
@@ -265,6 +266,7 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
           </div>
 
           {/* Mode Switcher Buttons */}
+          {!isEmail && (
           <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80">
             <button
               type="button"
@@ -291,6 +293,7 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
               <span>JSON</span>
             </button>
           </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

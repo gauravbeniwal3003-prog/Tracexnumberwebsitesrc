@@ -755,7 +755,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           ) : (aadhaarPanResult || result) ? (
             <div className="space-y-4">
               <FormattedResponseCard
-                data={result || aadhaarPanResult || getFormattedResponse()}
+                data={getFormattedResponse()}
                 serviceType={service}
               />
 

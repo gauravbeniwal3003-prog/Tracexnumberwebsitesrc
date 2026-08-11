@@ -4434,7 +4434,7 @@ app.get("/api/telegram", async (req, res) => {
   } catch (err: any) {
     console.error("Telegram Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -4522,7 +4522,7 @@ app.get("/api/identity", async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -4552,7 +4552,7 @@ app.get("/api/identity", async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4571,7 +4571,7 @@ app.get("/api/identity", async (req, res) => {
   } catch (err: any) {
     console.error("Identity Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -4659,7 +4659,7 @@ app.get("/api/bank", async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -4689,7 +4689,7 @@ app.get("/api/bank", async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4708,7 +4708,7 @@ app.get("/api/bank", async (req, res) => {
   } catch (err: any) {
     console.error("Bank Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -4796,7 +4796,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -4826,7 +4826,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4845,7 +4845,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
   } catch (err: any) {
     console.error("Rasion Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -4976,7 +4976,7 @@ app.get("/api/vehicle", async (req, res) => {
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -5014,7 +5014,7 @@ app.get("/api/vehicle", async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -5050,7 +5050,7 @@ app.get("/api/vehicle", async (req, res) => {
   } catch (err: any) {
     console.error("Vehicle Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -5164,7 +5164,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -5200,7 +5200,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -5236,7 +5236,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
   } catch (err: any) {
     console.error("Vehicle To Owner Number Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -5316,7 +5316,7 @@ app.get("/api/email", async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -5352,7 +5352,7 @@ app.get("/api/email", async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -5375,7 +5375,7 @@ app.get("/api/email", async (req, res) => {
   } catch (err: any) {
     console.error("Email Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
@@ -5463,7 +5463,7 @@ app.get("/api/pancard", async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "api error" });
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     const text = await response.text();
@@ -5472,7 +5472,7 @@ app.get("/api/pancard", async (req, res) => {
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
        await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
     }
 
     let parsedData: any;
@@ -5498,7 +5498,7 @@ app.get("/api/pancard", async (req, res) => {
   } catch (err: any) {
     console.error("PAN/PN Card Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "api error" });
+    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
 
