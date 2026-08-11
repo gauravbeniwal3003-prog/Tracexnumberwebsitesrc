@@ -622,7 +622,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setResult(data);
         setCooldown(5);
       } else {
-        setError(data.error || 'No records found for this query. If any credits were charged, they have been automatically refunded.');
+        setError(data.error || "Sorry, we don't have data related to the query.");
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);

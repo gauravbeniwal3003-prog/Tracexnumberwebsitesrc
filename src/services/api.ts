@@ -452,7 +452,7 @@ export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> =
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this Telegram ID.'
+        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error: any) {
@@ -645,7 +645,7 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this Identity Card.'
+        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error) {
@@ -678,7 +678,7 @@ export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this Bank/IFSC.'
+        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error) {
@@ -715,7 +715,7 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || apiData?.results?.error || 'No records found for this Vehicle Number.'
+        error: apiData?.message || apiData?.error || apiData?.results?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error: any) {
@@ -752,7 +752,7 @@ export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse>
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || apiData?.results?.error || 'No records found for this Vehicle Number.'
+        error: apiData?.message || apiData?.error || apiData?.results?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error: any) {
@@ -790,7 +790,7 @@ export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => 
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this PN Card.'
+        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error: any) {
@@ -828,7 +828,7 @@ export const lookupEmail = async (email: string): Promise<ApiResponse> => {
       return {
         status: false,
         results: {},
-        error: apiData?.message || apiData?.error || 'No records found for this Email.'
+        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
       };
     }
   } catch (error: any) {
@@ -905,7 +905,7 @@ export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse>
       return {
         status: false,
         results: {},
-        error: data?.error || data?.message || 'No records found for this number.'
+        error: data?.error || data?.message || "Sorry, we don't have data related to the query."
       };
     }
   } catch (err: any) {
@@ -1005,7 +1005,7 @@ export const lookupSupportFree = async (query: string, service: string = 'phone'
       return {
         status: false,
         results: {},
-        error: data?.error || data?.message || "No records found for this query."
+        error: data?.error || data?.message || "Sorry, we don't have data related to the query."
       };
     }
   } catch (err: any) {

@@ -2071,7 +2071,7 @@ app.all("/api/support-lookup", async (req, res) => {
       if (db) await logSearchHistory(req, 'support_free_' + service, cleanedQuery, 'not_found', db);
       return res.status(200).json({
         status: false,
-        error: "No records found or search service busy. Please try again."
+        error: "Sorry, we don't have data related to the query."
       });
     }
 
@@ -2492,7 +2492,7 @@ app.get("/api/user-lookup", async (req, res) => {
       await logSearchHistory(req, service, cleanedQuery, 'not_found');
       return res.status(200).json({
         status: "success",
-        results: { error: `No records found for query: ${cleanedQuery}` }
+        results: { error: "Sorry, we don't have data related to the query." }
       });
     }
 
@@ -3064,7 +3064,7 @@ app.all("/api/lookup", async (req, res) => {
       const response = await fetch(api_url);
       if (!response.ok) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-        return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
+        return res.status(404).json({ status: "error", message: `Sorry, we don't have data related to the query.` });
       }
 
       const text = await response.text();
@@ -3073,7 +3073,7 @@ app.all("/api/lookup", async (req, res) => {
 
       if (!text.trim() || lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("no data found")) {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-         return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
+         return res.status(404).json({ status: "error", message: `Sorry, we don't have data related to the query.` });
       }
 
       let parsedResult: any = null;
@@ -3083,7 +3083,7 @@ app.all("/api/lookup", async (req, res) => {
         const parsed = JSON.parse(text);
         if (parsed && (parsed.success === false || parsed.status === false || parsed.status === "false")) {
           await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
-          return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
+          return res.status(404).json({ status: "error", message: `Sorry, we don't have data related to the query.` });
         }
         const cleaned_json = scrubAllBranding(parsed);
         if (cleaned_json && typeof cleaned_json === 'object') {
