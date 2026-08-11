@@ -225,7 +225,11 @@ export function DashboardServicesView({
   }, [selectedSubService, params.categoryId, location.pathname, initialService]);
 
   const handleSelectCategory = (cat: Category) => {
-    navigate(`/category/${cat.id}`);
+    if (cat.subservices.length === 1) {
+      navigate(`/service/${cat.subservices[0].id}`);
+    } else {
+      navigate(`/category/${cat.id}`);
+    }
   };
 
   const handleSelectSubService = (sub: SubService) => {
@@ -235,6 +239,14 @@ export function DashboardServicesView({
   const handleBackToCategories = () => {
     navigate('/dashboard');
   };
+
+  // Auto-redirect if category has only 1 subservice and we are on the category view
+  useEffect(() => {
+    if (selectedCategory && !selectedSubService && selectedCategory.subservices.length === 1) {
+      navigate(`/service/${selectedCategory.subservices[0].id}`, { replace: true });
+    }
+  }, [selectedCategory, selectedSubService, navigate]);
+
 
   const handleBackToSubServices = () => {
     if (selectedCategory) {
