@@ -33,7 +33,7 @@ export default function AboutGaurav() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
+    <div className="relative min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
       <LiquidBackground />
       
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-24">

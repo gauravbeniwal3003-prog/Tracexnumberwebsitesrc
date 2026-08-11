@@ -6,6 +6,7 @@ import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 import FormattedResponseCard from '../components/FormattedResponseCard';
+import LiquidBackground from '../components/LiquidBackground';
 
 interface ServiceRecordItem {
   id: string;
@@ -68,6 +69,7 @@ export default function ServiceRecords() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans pb-20">
+      <LiquidBackground />
       {/* Universal Header Navbar */}
       <HeaderNavbar title="DIGI SEVA RECORDS" subtitle="SERVICE LOGS" />
 

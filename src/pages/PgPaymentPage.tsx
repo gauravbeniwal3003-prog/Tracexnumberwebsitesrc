@@ -180,7 +180,7 @@ export default function PgPaymentPage({ fallbackFixed, customSegment }: PgPaymen
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-800 selection:bg-sky-500/30 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between relative font-sans">
+    <div className="min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/30 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between relative font-sans">
       <LiquidBackground />
 
       {/* Decorative Floating Glass Orbs/Blobs in the Background for "Liquid Glass" theme */}

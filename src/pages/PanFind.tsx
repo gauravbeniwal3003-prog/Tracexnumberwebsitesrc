@@ -137,7 +137,7 @@ export default function PanFind() {
   };
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between font-sans">
+    <div className="relative min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between font-sans">
       <LiquidBackground />
 
       {/* Secure Header */}

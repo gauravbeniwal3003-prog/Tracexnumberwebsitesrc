@@ -5,6 +5,7 @@ import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
+import LiquidBackground from '../components/LiquidBackground';
 
 export default function ReferralPage() {
   const { user, profile } = useAuth();
@@ -53,6 +54,7 @@ export default function ReferralPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans pb-20">
+      <LiquidBackground />
       {/* Universal Header Navbar */}
       <HeaderNavbar title="REFER & EARN" subtitle="COMMISSION PORTAL" />
 

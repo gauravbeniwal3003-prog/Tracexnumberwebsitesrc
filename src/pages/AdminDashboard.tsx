@@ -663,6 +663,7 @@ export default function AdminDashboard() {
 
   if (loading) return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+      <LiquidBackground />
       <RefreshCcw className="animate-spin text-indigo-600" size={32} />
     </div>
   );
@@ -670,7 +671,8 @@ export default function AdminDashboard() {
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col items-center justify-center p-4">
-        <ShieldAlert size={64} className="text-rose-500 mb-6" />
+      <LiquidBackground />
+      <ShieldAlert size={64} className="text-rose-500 mb-6" />
         <h1 className="text-3xl font-bold mb-2">Access Denied</h1>
         <p className="text-slate-600 text-center max-w-sm mb-8 font-medium">This area is restricted to TraceXData administrators only.</p>
         <button onClick={() => navigate('/')} className="px-8 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition-all cursor-pointer">Return Home</button>
@@ -864,7 +866,7 @@ export default function AdminDashboard() {
                 { label: 'Registered Users', value: stats.totalUsers || profiles.length, icon: Users, color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200' },
                 { label: 'Unique Visitors', value: stats.uniqueVisitors ?? 0, icon: Eye, color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' }
               ].map(card => (
-                <div key={card.label} className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <div key={card.label} className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5">
                   <div className={`p-2.5 w-fit rounded-xl border ${card.bg} ${card.color} mb-3`}>
                      <card.icon size={18} />
                   </div>
@@ -877,7 +879,7 @@ export default function AdminDashboard() {
             {/* Recent Logs & Transactions */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Recent System API Logs */}
-              <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col h-[480px]">
+              <div className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 flex flex-col h-[480px]">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-600 mb-4 flex items-center gap-2 shrink-0">
                   <Clock size={14} className="text-indigo-600" />
                   Recent Trace API Calls
@@ -903,7 +905,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* Latest Transactions */}
-              <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col h-[480px]">
+              <div className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 flex flex-col h-[480px]">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-700 mb-4 flex items-center gap-2 shrink-0">
                   <CreditCard size={14} className="text-emerald-600" />
                   Latest Successful Deposits & Claims
@@ -943,7 +945,7 @@ export default function AdminDashboard() {
         {/* --- CUSTOM USER PRICING & DISCOUNTS TAB --- */}
         {activeTab === 'pricing' && (
           <div className="space-y-6">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs font-bold uppercase tracking-wider mb-1">
                   <Tag size={14} />
@@ -961,7 +963,7 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -1022,7 +1024,7 @@ export default function AdminDashboard() {
         {/* --- REFERRAL PROGRAM & COMMISSIONS TAB --- */}
         {activeTab === 'referrals' && (
           <div className="space-y-6">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-emerald-600 font-mono text-xs font-bold uppercase tracking-wider mb-1">
                   <Gift size={14} />
@@ -1034,19 +1036,19 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+              <div className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Active Referrers</div>
                 <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
                   {referralsList.length} Accounts
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+              <div className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">5% Commissions Paid Out</div>
                 <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
                   ₹{referralEarningsList.reduce((sum, item) => sum + (Number(item.commission_amount) || 0), 0).toFixed(2)}
                 </div>
               </div>
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+              <div className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Referred User Deposits</div>
                 <div className="text-2xl font-black text-indigo-600 mt-1 font-mono">
                   ₹{referralEarningsList.reduce((sum, item) => sum + (Number(item.deposit_amount) || 0), 0).toFixed(2)}
@@ -1054,7 +1056,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-slate-200 font-extrabold text-xs uppercase text-slate-700 tracking-wider bg-slate-50">
                 Recent 5% Referral Commission Earnings Log
               </div>
@@ -1114,7 +1116,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-6 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs font-bold uppercase tracking-wider mb-1">
                   <Database size={14} />
@@ -1226,7 +1228,7 @@ export default function AdminDashboard() {
               });
 
               return (
-                <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+                <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead>
@@ -1336,7 +1338,7 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -1399,7 +1401,7 @@ export default function AdminDashboard() {
               </h3>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -1469,7 +1471,7 @@ export default function AdminDashboard() {
                </button>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -1557,7 +1559,7 @@ export default function AdminDashboard() {
         {/* --- SETTINGS VIEW --- */}
         {activeTab === 'settings' && (
           <div className="max-w-3xl space-y-8">
-            <div className="bg-white border border-slate-200 shadow-sm rounded-3xl p-8 space-y-6">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-3xl p-8 space-y-6">
                <div className="flex items-center gap-3 text-amber-600 mb-2">
                  <AlertTriangle size={20} />
                  <h3 className="font-bold text-slate-900 text-lg">Engine Gateway Configuration</h3>
@@ -1589,7 +1591,7 @@ export default function AdminDashboard() {
                </div>
             </div>
 
-            <div className="bg-white border border-slate-200 shadow-sm rounded-3xl p-8 space-y-6">
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-3xl p-8 space-y-6">
                <div className="flex items-center justify-between">
                  <div className="flex items-center gap-3 text-indigo-600">
                    <Globe size={20} />
@@ -1649,7 +1651,7 @@ export default function AdminDashboard() {
                Trace Logs Audit Registry
              </h3>
              
-             <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+             <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 rounded-2xl overflow-hidden">
                <div className="overflow-x-auto">
                  <table className="w-full text-left">
                    <thead>

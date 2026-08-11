@@ -29,7 +29,6 @@ import {
   X
 } from 'lucide-react';
 import { CATEGORIES, Category, SubService } from '../data/services';
-import FormattedResponseCard from './FormattedResponseCard';
 
 interface DashboardServicesViewProps {
   initialService?: string;
@@ -308,7 +307,7 @@ export function DashboardServicesView({
           </div>
 
           {/* Main White Card Box (Screenshot 1) */}
-          <div className="w-full bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 border-t-4 border-t-blue-600">
+          <div className="w-full bg-white/60 backdrop-blur-xl border border-white/50 rounded-3xl p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 space-y-4 border-t-4 border-t-blue-500">
             
             <form onSubmit={(e) => handleSearch(e, undefined, selectedSubService.serviceType)} className="space-y-4">
               <div>
@@ -345,13 +344,6 @@ export function DashboardServicesView({
             </form>
           </div>
 
-          {/* Formatted Output Response Card */}
-          {formattedResponseStr && (
-            <FormattedResponseCard
-              data={result || aadhaarPanResult || formattedResponseStr}
-              serviceType={selectedSubService?.serviceType || initialService}
-            />
-          )}
 
         </div>
       </div>
@@ -374,12 +366,12 @@ export function DashboardServicesView({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search services... (e.g. Aadhaar, PAN)"
-            className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200/90 rounded-2xl text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+            className="w-full pl-12 pr-4 py-3.5 bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
           />
         </div>
 
         {/* Category Header Card (Screenshot 3) */}
-        <div className="p-4 sm:p-5 rounded-3xl border border-slate-200/90 bg-white flex items-center justify-between shadow-xs">
+        <div className="p-4 sm:p-5 rounded-3xl border border-white/60 bg-white/60 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
             <CategoryIcon name={selectedCategory.id} className="w-10 h-10" />
             <div>
@@ -407,7 +399,7 @@ export function DashboardServicesView({
             <button
               key={sub.id}
               onClick={() => handleSelectSubService(sub)}
-              className="p-4 sm:p-5 rounded-3xl border border-slate-200/90 bg-white hover:bg-blue-50/40 hover:border-blue-300 transition-all flex flex-col items-center justify-between text-center gap-2.5 cursor-pointer shadow-xs hover:shadow-md group"
+              className="p-4 sm:p-5 rounded-3xl border border-white/60 bg-white/60 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:bg-blue-50/40 hover:border-blue-300 transition-all flex flex-col items-center justify-between text-center gap-2.5 cursor-pointer shadow-xs hover:shadow-md group"
             >
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center p-2 group-hover:scale-105 transition-transform">
                 <CategoryIcon name={sub.categoryId} className="w-7 h-7" />
@@ -445,7 +437,7 @@ export function DashboardServicesView({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search services... (e.g. Aadhaar, PAN)"
-          className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200/90 rounded-2xl text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+          className="w-full pl-12 pr-4 py-3.5 bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
         />
       </div>
 
@@ -465,7 +457,7 @@ export function DashboardServicesView({
           <button
             key={cat.id}
             onClick={() => handleSelectCategory(cat)}
-            className="p-5 rounded-3xl border border-slate-200/90 bg-white hover:bg-slate-50/80 hover:border-blue-200 transition-all flex flex-col items-center justify-between text-center gap-3 relative overflow-hidden group cursor-pointer shadow-xs hover:shadow-md active:scale-98"
+            className="p-5 rounded-3xl border border-white/60 bg-white/60 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:bg-slate-50/80 hover:border-blue-200 transition-all flex flex-col items-center justify-between text-center gap-3 relative overflow-hidden group cursor-pointer shadow-xs hover:shadow-md active:scale-98"
           >
             <CategoryIcon name={cat.id} className="w-10 h-10" />
 

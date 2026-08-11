@@ -25,6 +25,7 @@ import { getApiBaseUrl } from "../services/api";
 import { useAuth } from "../services/AuthContext";
 import HeaderNavbar from "../components/HeaderNavbar";
 import { supabase } from "../services/supabase";
+import LiquidBackground from '../components/LiquidBackground';
 
 interface EndpointSpec {
   id: string;
@@ -558,6 +559,7 @@ export default function ApiDocs() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] text-slate-800 font-sans pb-24 selection:bg-blue-500/20 selection:text-blue-900">
+      <LiquidBackground />
       <HeaderNavbar title="TRACEXDATA" subtitle="DEVELOPER API HUB" />
       
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 space-y-6">
@@ -602,7 +604,7 @@ export default function ApiDocs() {
           <div className="lg:col-span-4 space-y-6">
             
             {/* ACCESS TOKEN CARD */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+            <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-5 border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 space-y-4">
               <div className="flex items-center gap-2">
                 <span className="text-amber-500 text-sm">🔑</span>
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
@@ -635,7 +637,7 @@ export default function ApiDocs() {
             </div>
 
             {/* CHECK ACCOUNT BALANCE API CARD */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+            <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-5 border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 space-y-4">
               <div className="flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
@@ -679,7 +681,7 @@ export default function ApiDocs() {
             </div>
 
             {/* REAL-TIME SERVICE PRICES API CARD */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+            <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-5 border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 space-y-4">
               <div className="flex items-center gap-2">
                 <Tag className="w-4 h-4 text-indigo-600" />
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase">
@@ -727,7 +729,7 @@ export default function ApiDocs() {
           <div className="lg:col-span-8 space-y-6">
             
             {/* LIVE API TESTER */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-2xs space-y-5">
+            <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-6 border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 space-y-5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <span className="text-indigo-600 font-black font-mono text-sm">&gt;_</span>
@@ -848,7 +850,7 @@ export default function ApiDocs() {
             </div>
 
             {/* 3. API REFERENCES ACCORDIONS */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-2xs space-y-6">
+            <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-6 border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 space-y-6">
               
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2">
                 <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
@@ -882,12 +884,12 @@ export default function ApiDocs() {
                   return (
                     <div
                       key={cat.name}
-                      className="border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs"
+                      className="border border-slate-200/80 rounded-2xl overflow-hidden bg-white/60 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5"
                     >
                       {/* Accordion Header */}
                       <button
                         onClick={() => toggleCategory(cat.name)}
-                        className="w-full bg-white hover:bg-slate-50/80 p-4.5 flex items-center justify-between transition-colors cursor-pointer border-b border-slate-100"
+                        className="w-full bg-white/50 backdrop-blur-md hover:bg-white/80 p-4.5 flex items-center justify-between transition-colors cursor-pointer border-b border-slate-100"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -920,7 +922,7 @@ export default function ApiDocs() {
                             return (
                               <div
                                 key={ep.id}
-                                className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs hover:border-indigo-300 transition-all"
+                                className="bg-white/60 backdrop-blur-xl border border-white/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 p-4 sm:p-5 space-y-3.5 shadow-2xs hover:border-indigo-300 transition-all"
                               >
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                   <div className="flex items-center gap-2.5">

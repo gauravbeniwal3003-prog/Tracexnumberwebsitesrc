@@ -71,7 +71,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
       </div>
 
       {/* 2. TOP HEADER NAVBAR */}
-      <nav className="sticky top-0 left-0 right-0 px-2 sm:px-4 py-2 bg-white/95 backdrop-blur-md border-b border-slate-200 z-40 flex items-center justify-between shadow-xs max-w-full overflow-hidden">
+      <nav className="sticky top-0 left-0 right-0 px-2 sm:px-4 py-2 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-[0_4px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 z-40 flex items-center justify-between shadow-xs max-w-full overflow-hidden">
         
         {/* Left: Drawer Menu Icon */}
         <div className="flex items-center gap-1.5 shrink-0">
@@ -156,7 +156,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-              className="fixed top-0 left-0 bottom-0 w-[290px] sm:w-[320px] bg-white z-[101] shadow-2xl flex flex-col justify-between overflow-y-auto"
+              className="fixed top-0 left-0 bottom-0 w-[290px] sm:w-[320px] bg-white/90 backdrop-blur-2xl border-r border-white/60 z-[101] shadow-[24px_0_48px_rgba(0,0,0,0.1)] ring-1 ring-slate-900/5 flex flex-col justify-between overflow-y-auto"
             >
               {/* Drawer Header */}
               <div className="p-5 border-b border-slate-100 flex items-center justify-between">

@@ -255,7 +255,7 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
   };
 
   return (
-    <div className="w-full bg-white border border-slate-200/90 rounded-2xl md:rounded-3xl shadow-xl p-4 sm:p-6 space-y-4 my-4 font-sans text-slate-800">
+    <div className="w-full bg-white/60 backdrop-blur-xl border border-white/50 rounded-2xl md:rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 p-4 sm:p-6 space-y-4 my-4 font-sans text-slate-800">
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
@@ -329,7 +329,7 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
       {viewMode === 'json' ? (
         /* Pretty-Printed JSON Code View (Mobile Screen Compatible, High Readability) */
         <div className="relative group">
-          <pre className="text-left font-mono text-xs sm:text-sm text-emerald-400 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 overflow-x-auto whitespace-pre-wrap break-all sm:break-words leading-relaxed max-h-[500px] overflow-y-auto select-all shadow-inner">
+          <pre className="text-left font-mono text-xs sm:text-sm text-emerald-400 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 overflow-x-auto whitespace-pre-wrap break-all sm:break-all sm:break-words leading-relaxed max-h-[500px] overflow-y-auto select-all shadow-inner">
             {cleanJsonStr}
           </pre>
         </div>
@@ -342,7 +342,7 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
                 <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   {formatKeyLabel(k)}
                 </span>
-                <span className="text-sm sm:text-base font-black text-slate-900 font-mono break-words leading-snug">
+                <span className="text-sm sm:text-base font-black text-slate-900 font-mono break-all sm:break-words leading-snug">
                   {v}
                 </span>
               </div>
