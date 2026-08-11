@@ -1594,7 +1594,7 @@ async def support_lookup(
 
         if selected_service == "phone":
             clean_phone = re.sub(r'\D', '', cleaned_query)
-            new_api_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={urllib.parse.quote(clean_phone)}"
+            new_api_url = get_provider_url("phone", clean_phone)
             try:
                 resp = requests.get(new_api_url, headers=headers, timeout=15)
                 if resp.status_code == 200:
@@ -1638,21 +1638,21 @@ async def support_lookup(
             api_url = ""
             if selected_service == "adhr":
                 clean_digits = re.sub(r'[^0-9]', '', cleaned_query)
-                api_url = f"https://exploitsindia.site/anish-private-api/aadhar.php?exploits={urllib.parse.quote(clean_digits)}"
+                api_url = get_provider_url("aadhaar", clean_digits)
             elif selected_service == "bnk":
                 clean_ifsc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(clean_ifsc)}"
+                api_url = get_provider_url("ifsc", clean_ifsc)
             elif selected_service == "vehicle":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(clean_rc)}"
+                api_url = get_provider_url("vehicle", clean_rc)
             elif selected_service == "veh_owner_num":
                 clean_rc = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(clean_rc)}"
+                api_url = get_provider_url("veh_owner_num", clean_rc)
             elif selected_service == "email":
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+                api_url = get_provider_url("email", cleaned_query)
             elif selected_service == "pancard":
                 clean_pan = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(clean_pan)}"
+                api_url = get_provider_url("pancard", clean_pan)
 
             if api_url:
                 try:
@@ -1915,7 +1915,7 @@ async def user_lookup(
     try:
         if service_clean == 'phone':
             # Query the primary phone API
-            new_api_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={urllib.parse.quote(cleaned_query)}"
+            new_api_url = get_provider_url("phone", cleaned_query)
             try:
                 print(f"[user-lookup] Fetching phone API: {new_api_url}")
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
@@ -1967,28 +1967,28 @@ async def user_lookup(
             api_url = ""
             if service_clean == 'adhr':
                 target_query = re.sub(r'[^0-9]', '', cleaned_query)
-                api_url = f"https://exploitsindia.site/osint-api/aadhar.php?exploits={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("aadhaar", target_query)
             elif service_clean == 'bnk':
                 target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/ifsc.php?exploits={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("ifsc", target_query)
             elif service_clean == 'vehicle':
                 target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("vehicle", target_query)
             elif service_clean == 'pancard':
                 target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"https://exploitsindia.site/osint-api/pancard.php?exploits={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("pancard", target_query)
             elif service_clean == 'aadhaar_to_pan' or service_clean == 'aadhaar_pan':
                 target_query = re.sub(r'[^0-9]', '', cleaned_query)
                 api_key = "c8117598aafa71238a4bf8377087b0ff"
-                api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("aadhaar_to_pan", target_query)
             elif service_clean == 'telegram':
                 target_query = cleaned_query.lstrip('@')
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("telegram", target_query)
             elif service_clean == 'email':
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(cleaned_query)}"
+                api_url = get_provider_url("email", cleaned_query)
             elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
                 target_query = re.sub(r'[^a-zA-Z0-9]', '', cleaned_query).upper()
-                api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
+                api_url = get_provider_url("veh_owner_num", target_query)
                 
             if api_url:
                 print(f"[user-lookup] Fetching {service_clean} from: {api_url}")
@@ -2339,18 +2339,7 @@ async def saas_lookup(
                     "success": True,
                     "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
                     "results": {
-                        "Telegram Match": {
-                            "name": "PROTECTED RECORD",
-                            "telegram_id": num,
-                            "mobile": "PROTECTED @ TRACEX SHIELD",
-                            "father_name": "PROTECTED @ TRACEX SHIELD",
-                            "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                            "email": "PROTECTED @ TRACEX SHIELD",
-                            "operator": "PROTECTED @ TRACEX SHIELD",
-                            "state_circle": "PROTECTED @ TRACEX SHIELD",
-                            "address": "PROTECTED @ TRACEX SHIELD",
-                            "platform": "Telegram Lookup"
-                        }
+                        "telegram_id": num, "username": "PROTECTED RECORD", "mobile": "PROTECTED @ TRACEX SHIELD", "platform": "Telegram Lookup"
                     }
                 })
 
@@ -2396,7 +2385,7 @@ async def saas_lookup(
         if is_telegram_query:
             # LIVE API CALL FOR TELEGRAM username LOOKUP
             target_username = num.lstrip('@')
-            api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
+            api_url = get_provider_url("telegram", target_username)
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2533,34 +2522,15 @@ async def saas_lookup(
                         "success": True,
                         "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
                         "results": {
-                            "Telegram Match": {
-                                "name": "PROTECTED RECORD",
-                                "telegram_id": telegram_id if telegram_id != "N/A" else num,
-                                "mobile": "PROTECTED @ TRACEX SHIELD",
-                                "father_name": "PROTECTED @ TRACEX SHIELD",
-                                "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                                "email": "PROTECTED @ TRACEX SHIELD",
-                                "operator": "PROTECTED @ TRACEX SHIELD",
-                                "state_circle": "PROTECTED @ TRACEX SHIELD",
-                                "address": "PROTECTED @ TRACEX SHIELD",
-                                "platform": "Telegram Lookup"
-                            }
+                            "telegram_id": telegram_id if telegram_id != "N/A" else num, "username": "PROTECTED RECORD", "mobile": "PROTECTED @ TRACEX SHIELD", "platform": "Telegram Lookup"
                         }
                     })
 
                 results = {
-                    "Telegram Match": {
-                        "name": username,
-                        "telegram_id": telegram_id,
-                        "mobile": phone,
-                        "father_name": "N/A",
-                        "alt_mobile": country_code,
-                        "email": "N/A",
-                        "operator": country,
-                        "state_circle": "N/A",
-                        "address": "N/A",
-                        "platform": "Telegram Lookup"
-                    }
+                    "telegram_id": telegram_id,
+                    "username": username,
+                    "mobile": phone,
+                    "platform": "Telegram Lookup"
                 }
 
                 new_count = (license.get('requests_used') or 0) + 1
@@ -2595,13 +2565,13 @@ async def saas_lookup(
                 return make_api_response({"status": "error", "message": f"Telegram API error: {str(e_tg)}"})
 
         # Hardcoded primary engine source as requested to avoid environment variable dependency
-        target_template = "https://exploitsindia.site//anish-private-api//number.php?exploits="
+        target_template = get_provider_url("phone", "")
         
         # Override to ensure only this API is always used
-        target_template = "https://exploitsindia.site//anish-private-api//number.php?exploits="
+        target_template = get_provider_url("phone", "")
         
         # Execution
-        final_url = f"https://exploitsindia.site//anish-private-api//number.php?exploits={num}"
+        final_url = get_provider_url("phone", num)
         
         max_attempts = 5
         delays = [1, 2, 3, 4, 5]
@@ -2773,18 +2743,7 @@ async def telegram_lookup(
                 "status": "success",
                 "message": "Protected: This Telegram account is protected on TRACEXDATA. 🛡️",
                 "results": {
-                    "Telegram Match": {
-                        "name": "PROTECTED RECORD",
-                        "telegram_id": targetTelegramId,
-                        "mobile": "PROTECTED @ TRACEX SHIELD",
-                        "father_name": "PROTECTED @ TRACEX SHIELD",
-                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                        "email": "PROTECTED @ TRACEX SHIELD",
-                        "operator": "PROTECTED @ TRACEX SHIELD",
-                        "state_circle": "PROTECTED @ TRACEX SHIELD",
-                        "address": "PROTECTED @ TRACEX SHIELD",
-                        "platform": "Telegram Lookup"
-                    }
+                    "telegram_id": targetTelegramId, "username": "PROTECTED RECORD", "mobile": "PROTECTED @ TRACEX SHIELD", "platform": "Telegram Lookup"
                 }
             })
 
@@ -2808,7 +2767,7 @@ async def telegram_lookup(
         except Exception as cache_err:
             print(f"[Telegram Cache Read Error] {cache_err}")
 
-        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=uers&term={urllib.parse.quote(target_username)}"
+        api_url = get_provider_url("telegram", target_username)
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2884,18 +2843,10 @@ async def telegram_lookup(
                     }).eq("id", keyRecord['id']).execute()
 
                 protected_results = {
-                    "Telegram Match": {
-                        "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
-                        "mobile": "PROTECTED @ TRACEX SHIELD",
-                        "father_name": "PROTECTED @ TRACEX SHIELD",
-                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                        "email": "PROTECTED @ TRACEX SHIELD",
-                        "operator": "PROTECTED @ TRACEX SHIELD",
-                        "state_circle": "PROTECTED @ TRACEX SHIELD",
-                        "address": "PROTECTED @ TRACEX SHIELD",
-                        "platform": "Telegram Lookup"
-                    }
+                    "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                    "username": "PROTECTED RECORD",
+                    "mobile": "PROTECTED @ TRACEX SHIELD",
+                    "platform": "Telegram Lookup"
                 }
                 return make_api_response({
                     "status": "success",
@@ -2904,18 +2855,10 @@ async def telegram_lookup(
                 })
 
             results = {
-                "Telegram Match": {
-                    "name": username,
-                    "telegram_id": telegram_id,
-                    "mobile": phone,
-                    "father_name": "N/A",
-                    "alt_mobile": country_code,
-                    "email": "N/A",
-                    "operator": country,
-                    "state_circle": "N/A",
-                    "address": "N/A",
-                    "platform": "Telegram Lookup"
-                }
+                "telegram_id": telegram_id,
+                "username": username,
+                "mobile": phone,
+                "platform": "Telegram Lookup"
             }
 
             # Save successful result to database cache
@@ -3004,18 +2947,10 @@ async def telegram_lookup(
                     }).eq("id", keyRecord['id']).execute()
 
                 protected_results = {
-                    "Telegram Match": {
-                        "name": "PROTECTED RECORD",
-                        "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
-                        "mobile": "PROTECTED @ TRACEX SHIELD",
-                        "father_name": "PROTECTED @ TRACEX SHIELD",
-                        "alt_mobile": "PROTECTED @ TRACEX SHIELD",
-                        "email": "PROTECTED @ TRACEX SHIELD",
-                        "operator": "PROTECTED @ TRACEX SHIELD",
-                        "state_circle": "PROTECTED @ TRACEX SHIELD",
-                        "address": "PROTECTED @ TRACEX SHIELD",
-                        "platform": "Telegram Lookup"
-                    }
+                    "telegram_id": telegram_id if telegram_id != "N/A" else targetTelegramId,
+                    "username": "PROTECTED RECORD",
+                    "mobile": "PROTECTED @ TRACEX SHIELD",
+                    "platform": "Telegram Lookup"
                 }
                 return make_api_response({
                     "status": "success",
@@ -3024,18 +2959,10 @@ async def telegram_lookup(
                 })
 
             results = {
-                "Telegram Match": {
-                    "name": username,
-                    "telegram_id": telegram_id,
-                    "mobile": phone,
-                    "father_name": "N/A",
-                    "alt_mobile": country_code,
-                    "email": "N/A",
-                    "operator": country,
-                    "state_circle": "N/A",
-                    "address": "N/A",
-                    "platform": "Telegram Lookup"
-                }
+                "telegram_id": telegram_id,
+                "username": username,
+                "mobile": phone,
+                "platform": "Telegram Lookup"
             }
 
             # Save successful result to database cache
@@ -3151,7 +3078,7 @@ async def email_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=mail&term={urllib.parse.quote(target_query)}"
+    api_url = get_provider_url("email", target_query)
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3327,7 +3254,7 @@ async def identity_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://exploitsindia.site/anish-private-api/aadhar.php?exploits={target_query}"
+    api_url = get_provider_url("aadhaar", target_query)
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3513,7 +3440,7 @@ async def bank_lookup(
             return make_api_response({"status": "error", "message": "api error"})
             
     # Proxy fetch
-    api_url = f"https://exploitsindia.site//osint-api/ifsc.php?exploits={target_query}"
+    api_url = get_provider_url("ifsc", target_query)
     headers = {
         "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
         "Accept": "application/json,text/plain,*/*"
@@ -3737,7 +3664,7 @@ async def vehicle_lookup(
             print(f"[CACHE_ERR] Vehicle cache check error in Python: {cache_err}")
 
         # Proxy fetch
-        api_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={target_query}"
+        api_url = get_provider_url("vehicle", target_query)
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -3981,7 +3908,7 @@ async def veh_owner_num_lookup(
             print(f"[CACHE_ERR] Vehicle owner number cache check error: {cache_err}")
 
         # Proxy fetch
-        api_url = f"http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={urllib.parse.quote(target_query)}"
+        api_url = get_provider_url("veh_owner_num", target_query)
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -4185,7 +4112,7 @@ async def pancard_lookup(
                 return make_api_response({"status": "error", "message": "api error"})
                 
         # Proxy fetch
-        api_url = f"https://exploitsindia.site//osint-api/pancard.php?exploits={target_query}"
+        api_url = get_provider_url("pancard", target_query)
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0",
             "Accept": "application/json,text/plain,*/*"
@@ -4306,7 +4233,7 @@ async def panfind_lookup(order_id: str = Query(...), aadhaar_number: str = Query
 
         # 2. Execute external API
         api_key = "c8117598aafa71238a4bf8377087b0ff"
-        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        api_url = get_provider_url("aadhaar_to_pan", target_aadhaar)
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
@@ -4442,7 +4369,7 @@ async def aadhaar_to_pan_endpoint(request: Request):
 
         # 4. Query External PAN Find API
         api_key = "c8117598aafa71238a4bf8377087b0ff"
-        api_url = f"https://techvishalboss.com/panfind/api.php?api_key={api_key}&aadhaar_number={target_aadhaar}"
+        api_url = get_provider_url("aadhaar_to_pan", target_aadhaar)
         
         headers = {
             "User-Agent": "Mozilla/5.0 TraceX-Web/1.0"
@@ -5048,6 +4975,36 @@ except Exception as _e:
     pass
 
 
+def get_provider_url(service_key: str, query: str) -> str:
+    norm_key = (service_key or "").strip().lower()
+    alias = norm_key
+    if norm_key in ["adhr", "aadhar"]: alias = "aadhaar"
+    if norm_key == "aadhaar": alias = "adhr"
+    if norm_key in ["bnk", "bank"]: alias = "ifsc"
+    if norm_key == "ifsc": alias = "bnk"
+    if norm_key == "pan": alias = "pancard"
+    if norm_key == "pancard": alias = "pan"
+    if norm_key in ["family", "ration"]: alias = "rasion"
+    if norm_key == "rasion": alias = "family"
+    if norm_key == "veh_owner_num": alias = "veh_numm"
+    if norm_key == "veh_numm": alias = "veh_owner_num"
+
+    template = (
+        PROVIDER_CONFIGS.get(norm_key) or
+        PROVIDER_CONFIGS.get(alias) or
+        DEFAULT_PROVIDER_CONFIGS.get(norm_key) or
+        DEFAULT_PROVIDER_CONFIGS.get(alias) or
+        ""
+    ).strip()
+
+    if not template:
+        return ""
+    
+    return template.replace("{query}", urllib.parse.quote(query))
+
+
+
+
 @app.api_route("/api/admin/provider-configs", methods=["GET", "POST", "PUT"])
 @app.api_route("/api/provider-configs", methods=["GET", "POST", "PUT"])
 async def handle_provider_configs_api(request: Request):
@@ -5456,7 +5413,7 @@ async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: s
 
         elif service_key == "number_lookup":
             clean_phone = re.sub(r"\D", "", query_clean)
-            url = f"https://exploitsindia.site/anish-private-api/number.php?exploits={clean_phone}"
+            url = get_provider_url("phone", clean_phone)
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
             
             raw_text = resp.text if resp.status_code == 200 else ""

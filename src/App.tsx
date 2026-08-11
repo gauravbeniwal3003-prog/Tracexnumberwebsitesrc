@@ -5,15 +5,15 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, ShieldCheck, AlertCircle, Phone, Info, History, Trash2, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff, Menu, Moon, Sun, Crown, Gift, Headphones, AlertTriangle, ExternalLink, Building2, Car, Vote, Sprout, Landmark, Wallet } from 'lucide-react';
+import { Search, ShieldCheck, AlertCircle, Phone, Info, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff, Menu, Moon, Sun, Crown, Gift, Headphones, AlertTriangle, ExternalLink, Building2, Car, Vote, Sprout, Landmark, Wallet } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
 import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
 import SubscriptionBadge from './components/SubscriptionBadge.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
 import ProtectNumberModal from './components/ProtectNumberModal.tsx';
+import FormattedResponseCard from './components/FormattedResponseCard.tsx';
 import { lookupNumber, ApiResponse, getApiBaseUrl } from './services/api.ts';
-import { saveToHistory, getHistory, clearHistory } from './services/storage.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
@@ -261,7 +261,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     setPhoneNumber('');
     setIsLoading(false);
   }, [location.pathname, location.search, service]);
-  const [searchHistory, setSearchHistory] = useState<any[]>([]);
   const [copiedStep2, setCopiedStep2] = useState(false);
   const [copiedRawFeed, setCopiedRawFeed] = useState(false);
   const [copiedRawResults, setCopiedRawResults] = useState(false);
@@ -587,7 +586,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             }
           } else {
             setIsLoading(false);
-            setError(resStep1.message || 'No PAN number found for this Aadhaar number. 150 credits deducted.');
+            setError(resStep1.message || 'No PAN number found for this Aadhaar number. Any charged credits have been instantly refunded.');
           }
         } catch (err: any) {
           setIsLoading(false);
@@ -621,11 +620,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       if (data.status && hasValidData) {
         // Render results IMMEDIATELY
         setResult(data);
-        saveToHistory(targetVal, data);
-        setSearchHistory(getHistory());
         setCooldown(5);
       } else {
-        setError(data.error || 'No records found or service temporarily unavailable.');
+        setError(data.error || 'No records found for this query. If any credits were charged, they have been automatically refunded.');
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
@@ -642,11 +639,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
     }
   }, [phoneNumber, profile, service, hasUnlimitedAction, refreshProfile]);
-
-  const removeHistory = () => {
-    clearHistory();
-    setSearchHistory([]);
-  };
 
   if (loading) {
     return (
@@ -762,48 +754,10 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             <Skeleton message={loadingMessage} />
           ) : (aadhaarPanResult || result) ? (
             <div className="space-y-4">
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-5 md:p-8 relative overflow-hidden space-y-4 border-sky-200 bg-white/90 shadow-[0_10px_35px_rgba(14,165,233,0.08)]"
-              >
-                <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500" />
-                
-                <div className="flex items-center justify-between border-b border-sky-100 pb-3.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-sky-100 border border-sky-200 text-sky-700">
-                      <Terminal size={18} />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 uppercase tracking-wide text-xs md:text-sm">
-                        Direct Database Feed
-                      </h3>
-                      <p className="text-[10px] font-mono text-sky-700 uppercase tracking-wider font-bold">
-                        STATUS: SECURE DECRYPTED
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const formatted = getFormattedResponse();
-                      navigator.clipboard.writeText(formatted);
-                      setCopiedResponse(true);
-                      setTimeout(() => setCopiedResponse(false), 2000);
-                    }}
-                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 border border-slate-300 hover:border-sky-500 text-slate-700 hover:text-sky-700 transition-all flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest cursor-pointer shadow-sm"
-                  >
-                    {copiedResponse ? <Check size={11} className="text-sky-600" strokeWidth={3} /> : <Clipboard size={11} />}
-                    {copiedResponse ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-
-                <div className="relative">
-                  <pre className="text-left font-mono whitespace-pre-wrap text-emerald-400 select-all overflow-x-auto text-[11px] md:text-xs leading-relaxed p-4 bg-slate-950 border border-slate-900 rounded-xl max-h-[600px] overflow-y-auto shadow-inner">
-                    {getFormattedResponse()}
-                  </pre>
-                </div>
-              </motion.div>
+              <FormattedResponseCard
+                data={result || aadhaarPanResult || getFormattedResponse()}
+                serviceType={service}
+              />
 
               {service === 'telegram' && (
                 <motion.div
@@ -825,43 +779,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 </motion.div>
               )}
             </div>
-          ) : searchHistory.length > 0 ? (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-4"
-            >
-              <div className="flex items-center justify-between mb-4 px-2">
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest">
-                  <History size={14} />
-                  Recent (24h)
-                </div>
-                <button 
-                  onClick={removeHistory}
-                  className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {searchHistory.map((item, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setPhoneNumber(item.number);
-                      handleSearch(undefined, item.number);
-                    }}
-                    className="flex items-center justify-between p-4 glass-card border-sky-100 bg-white/80 hover:bg-sky-50 text-left group transition-all shadow-sm"
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-sm font-mono font-bold text-slate-800">+91 {item.number}</span>
-                      <span className="text-[10px] text-slate-500 font-medium">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <ChevronRight size={16} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
-                  </button>
-                ))}
-              </div>
-            </motion.div>
           ) : null}
         </div>
       </main>

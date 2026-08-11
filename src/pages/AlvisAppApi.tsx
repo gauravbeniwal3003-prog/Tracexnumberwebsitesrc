@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import FormattedResponseCard from "../components/FormattedResponseCard";
 import { motion, AnimatePresence } from "motion/react";
 import HeaderNavbar from "../components/HeaderNavbar";
 import {
@@ -1351,19 +1352,8 @@ export default function AlvisAppApi() {
 
               {/* Response Display */}
               {testResult && (
-                <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-emerald-400">Response Result:</span>
-                    <button
-                      onClick={() => handleCopyText(JSON.stringify(testResult, null, 2), "json_res")}
-                      className="text-cyan-400 font-bold"
-                    >
-                      {copiedId === "json_res" ? "Copied JSON!" : "Copy JSON"}
-                    </button>
-                  </div>
-                  <pre className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-cyan-300 overflow-x-auto max-h-48">
-                    {JSON.stringify(testResult, null, 2)}
-                  </pre>
+                <div className="pt-2 border-t border-slate-800">
+                  <FormattedResponseCard data={testResult} serviceType={selectedApi} />
                 </div>
               )}
             </motion.div>

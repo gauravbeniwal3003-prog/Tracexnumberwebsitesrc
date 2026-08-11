@@ -29,6 +29,7 @@ import {
   X
 } from 'lucide-react';
 import { CATEGORIES, Category, SubService } from '../data/services';
+import FormattedResponseCard from './FormattedResponseCard';
 
 interface DashboardServicesViewProps {
   initialService?: string;
@@ -324,25 +325,6 @@ export function DashboardServicesView({
                 />
               </div>
 
-              {error && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs font-bold flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                  {onClearError && (
-                    <button
-                      type="button"
-                      onClick={onClearError}
-                      className="p-1 text-rose-400 hover:text-rose-700 rounded-lg hover:bg-rose-100 transition-colors shrink-0 cursor-pointer"
-                      title="Dismiss error"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={isLoading}
@@ -363,31 +345,12 @@ export function DashboardServicesView({
             </form>
           </div>
 
-          {/* Formatted Output Results Terminal */}
+          {/* Formatted Output Response Card */}
           {formattedResponseStr && (
-            <div className="w-full mt-6 bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl text-slate-100 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Decrypted Intelligence File</span>
-                </span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(formattedResponseStr);
-                    setCopiedResponse(true);
-                    setTimeout(() => setCopiedResponse(false), 2000);
-                  }}
-                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  {copiedResponse ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedResponse ? 'Copied' : 'Copy JSON'}</span>
-                </button>
-              </div>
-
-              <pre className="text-xs font-mono bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 overflow-x-auto text-emerald-300 leading-relaxed max-h-96">
-                {formattedResponseStr}
-              </pre>
-            </div>
+            <FormattedResponseCard
+              data={result || aadhaarPanResult || formattedResponseStr}
+              serviceType={selectedSubService?.serviceType || initialService}
+            />
           )}
 
         </div>

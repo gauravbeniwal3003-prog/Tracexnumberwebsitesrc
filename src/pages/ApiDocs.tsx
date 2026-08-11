@@ -503,12 +503,19 @@ export default function ApiDocs() {
   const [isCopiedBalanceLink, setIsCopiedBalanceLink] = useState(false);
   const [isCopiedPricingLink, setIsCopiedPricingLink] = useState(false);
 
+  // Flatten endpoints for service selector
+  const allEndpoints = API_CATEGORIES.flatMap((c) => c.endpoints);
+  const selectedSpec = allEndpoints.find((e) => e.serviceCode === selectedEndpointCode) || allEndpoints[0];
+  const activeQueryVal = queryInput || selectedSpec?.sampleQuery || "@username";
+
   // Live Tester URL
   const currentRequestUrl = selectedEndpointCode === 'balance' 
     ? `${baseDomain}/api/balance?api_key=${apiKey}`
     : selectedEndpointCode === 'pricing'
     ? `${baseDomain}/api/pricing?api_key=${apiKey}`
-    : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput)}`;
+    : selectedEndpointCode === 'telegram'
+    ? `${baseDomain}/api/telegram?key=${apiKey}&query=${encodeURIComponent(queryInput || selectedSpec?.sampleQuery || "@username")}`
+    : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput || selectedSpec?.sampleQuery || "9876543210")}`;
 
   // Run Live Tester Call
   const handleSendRequest = async () => {
@@ -519,7 +526,9 @@ export default function ApiDocs() {
         ? `${baseDomain}/api/balance?api_key=${apiKey}`
         : selectedEndpointCode === 'pricing'
         ? `${baseDomain}/api/pricing?api_key=${apiKey}`
-        : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(queryInput || "998877665544")}`;
+        : selectedEndpointCode === 'telegram'
+        ? `${baseDomain}/api/telegram?key=${apiKey}&query=${encodeURIComponent(activeQueryVal)}`
+        : `${baseDomain}/api/lookup?key=${apiKey}&service=${selectedEndpointCode}&query=${encodeURIComponent(activeQueryVal)}`;
 
       const res = await fetch(endpointUrl);
       if (res.ok) {
@@ -545,9 +554,6 @@ export default function ApiDocs() {
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
-  // Flatten endpoints for service selector
-  const allEndpoints = API_CATEGORIES.flatMap((c) => c.endpoints);
-  const selectedSpec = allEndpoints.find((e) => e.serviceCode === selectedEndpointCode) || allEndpoints[0];
   const walletAmount = profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹1,470.00";
 
   return (

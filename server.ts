@@ -581,10 +581,17 @@ function formatUnifiedSaaSResponse({
       filteredItem.circle = (item.state_circle || item.circle || item.state || "N/A").toString().toUpperCase();
       filteredItem.address = item.address || item.location || "N/A";
     } else if (type === 'telegram') {
-      filteredItem.name = (item.name || "Telegram Registered Profile").toString().toUpperCase();
-      filteredItem.telegram_id = item.telegram_id || query;
-      filteredItem.username = item.username || "N/A";
-      filteredItem.mobile = item.mobile || "N/A";
+      Object.entries(item).forEach(([key, val]) => {
+        if (key === 'result_no') return;
+        let cleanedVal = val;
+        if (typeof val === 'string') {
+          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+        }
+        filteredItem[key] = cleanedVal;
+      });
+      if (!filteredItem.telegram_id && !filteredItem.username) {
+        filteredItem.telegram_id = query;
+      }
     } else {
       // Dynamic mapping for Aadhar, Bank (IFSC), and Ration Card lookups
       Object.entries(item).forEach(([key, val]) => {
@@ -3056,30 +3063,31 @@ app.all("/api/lookup", async (req, res) => {
       const api_url = getProviderUrl('telegram', target_username);
       const response = await fetch(api_url);
       if (!response.ok) {
-        throw new Error(`Telegram Engine Offline: Status ${response.status}`);
+        await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+        return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
       }
 
       const text = await response.text();
       const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
       const lowerText = cleanedText.toLowerCase();
 
-      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
+      if (!text.trim() || lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("no data found")) {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
          return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
       }
 
-      let recordsList: any[] = [];
+      let parsedResult: any = null;
       let isParsedAsJson = false;
 
       try {
         const parsed = JSON.parse(text);
+        if (parsed && (parsed.success === false || parsed.status === false || parsed.status === "false")) {
+          await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+          return res.status(404).json({ status: "error", message: `No telegram records found for ${targetQuery}` });
+        }
         const cleaned_json = scrubAllBranding(parsed);
-        if (cleaned_json && (cleaned_json.results || cleaned_json.data || cleaned_json.records)) {
-          const items = cleaned_json.results || cleaned_json.data || cleaned_json.records;
-          recordsList = Array.isArray(items) ? items : [items];
-          isParsedAsJson = true;
-        } else if (cleaned_json && typeof cleaned_json === 'object') {
-          recordsList = [cleaned_json];
+        if (cleaned_json && typeof cleaned_json === 'object') {
+          parsedResult = cleaned_json.results || cleaned_json.data || cleaned_json;
           isParsedAsJson = true;
         }
       } catch (e) {
@@ -3100,12 +3108,12 @@ app.all("/api/lookup", async (req, res) => {
            return res.status(404).json({ status: "error", message: "Lookup matched but profile contains no traceable ID or phone." });
         }
 
-        recordsList = [{
-          name: "Telegram Registered Profile",
+        parsedResult = {
           telegram_id: telegram_id,
           username: username,
-          mobile: phone || "N/A"
-        }];
+          mobile: phone,
+          platform: "Telegram Lookup"
+        };
       }
 
       const newCount = (keyRecord.requests_used || 0) + 1;
@@ -3118,16 +3126,12 @@ app.all("/api/lookup", async (req, res) => {
 
       await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "success", Date.now() - startTime);
 
-      const filtered = formatUnifiedSaaSResponse({
-        type: 'telegram',
+      return res.json({
+        status: "success",
+        service: "telegram",
         query: targetQuery,
-        expiresAt: keyRecord.expires_at,
-        planName: keyRecord.plan_name,
-        requestsUsed: newCount,
-        records: recordsList
+        results: scrubAllBranding(parsedResult)
       });
-
-      return res.json(filtered);
     } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan') {
       let api_url = "";
       let logPrefix = "";
@@ -3270,15 +3274,19 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       let isError = false;
-      if (isJson && parsedData) {
+      if (isJson && parsedData && typeof parsedData === 'object') {
         const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
-        const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
-        if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+        if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
           isError = true;
+        } else if (parsedData.error && typeof parsedData.error === 'string' && parsedData.error.trim().length > 0) {
+          const errLower = parsedData.error.trim().toLowerCase();
+          if (errLower !== "null" && errLower !== "false" && errLower !== "none" && errLower !== "0" && !errLower.includes("success")) {
+            isError = true;
+          }
         }
       } else {
         const lowerText = text.toLowerCase();
-        if (lowerText.includes("no result") || lowerText.includes("no records") || lowerText.includes("error") || !text.trim()) {
+        if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
           isError = true;
         }
       }
@@ -4350,7 +4358,7 @@ app.get("/api/telegram", async (req, res) => {
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || !text.trim()) {
        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-       return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+       return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
     }
 
     let results: any = null;
@@ -4358,38 +4366,15 @@ app.get("/api/telegram", async (req, res) => {
 
     try {
       const parsed = JSON.parse(text);
-      if (parsed && (parsed.success === false || parsed.success === "false")) {
+      if (parsed && (parsed.success === false || parsed.status === false || parsed.status === "false")) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-        return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+        return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
       }
 
-      const cleaned_json = cleanBrandingObject(parsed);
-      if (cleaned_json) {
-        const telegram_id = cleaned_json.tg_id || cleaned_json.telegram_id || target_username;
-        const phone = cleaned_json.number || cleaned_json.mobile || cleaned_json.phone || "N/A";
-        const username = cleaned_json.username || cleaned_json.name || target_username;
-        const country = cleaned_json.country || "N/A";
-        const country_code = cleaned_json.country_code || "N/A";
-
-        if (telegram_id === "N/A" && phone === "N/A") {
-          // Fallback to text parser
-        } else {
-          results = {
-            "Telegram Match": {
-              name: username,
-              telegram_id: telegram_id,
-              mobile: phone,
-              father_name: "N/A",
-              alt_mobile: country_code,
-              email: "N/A",
-              operator: country,
-              state_circle: "N/A",
-              address: "N/A",
-              platform: "Telegram Lookup"
-            }
-          };
-          isParsedAsJson = true;
-        }
+      const cleaned_json = scrubAllBranding(parsed);
+      if (cleaned_json && typeof cleaned_json === 'object') {
+        results = cleaned_json.results || cleaned_json.data || cleaned_json;
+        isParsedAsJson = true;
       }
     } catch (e) {
       // Fallback to text parsing
@@ -4405,36 +4390,20 @@ app.get("/api/telegram", async (req, res) => {
       let phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
       if (!phoneMatch) phoneMatch = cleanedText.match(/"(?:number|mobile|phone)"\s*:\s*"?(\d+)"?/i);
 
-      let countryMatch = cleanedText.match(/Country:\s*([^\n\r]+)/i);
-      if (!countryMatch) countryMatch = cleanedText.match(/"country"\s*:\s*"([^"]+)"/i);
-
-      let codeMatch = cleanedText.match(/Country Code:\s*([^\n\r]+)/i);
-      if (!codeMatch) codeMatch = cleanedText.match(/"country_code"\s*:\s*"([^"]+)"/i);
-
       const username = usernameMatch ? usernameMatch[1].trim() : target_username;
       const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
       const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
-      const country = countryMatch ? countryMatch[1].trim() : "N/A";
-      const country_code = codeMatch ? codeMatch[1].trim() : "N/A";
 
       if (telegram_id === "N/A" && phone === "N/A") {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-         return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+         return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
       }
 
       results = {
-        "Telegram Match": {
-          name: username,
-          telegram_id: telegram_id,
-          mobile: phone,
-          father_name: "N/A",
-          alt_mobile: country_code,
-          email: "N/A",
-          operator: country,
-          state_circle: "N/A",
-          address: "N/A",
-          platform: "Telegram Lookup"
-        }
+        telegram_id: telegram_id,
+        username: username,
+        mobile: phone,
+        platform: "Telegram Lookup"
       };
     }
 
@@ -4461,7 +4430,7 @@ app.get("/api/telegram", async (req, res) => {
 
     await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "success", Date.now() - startTime);
 
-    return res.json({ status: "success", results: cleanBrandingObject(results) });
+    return res.json({ status: "success", service: "telegram", query: targetTelegramId, results: scrubAllBranding(results) });
   } catch (err: any) {
     console.error("Telegram Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
@@ -4558,18 +4527,32 @@ app.get("/api/identity", async (req, res) => {
 
     const text = await response.text();
     const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
-       await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
-    }
-
-    let parsedData: any;
+    let parsedData: any = null;
+    let isJson = false;
     try {
       parsedData = JSON.parse(cleanedText);
+      isJson = true;
     } catch (e) {
       parsedData = parsePlainTextLookup(cleanedText, 'aadhar');
+    }
+
+    let isError = false;
+    if (isJson && parsedData && typeof parsedData === 'object') {
+      const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
+      }
+    }
+
+    if (isError) {
+       await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4681,18 +4664,32 @@ app.get("/api/bank", async (req, res) => {
 
     const text = await response.text();
     const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
-       await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
-    }
-
-    let parsedData: any;
+    let parsedData: any = null;
+    let isJson = false;
     try {
       parsedData = JSON.parse(cleanedText);
+      isJson = true;
     } catch (e) {
       parsedData = parsePlainTextLookup(cleanedText, 'bank');
+    }
+
+    let isError = false;
+    if (isJson && parsedData && typeof parsedData === 'object') {
+      const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
+      }
+    }
+
+    if (isError) {
+       await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4804,18 +4801,32 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
 
     const text = await response.text();
     const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
 
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
-       await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "api error" });
-    }
-
-    let parsedData: any;
+    let parsedData: any = null;
+    let isJson = false;
     try {
       parsedData = JSON.parse(cleanedText);
+      isJson = true;
     } catch (e) {
       parsedData = parsePlainTextLookup(cleanedText, 'rasion');
+    }
+
+    let isError = false;
+    if (isJson && parsedData && typeof parsedData === 'object') {
+      const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
+      }
+    }
+
+    if (isError) {
+       await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+       return res.status(404).json({ status: "error", message: "api error" });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -4989,15 +5000,14 @@ app.get("/api/vehicle", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isJson && parsedData) {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
-      const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
-      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
         isError = true;
       }
     } else {
       const lowerText = text.toLowerCase();
-      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim()) {
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
         isError = true;
       }
     }
@@ -5176,15 +5186,14 @@ app.get("/api/veh-owner-num", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isJson && parsedData) {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
-      const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
-      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
         isError = true;
       }
     } else {
       const lowerText = text.toLowerCase();
-      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim()) {
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
         isError = true;
       }
     }
@@ -5329,15 +5338,14 @@ app.get("/api/email", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isJson && parsedData) {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
-      const messageStr = String(parsedData.message || parsedData.error || "").toLowerCase();
-      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || messageStr.includes("no result") || messageStr.includes("no records found") || messageStr.includes("not found")) {
+      if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
         isError = true;
       }
     } else {
       const lowerText = text.toLowerCase();
-      if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim()) {
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
         isError = true;
       }
     }
@@ -5640,21 +5648,63 @@ initProviderConfigs();
 function getProviderUrl(serviceKey: string, query: string): string {
   const normKey = (serviceKey || "").trim().toLowerCase();
   let alias = normKey;
-  if (normKey === 'adhr') alias = 'aadhaar';
-  if (normKey === 'bnk') alias = 'ifsc';
+  if (normKey === 'adhr' || normKey === 'aadhar') alias = 'aadhaar';
+  if (normKey === 'aadhaar') alias = 'adhr';
+  if (normKey === 'bnk' || normKey === 'bank') alias = 'ifsc';
+  if (normKey === 'ifsc') alias = 'bnk';
   if (normKey === 'pan') alias = 'pancard';
+  if (normKey === 'pancard') alias = 'pan';
+  if (normKey === 'family' || normKey === 'ration') alias = 'rasion';
+  if (normKey === 'rasion') alias = 'family';
+  if (normKey === 'veh_owner_num') alias = 'veh_numm';
+  if (normKey === 'veh_numm') alias = 'veh_owner_num';
 
-  const template = PROVIDER_CONFIGS[normKey] || PROVIDER_CONFIGS[alias] || DEFAULT_PROVIDER_CONFIGS[normKey] || DEFAULT_PROVIDER_CONFIGS[alias] || "";
+  const template = (
+    PROVIDER_CONFIGS[normKey] || 
+    PROVIDER_CONFIGS[alias] || 
+    DEFAULT_PROVIDER_CONFIGS[normKey] || 
+    DEFAULT_PROVIDER_CONFIGS[alias] || 
+    ""
+  ).trim();
+
   if (!template) return "";
-  const cleanQuery = encodeURIComponent(String(query).trim());
-  return template
+  const rawQuery = String(query).trim();
+  const cleanQuery = encodeURIComponent(rawQuery);
+
+  let formatted = template
     .replace(/\{query\}/gi, cleanQuery)
     .replace(/\{term\}/gi, cleanQuery)
     .replace(/\{aadhaar_number\}/gi, cleanQuery)
     .replace(/\{exploits\}/gi, cleanQuery)
     .replace(/\{rc\}/gi, cleanQuery)
     .replace(/\{ifsc\}/gi, cleanQuery)
-    .replace(/\{pan\}/gi, cleanQuery);
+    .replace(/\{pan\}/gi, cleanQuery)
+    .replace(/\{pancard\}/gi, cleanQuery)
+    .replace(/\{search\}/gi, cleanQuery)
+    .replace(/\{mobile\}/gi, cleanQuery)
+    .replace(/\{phone\}/gi, cleanQuery)
+    .replace(/\{number\}/gi, cleanQuery)
+    .replace(/\{aadhaar\}/gi, cleanQuery)
+    .replace(/\{aadhar\}/gi, cleanQuery)
+    .replace(/\{email\}/gi, cleanQuery)
+    .replace(/\{value\}/gi, cleanQuery)
+    .replace(/\{input\}/gi, cleanQuery)
+    .replace(/\{id\}/gi, cleanQuery)
+    .replace(/\{q\}/gi, cleanQuery)
+    .replace(/\{target\}/gi, cleanQuery);
+
+  // If no placeholder was replaced and the template doesn't already contain the query
+  if (formatted === template && !template.includes(cleanQuery) && !template.includes(rawQuery)) {
+    if (template.endsWith("=") || template.endsWith(":") || template.endsWith("/")) {
+      formatted = template + cleanQuery;
+    } else if (template.includes("?")) {
+      formatted = template + "&query=" + cleanQuery;
+    } else {
+      formatted = template + "?query=" + cleanQuery;
+    }
+  }
+
+  return formatted;
 }
 
 // Deep Case-Insensitive Branding and Provider Info Scrubber
@@ -5782,18 +5832,36 @@ function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'g
     }
   }
 
-  // Quick check for empty or failure responses
-  const lowerText = textBody.toLowerCase();
-  if (
-    lowerText.includes("no result") ||
-    lowerText.includes("no records found") ||
-    lowerText.includes("no data found") ||
-    lowerText.includes("invalid number") ||
-    lowerText.includes("invalid query") ||
-    lowerText.includes("not found") ||
-    lowerText.includes("unknown field")
-  ) {
-    return {};
+  // If input is valid JSON, check for explicit status errors
+  if (jsonObj && typeof jsonObj === "object") {
+    const statusVal = String(jsonObj.status || jsonObj.success || "").toLowerCase();
+    if (statusVal === "false" || statusVal === "error" || statusVal === "failed" || statusVal === "fail" || statusVal === "404" || statusVal === "400") {
+      return {};
+    }
+    if (jsonObj.error) {
+      if (typeof jsonObj.error === "string" && jsonObj.error.trim().length > 0) {
+        const errLower = jsonObj.error.trim().toLowerCase();
+        if (errLower !== "null" && errLower !== "false" && errLower !== "none" && errLower !== "0" && !errLower.includes("success")) {
+          return {};
+        }
+      } else if (typeof jsonObj.error === "boolean" && jsonObj.error === true) {
+        return {};
+      }
+    }
+  } else {
+    // Quick check for empty or failure responses in PLAIN TEXT
+    const lowerText = textBody.toLowerCase();
+    if (
+      lowerText.includes("no result found") ||
+      lowerText.includes("no records found") ||
+      lowerText.includes("no data found") ||
+      lowerText.includes("invalid number") ||
+      lowerText.includes("invalid query") ||
+      lowerText.includes("not found in database") ||
+      lowerText.includes("unknown query")
+    ) {
+      return {};
+    }
   }
 
   // Key canonicalization map
@@ -5853,7 +5921,7 @@ function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'g
 
   // Case 1: Input parsed as JSON
   if (jsonObj && typeof jsonObj === "object") {
-    let unwrapped = jsonObj.results || jsonObj.data || jsonObj.records || jsonObj.payload || jsonObj.response || jsonObj;
+    let unwrapped = jsonObj.results || jsonObj.data || jsonObj.records || jsonObj.payload || jsonObj.response || jsonObj.result || jsonObj.info || jsonObj.details || jsonObj.output || jsonObj.user || jsonObj.item || jsonObj.data_list || jsonObj;
 
     if (Array.isArray(unwrapped)) {
       unwrapped.forEach(item => {

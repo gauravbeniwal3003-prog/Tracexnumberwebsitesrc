@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ShieldCheck, ArrowLeft, Loader2, Sparkles, AlertCircle, FileSearch, Check, Shield, Search, Send, CreditCard, Clipboard } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground';
+import FormattedResponseCard from '../components/FormattedResponseCard';
 import { safeFetchJson, getApiBaseUrl } from '../services/api.ts';
 
 export default function PanFind() {
@@ -333,86 +334,17 @@ export default function PanFind() {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="glass-card p-6 md:p-8 relative overflow-hidden space-y-6 rounded-[32px] border border-sky-200 bg-white shadow-sm"
+                className="space-y-4"
               >
-                <div className="flex items-center justify-between border-b border-sky-100 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-800">
-                      <ShieldCheck size={18} />
-                    </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 uppercase tracking-wide text-sm">
-                        Verified PAN Records
-                      </h3>
-                      <p className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider">
-                        STATUS: SUCCESSFUL LOOKUP
-                      </p>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between px-2">
                   <button
                     onClick={handleReset}
-                    className="px-3 py-1.5 rounded-lg bg-sky-50 border border-sky-200 hover:bg-sky-100 transition-colors text-[10px] uppercase tracking-wider font-black text-slate-800 cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 transition-colors text-xs font-black text-slate-800 cursor-pointer shadow-2xs"
                   >
-                    New Search
+                    ← New Search
                   </button>
                 </div>
-
-                {/* API Response Display fields */}
-                <div className="space-y-3 font-mono">
-                  
-                  {/* Status row */}
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-1">
-                    <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Aadhaar Target</span>
-                    <span className="text-xs text-slate-900 font-extrabold">{results.aadhaar_number || queryAadhaar || "N/A"}</span>
-                  </div>
-
-                  {results.full_pan_number && (
-                    <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] text-sky-700 font-black uppercase tracking-wider">Allocated PAN Number</span>
-                        <span className="text-base font-black text-slate-900 tracking-widest">{results.full_pan_number}</span>
-                      </div>
-                      <button
-                        onClick={() => copyToClipboard(results.full_pan_number)}
-                        className="p-2 rounded-lg bg-white border border-sky-200 hover:border-sky-400 text-slate-600 hover:text-sky-700 transition-all flex items-center justify-center group cursor-pointer shadow-sm"
-                        title="Copy PAN"
-                      >
-                        <Clipboard size={14} className="group-hover:scale-110 transition-transform" />
-                      </button>
-                    </div>
-                  )}
-
-                  {results.aadhaar_status && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Linking Status</span>
-                        <span className="text-xs text-slate-900 capitalize font-bold">{results.aadhaar_status}</span>
-                      </div>
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
-                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Search Code</span>
-                        <span className="text-xs text-slate-900 font-bold">{results.response_code || 200}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {results.message && (
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
-                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Server Message</span>
-                      <span className="text-xs text-slate-800 font-medium">{results.message}</span>
-                    </div>
-                  )}
-
-                  {results.aadhaar_to_panfind_status && (
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-sky-100 flex flex-col gap-0.5">
-                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">Search State</span>
-                      <span className="text-xs text-slate-900 font-bold">{results.aadhaar_to_panfind_status}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3 text-center text-[10px] text-slate-500 font-mono font-semibold">
-                  Security Seal: Data decrypted securely and never retained on disk.
-                </div>
+                <FormattedResponseCard data={results} serviceType="aadhaar_to_pan" />
               </motion.div>
             )}
 

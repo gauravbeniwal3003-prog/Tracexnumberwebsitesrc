@@ -5,6 +5,7 @@ import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
+import FormattedResponseCard from '../components/FormattedResponseCard';
 
 interface ServiceRecordItem {
   id: string;
@@ -211,9 +212,7 @@ export default function ServiceRecords() {
                 </button>
               </div>
 
-              <pre className="bg-slate-900 text-emerald-400 rounded-xl p-4 text-xs font-mono overflow-x-auto max-h-80 border border-slate-800 leading-relaxed shadow-inner">
-                {JSON.stringify(selectedRecord.payload, null, 2)}
-              </pre>
+              <FormattedResponseCard data={selectedRecord.payload} />
 
               <div className="pt-2 flex justify-end">
                 <button
