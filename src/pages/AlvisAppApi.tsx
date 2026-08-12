@@ -329,7 +329,7 @@ export default function AlvisAppApi() {
   };
 
   const apiKey = walletData?.api_key || "alvis_live_key_sample";
-  const renderHost = "https://tracexdata-api.onrender.com";
+  const renderHost = baseUrl || (typeof window !== "undefined" ? window.location.origin : "");
 
   // Categories definition matching portal design
   const categoriesList = [

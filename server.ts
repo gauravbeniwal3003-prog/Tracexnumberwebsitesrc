@@ -58,10 +58,11 @@ async function fetchLocalApi(path: string, options?: any): Promise<any> {
                 body += chunk;
               });
               res.on('end', () => {
+                const trimmed = body.trim();
+                const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
                 if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
                   try {
-                    const trimmed = body.trim();
-                    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                    if (isJson) {
                       resolve(JSON.parse(trimmed));
                     } else {
                       reject(new Error(`Non-JSON response: ${trimmed.slice(0, 100)}`));
@@ -70,6 +71,14 @@ async function fetchLocalApi(path: string, options?: any): Promise<any> {
                     reject(new Error(`Failed to parse JSON: ${e.message}`));
                   }
                 } else {
+                  if (isJson) {
+                    try {
+                      resolve(JSON.parse(trimmed));
+                      return;
+                    } catch (e) {
+                      // fallback to reject
+                    }
+                  }
                   reject(new Error(`Status code ${res.statusCode}: ${body.slice(0, 200)}`));
                 }
               });
@@ -102,7 +111,7 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
-const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "YOUR_SECURE_RANDOM_INTERNAL_MASTER_KEY";
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
@@ -2404,7 +2413,11 @@ app.get("/api/user-lookup", async (req, res) => {
 
     if (profileErr || !profileData) {
       if (user && user.id !== 'test') {
-        console.warn("[USER_LOOKUP_WARN] Profile lookup or insert failed, using mock fallback profile to prevent error:", profileErr);
+        if (profileErr) {
+          console.warn("[USER_LOOKUP_WARN] Profile lookup or insert failed:", profileErr.message || profileErr);
+        } else {
+          console.log("[USER_LOOKUP] Profile not found, using temporary session fallback profile.");
+        }
       }
       profileData = {
         id: user.id,
@@ -3461,20 +3474,23 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       let isError = false;
-      if (isJson && parsedData && typeof parsedData === 'object') {
+      if (isNegativeResponse(text)) {
+        isError = true;
+      } else if (isJson && parsedData && typeof parsedData === 'object') {
         const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
         if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-          isError = true;
+          const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+          if (!hasDirectFields) {
+            isError = true;
+          }
         } else if (parsedData.error && typeof parsedData.error === 'string' && parsedData.error.trim().length > 0) {
           const errLower = parsedData.error.trim().toLowerCase();
           if (errLower !== "null" && errLower !== "false" && errLower !== "none" && errLower !== "0" && !errLower.includes("success")) {
-            isError = true;
+            const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+            if (!hasDirectFields) {
+              isError = true;
+            }
           }
-        }
-      } else {
-        const lowerText = text.toLowerCase();
-        if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-          isError = true;
         }
       }
 
@@ -4743,15 +4759,15 @@ app.get("/api/identity", async (req, res) => {
     }
 
     let isError = false;
-    if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isNegativeResponse(text)) {
+      isError = true;
+    } else if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        isError = true;
-      }
-    } else {
-      const lowerText = cleanedText.toLowerCase();
-      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-        isError = true;
+        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+        if (!hasDirectFields) {
+          isError = true;
+        }
       }
     }
 
@@ -4880,15 +4896,15 @@ app.get("/api/bank", async (req, res) => {
     }
 
     let isError = false;
-    if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isNegativeResponse(text)) {
+      isError = true;
+    } else if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        isError = true;
-      }
-    } else {
-      const lowerText = cleanedText.toLowerCase();
-      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-        isError = true;
+        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+        if (!hasDirectFields) {
+          isError = true;
+        }
       }
     }
 
@@ -5017,15 +5033,15 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     let isError = false;
-    if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isNegativeResponse(text)) {
+      isError = true;
+    } else if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        isError = true;
-      }
-    } else {
-      const lowerText = cleanedText.toLowerCase();
-      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-        isError = true;
+        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+        if (!hasDirectFields) {
+          isError = true;
+        }
       }
     }
 
@@ -5205,15 +5221,15 @@ app.get("/api/vehicle", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isNegativeResponse(text)) {
+      isError = true;
+    } else if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        isError = true;
-      }
-    } else {
-      const lowerText = text.toLowerCase();
-      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-        isError = true;
+        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+        if (!hasDirectFields) {
+          isError = true;
+        }
       }
     }
 
@@ -5391,15 +5407,15 @@ app.get("/api/veh-owner-num", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isNegativeResponse(text)) {
+      isError = true;
+    } else if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        isError = true;
-      }
-    } else {
-      const lowerText = text.toLowerCase();
-      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
-        isError = true;
+        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
+        if (!hasDirectFields) {
+          isError = true;
+        }
       }
     }
 
@@ -6017,6 +6033,58 @@ function scrubAllBranding(obj: any): any {
     return cleaned;
   }
   return obj;
+}
+
+function isNegativeResponse(text: string): boolean {
+  if (!text || typeof text !== 'string') return true;
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === "[]" || trimmed === "{}" || trimmed === "null") return true;
+  
+  const lower = trimmed.toLowerCase();
+  
+  // Exact matches for known empty responses
+  const exactNegatives = [
+    "no result found",
+    "no records found",
+    "no data found",
+    "record not found",
+    "not found",
+    "no data",
+    "no record",
+    "no results",
+    "error",
+    "failed",
+    "invalid",
+    "invalid query",
+    "invalid number",
+    "null",
+    "[]",
+    "{}",
+  ];
+  if (exactNegatives.includes(lower)) return true;
+  
+  // If the text is short (e.g. less than 150 chars) and contains negative phrases, it's likely negative
+  if (trimmed.length < 150) {
+    const negativeSubstrings = [
+      "no records found",
+      "no result found",
+      "no data found",
+      "record not found",
+      "not found",
+      "no data",
+      "no results",
+      "invalid parameter",
+      "data not found"
+    ];
+    // Check if it contains any negative phrase and doesn't contain any positive field indicating real data
+    const hasNegative = negativeSubstrings.some(phrase => lower.includes(phrase));
+    const hasPositiveIndicator = lower.includes("name") || lower.includes("mobile") || lower.includes("phone") || lower.includes("aadhar") || lower.includes("pan") || lower.includes("address") || lower.includes("ifsc") || lower.includes("gender") || lower.includes("district");
+    if (hasNegative && !hasPositiveIndicator) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 function parseRawTextToRecords(text: string, queryVal: string = ''): Record<string, any> {
