@@ -192,6 +192,134 @@ export const validateLookupResponse = (data: any): boolean => {
   return isOk && hasData;
 };
 
+export const formatApiError = (err: any, serviceName: string = 'Service'): string => {
+  if (!err) return "Sorry, we don't have data related to the query.";
+  const rawMsg = typeof err === 'string' ? err : err.message || err.error || JSON.stringify(err);
+  const cleanMsg = scrubBranding(rawMsg);
+
+  if (cleanMsg.includes('Insufficient Wallet Balance') || cleanMsg.includes('Insufficient credits') || cleanMsg.includes('insufficient credits')) {
+    return cleanMsg;
+  }
+  if (cleanMsg.includes('protected with TRACEXDATA Protection') || cleanMsg.includes('Protected Record')) {
+    return cleanMsg;
+  }
+  if (cleanMsg.includes('Authentication Required') || cleanMsg.includes('Sign In') || cleanMsg.includes('session') || cleanMsg.includes('log in')) {
+    return cleanMsg;
+  }
+  if (
+    cleanMsg.toLowerCase().includes('no record') || 
+    cleanMsg.toLowerCase().includes('no data') || 
+    cleanMsg.toLowerCase().includes('not found') || 
+    cleanMsg.toLowerCase().includes("don't have data") ||
+    cleanMsg.toLowerCase().includes("no identity records")
+  ) {
+    return "Sorry, we don't have data related to the query.";
+  }
+
+  // Handle explicit API Error strings without double prefixing
+  if (cleanMsg.startsWith('API Error:')) {
+    return cleanMsg;
+  }
+
+  // Safe category tags without exposing raw internal URLs or endpoints
+  if (cleanMsg.includes('502') || cleanMsg.includes('504') || cleanMsg.includes('Gateway') || cleanMsg.includes('unresponsive') || cleanMsg.includes('Unresponsive') || cleanMsg.includes('Timeout') || cleanMsg.includes('timeout')) {
+    return `API Error: ${serviceName} provider gateway is unresponsive [ERR_GATEWAY_TIMEOUT]`;
+  }
+  if (cleanMsg.includes('500') || cleanMsg.includes('503') || cleanMsg.includes('Offline') || cleanMsg.includes('offline') || cleanMsg.includes('ServerDown') || cleanMsg.includes('unavailable')) {
+    return `API Error: ${serviceName} upstream provider is temporarily unavailable [ERR_PROVIDER_OFFLINE]`;
+  }
+  if (cleanMsg.includes('HTML') || cleanMsg.includes('parse') || cleanMsg.includes('JSON') || cleanMsg.includes('payload')) {
+    return `API Error: ${serviceName} data source returned an invalid payload [ERR_INVALID_PAYLOAD]`;
+  }
+  if (cleanMsg.includes('Failed to fetch') || cleanMsg.includes('NetworkError') || cleanMsg.includes('network') || cleanMsg.includes('Connection refused')) {
+    return `API Error: Connection to search gateway failed [ERR_NETWORK_DISCONNECTED]`;
+  }
+
+  return `API Error: ${serviceName} query execution failed [ERR_GATEWAY_FAULT]`;
+};
+
+export const extractServiceResults = (apiData: any, serviceName: string): ApiResponse => {
+  if (!apiData) {
+    return {
+      status: false,
+      results: {},
+      error: "Sorry, we don't have data related to the query."
+    };
+  }
+
+  // 1. Explicit API Error from backend
+  if (apiData.status === 'error' || apiData.error_type === 'api_error') {
+    const errMsg = apiData.message || apiData.error || (typeof apiData.results === 'object' && apiData.results?.error) || '';
+    return {
+      status: false,
+      results: {},
+      error: formatApiError(errMsg, serviceName)
+    };
+  }
+
+  // 2. Error inside results object or message
+  const possibleErr = apiData.error || (typeof apiData.results === 'object' && apiData.results !== null && apiData.results.error) || apiData.message;
+  if (possibleErr && typeof possibleErr === 'string') {
+    const isSuccessWrapper = (apiData.status === 'success' || apiData.status === true) && !possibleErr.toLowerCase().includes('error') && !possibleErr.toLowerCase().includes('not found') && !possibleErr.toLowerCase().includes('no record');
+    if (!isSuccessWrapper) {
+      return {
+        status: false,
+        results: {},
+        error: formatApiError(possibleErr, serviceName)
+      };
+    }
+  }
+
+  // 3. Extract and scrub data
+  let rawData = apiData.results !== undefined ? apiData.results : (apiData.data !== undefined ? apiData.data : apiData);
+  const cleanResults = scrubBranding(rawData);
+  const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
+
+  if (typeof cleanResults === 'string') {
+    const trimmed = cleanResults.trim();
+    if (!trimmed || trimmed.toLowerCase().includes('no result') || trimmed.toLowerCase().includes('not found') || trimmed.toLowerCase().includes('no data')) {
+      return {
+        status: false,
+        results: {},
+        error: "Sorry, we don't have data related to the query."
+      };
+    }
+    return {
+      status: true,
+      results: { "Result 1": cleanResults as any },
+      raw_results: cleanRawResults || trimmed
+    };
+  }
+
+  if (typeof cleanResults === 'object' && cleanResults !== null) {
+    const keys = Object.keys(cleanResults).filter(k => 
+      !['error', 'message', 'status', 'msg', 'success', 'branding', 'api_info', 'buy_api', 'contact', 'credits', 'found'].includes(k.toLowerCase())
+    );
+
+    if (keys.length > 0) {
+      return {
+        status: true,
+        results: cleanResults,
+        raw_results: cleanRawResults
+      };
+    }
+  }
+
+  if (cleanRawResults && typeof cleanRawResults === 'string' && cleanRawResults.trim().length > 0) {
+    return {
+      status: true,
+      results: { "Result 1": cleanRawResults as any },
+      raw_results: cleanRawResults
+    };
+  }
+
+  return {
+    status: false,
+    results: {},
+    error: "Sorry, we don't have data related to the query."
+  };
+};
+
 export const parseLookupResults = (data: any, number: string = ''): ApiResponse => {
   console.log("BACKEND RESPONSE", data);
   if (!data) {
@@ -361,19 +489,17 @@ export const lookupNumber = async (number: string): Promise<ApiResponse> => {
     const isValid = validateLookupResponse(rawData);
     if (rawData && isValid) {
       const parsed = parseLookupResults(rawData, number);
-      return parsed;
+      if (parsed.status && Object.keys(parsed.results).length > 0) {
+        return parsed;
+      }
     }
-    return {
-      status: true,
-      results: rawData,
-      raw_results: rawData
-    };
+    return extractServiceResults(rawData, "Mobile");
   } catch (err: any) {
     console.error("Lookup number error:", err);
     return {
       status: false,
       results: {},
-      error: err.message && !err.message.includes("api error") ? err.message : "Sorry, we don't have data related to the query."
+      error: formatApiError(err, "Mobile")
     };
   }
 };
@@ -393,9 +519,7 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
     const hasStatus = data?.status === true || data?.success === true;
     const rawResults = data?.results || data?.data || (hasStatus ? data : null);
 
-    // 2. Check removed so UI can see exact API JSON response
-
-    // 3. Dynamic Normalization (Fast Path)
+    // 2. Dynamic Normalization (Fast Path)
     if (rawResults && typeof rawResults === 'object') {
       const normalizedResults: { [key: string]: LookupResult } = {};
       
@@ -430,15 +554,11 @@ const processApiData = async (apiData: any, number: string): Promise<ApiResponse
       }
     }
 
-    // 4. Final Fallback for recognized error patterns
-    return {
-      status: false,
-      results: {},
-      error: data?.message || data?.error || 'No Record Found for this number.'
-    };
+    // 3. Fallback to extractServiceResults
+    return extractServiceResults(data, "Mobile");
   } catch (error) {
     console.error('TRACEXDATA Parsing Error:', error);
-    return { status: false, results: {}, error: 'Server busy, please try again later.' };
+    return { status: false, results: {}, error: formatApiError(error, "Mobile") };
   }
 };
 
@@ -452,29 +572,13 @@ export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> =
     const token = await getAuthToken();
 
     const apiData = await fetchWithFallback(endpoint, 'telegram', cleanTelegram, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(apiData, "Telegram");
   } catch (error: any) {
     console.error(`Telegram lookup error:`, error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Telegram")
     };
   }
 };
@@ -613,7 +717,7 @@ export const fetchWithFallback = async (
   token: string
 ): Promise<any> => {
   const headers: Record<string, string> = {
-    'Accept': 'application/json'
+    'Accept': 'application/json,text/plain,*/*'
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -624,19 +728,28 @@ export const fetchWithFallback = async (
   });
   
   if (!response.ok) {
-    throw new Error(`Primary backend returned status ${response.status}`);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Authentication Required: Please Sign In to continue [ERR_AUTH_REJECTED]");
+    }
+    if (response.status === 502 || response.status === 504) {
+      throw new Error(`API Error: Data provider gateway is unresponsive [ERR_GATEWAY_${response.status}]`);
+    }
+    if (response.status >= 500) {
+      throw new Error(`API Error: Upstream service temporarily unavailable [ERR_PROVIDER_${response.status}]`);
+    }
+    throw new Error(`API Error: Lookup request failed with status ${response.status} [ERR_HTTP_${response.status}]`);
   }
 
   const rawText = await response.text();
   const contentType = response.headers.get('content-type') || '';
   if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
-    throw new Error("Backend responded with HTML page instead of JSON.");
+    throw new Error("API Error: Data source returned an invalid payload [ERR_INVALID_PAYLOAD]");
   }
 
   try {
     return JSON.parse(rawText);
   } catch (e) {
-    throw new Error("Failed to parse backend JSON response.");
+    return rawText;
   }
 };
 
@@ -644,62 +757,32 @@ export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
   console.log('Searching TRACEXDATA Identity Card Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'adhr', aadharNo, token);
-
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      return { 
-        status: true, 
-        results: scrubBranding(apiData.results || {}), 
-        raw_results: apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
-      };
-    }
-  } catch (error) {
+    return extractServiceResults(apiData, "Identity Card");
+  } catch (error: any) {
     console.error('Identity Card lookup error:', error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Identity Card")
     };
   }
 };
 
 export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
-  console.log('Searching TRACEXDATA BA&NK Intelligence...');
+  console.log('Searching TRACEXDATA Bank Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'bnk', ifsc, token);
-
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      return { 
-        status: true, 
-        results: scrubBranding(apiData.results || {}), 
-        raw_results: apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
-      };
-    }
-  } catch (error) {
+    return extractServiceResults(apiData, "Bank IFSC");
+  } catch (error: any) {
     console.error('Bank lookup error:', error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Bank IFSC")
     };
   }
 };
@@ -709,33 +792,15 @@ export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => 
   console.log('Searching TRACEXDATA Vehicle Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'vehicle', cleanVehicleNo, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || apiData?.results?.error || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(apiData, "Vehicle RC");
   } catch (error: any) {
     console.error(`Vehicle lookup error:`, error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Vehicle RC")
     };
   }
 };
@@ -745,107 +810,51 @@ export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse>
   console.log('Searching TRACEXDATA Vehicle To Owner Number Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=veh_owner_num&query=${cleanVehicleNo}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'veh_owner_num', cleanVehicleNo, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || apiData?.results?.error || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(apiData, "Vehicle Owner Number");
   } catch (error: any) {
     console.error(`Vehicle To Owner Number lookup error:`, error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Vehicle Owner Number")
     };
   }
 };
 
 export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => {
   const cleanPancardNo = pancardNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  
-  console.log('Searching TRACEXDATA PN Card Intelligence...');
+  console.log('Searching TRACEXDATA PAN Card Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(apiData, "PAN Card");
   } catch (error: any) {
-    console.error(`PN Card lookup error:`, error);
+    console.error(`PAN Card lookup error:`, error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "PAN Card")
     };
   }
 };
 
 export const lookupEmail = async (email: string): Promise<ApiResponse> => {
   const cleanEmail = email.trim().toLowerCase();
-  
   console.log('Searching TRACEXDATA Email Intelligence...');
   try {
     const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=email&query=${encodeURIComponent(cleanEmail)}`;
-
     const token = await getAuthToken();
-
     const apiData = await fetchWithFallback(endpoint, 'email', cleanEmail, token);
-    
-    if (apiData && (apiData.status === 'success' || apiData.status === true) && (apiData.results || apiData.raw_results)) {
-      const cleanResults = scrubBranding(apiData.results || {});
-      const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-      return { 
-        status: true, 
-        results: cleanResults, 
-        raw_results: cleanRawResults 
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: apiData?.message || apiData?.error || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(apiData, "Email");
   } catch (error: any) {
     console.error(`Email lookup error:`, error);
     return {
       status: false,
       results: {},
-      error: error instanceof Error ? error.message : 'Server down, please try again later.'
+      error: formatApiError(error, "Email")
     };
   }
 };
@@ -853,7 +862,6 @@ export const lookupEmail = async (email: string): Promise<ApiResponse> => {
 export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
   try {
     const token = await getAuthToken();
-    
     const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
 
     const response = await fetch(endpoint, {
@@ -868,13 +876,13 @@ export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
     if (response.ok) {
       return await safeFetchJson(response);
     }
-    throw new Error(`Engine returned status ${response.status}`);
+    throw new Error(`Gateway returned status ${response.status}`);
   } catch (error: any) {
     console.error('Aadhaar to PAN lookup error:', error);
     return {
       status: 'failed',
       pan_found: false,
-      message: error.message || 'Verification failed. Please try again.'
+      message: formatApiError(error, "Aadhaar to PAN")
     };
   }
 };
@@ -895,33 +903,13 @@ export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse>
     }
 
     const data = await response.json();
-    if (data && (data.status === 'success' || data.status === true) && (data.results || data.raw_results)) {
-      const cleanResults = scrubBranding(data.results || {});
-      const cleanRawResults = data.raw_results ? scrubBranding(data.raw_results) : undefined;
-      return {
-        status: true,
-        results: cleanResults,
-        raw_results: cleanRawResults
-      };
-    } else if (data && data.status === false && data.error) {
-      return {
-        status: false,
-        results: {},
-        error: data.error
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: data?.error || data?.message || "Sorry, we don't have data related to the query."
-      };
-    }
+    return extractServiceResults(data, "Public Number Lookup");
   } catch (err: any) {
     console.error("Free lookup error:", err);
     return {
       status: false,
       results: {},
-      error: err.message && !err.message.includes("api error") ? err.message : "Sorry, we don't have data related to the query."
+      error: formatApiError(err, "Public Number Lookup")
     };
   }
 };

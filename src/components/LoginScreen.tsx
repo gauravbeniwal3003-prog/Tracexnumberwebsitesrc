@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) DEFAULT 'Mobile User',
     email VARCHAR(255),
-    credits NUMERIC(10, 2) DEFAULT 1470.00,
+    credits NUMERIC(10, 2) DEFAULT 10.00,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

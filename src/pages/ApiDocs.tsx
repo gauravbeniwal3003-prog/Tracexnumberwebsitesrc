@@ -189,7 +189,7 @@ function getEndpointSampleResponse(serviceCode: string) {
         user_id: "usr_8829102",
         user_email: "user@tracexdata.online",
         plan_name: "Account Wallet API (8-Digit)",
-        wallet_balance: 1470.00,
+        wallet_balance: 10.00,
         currency: "INR",
         requests_used: 12,
         request_limit: "Unlimited",
@@ -555,7 +555,7 @@ export default function ApiDocs() {
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
-  const walletAmount = profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹1,470.00";
+  const walletAmount = profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹10.00";
 
   return (
     <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] text-slate-800 font-sans pb-24 selection:bg-blue-500/20 selection:text-blue-900">

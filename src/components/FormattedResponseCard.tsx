@@ -350,9 +350,15 @@ export default function FormattedResponseCard({ data, serviceType }: FormattedRe
                 </span>
               </div>
             ))
+          ) : cleanJsonStr && cleanJsonStr !== '{}' && cleanJsonStr.length > 4 ? (
+            <div className="py-2">
+              <pre className="text-left font-mono text-xs text-emerald-400 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-[400px] overflow-y-auto select-all shadow-inner">
+                {cleanJsonStr}
+              </pre>
+            </div>
           ) : (
             <div className="py-6 text-center text-xs text-slate-500 font-medium italic">
-              No displayable data fields found.
+              No displayable data records available for this entry.
             </div>
           )}
         </div>

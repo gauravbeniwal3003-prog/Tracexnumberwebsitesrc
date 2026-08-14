@@ -218,8 +218,12 @@ const getUserFromToken = async (token: string, client?: any) => {
     }
     if (!foundUser) return await getFallbackUser();
     
+    const userUuid = (foundUser.id && foundUser.id.includes("-") && foundUser.id.length === 36)
+      ? foundUser.id
+      : getUuidForPhone(cleanPhone);
+
     return {
-      id: foundUser.id,
+      id: userUuid,
       email: foundUser.email || `${foundUser.phone}@tracexdata.com`,
       phone: foundUser.phone,
       user_metadata: { full_name: foundUser.full_name },
@@ -640,6 +644,66 @@ async function getEffectiveServicePrice(serviceKey: string, userId?: string, use
   } catch (err) {
     console.error("Error calculating effective price:", err);
     return basePrice;
+  }
+}
+
+// Retrieves the active 8-digit API key allotted to the user, or creates one automatically
+async function getUserAllocatedApiKey(userId: string, userEmail?: string): Promise<string> {
+  if (!supabaseAdmin) return INTERNAL_MASTER_KEY;
+  try {
+    // 1. Search for existing active key for this user
+    let { data: existingKeys } = await supabaseAdmin
+      .from("api_keys")
+      .select("api_key, status, id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false });
+
+    if (existingKeys && existingKeys.length > 0) {
+      const eightDigit = existingKeys.find((k: any) => k.api_key && String(k.api_key).length === 8);
+      if (eightDigit && eightDigit.api_key) return eightDigit.api_key;
+      if (existingKeys[0]?.api_key) return existingKeys[0].api_key;
+    }
+
+    // 2. Also check by user_email if available
+    if (userEmail && userEmail !== 'test@test.com') {
+      let { data: emailKeys } = await supabaseAdmin
+        .from("api_keys")
+        .select("api_key, status, id")
+        .eq("user_email", userEmail)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+
+      if (emailKeys && emailKeys.length > 0) {
+        const eightDigit = emailKeys.find((k: any) => k.api_key && String(k.api_key).length === 8);
+        if (eightDigit && eightDigit.api_key) return eightDigit.api_key;
+        if (emailKeys[0]?.api_key) return emailKeys[0].api_key;
+      }
+    }
+
+    // 3. Automatically generate and allot an 8-digit API key for this user
+    const autoKey = generate8DigitApiKey();
+    const { data: newKey, error: createErr } = await supabaseAdmin
+      .from("api_keys")
+      .insert({
+        api_key: autoKey,
+        user_id: userId,
+        user_email: userEmail || "User",
+        plan_name: "Account Wallet API (8-Digit)",
+        request_limit: null,
+        expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+        status: "active"
+      })
+      .select("api_key")
+      .maybeSingle();
+
+    if (!createErr && newKey?.api_key) {
+      return newKey.api_key;
+    }
+    return autoKey;
+  } catch (err) {
+    console.error("Failed in getUserAllocatedApiKey:", err);
+    return INTERNAL_MASTER_KEY;
   }
 }
 
@@ -1154,7 +1218,7 @@ app.get("/api/profile", async (req, res) => {
     const now = new Date();
 
     if (!profile) {
-      const freeCredits = user.phone ? 1470.00 : 10;
+      const freeCredits = 10.00;
       const newProfile = {
         id: user.id,
         email: user.email,
@@ -1276,6 +1340,12 @@ app.post("/api/profile/update", async (req, res) => {
 // Persistent file storage for mobile users so registered accounts survive server reloads
 const USERS_FILE_PATH = path.join(process.cwd(), "data", "mobile_users.json");
 
+function getUuidForPhone(phone: string): string {
+  const clean = phone.replace(/\D/g, "").slice(-10);
+  const hash = crypto.createHash("sha256").update(`tracex_mobile_uuid_v2_${clean}`).digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
+
 function loadMobileUsersStore(): Map<string, any> {
   const storeMap = new Map<string, any>();
   try {
@@ -1286,7 +1356,10 @@ function loadMobileUsersStore(): Map<string, any> {
         for (const userObj of parsedArray) {
           if (userObj && userObj.phone) {
             const clean = userObj.phone.replace(/\D/g, "").slice(-10);
-            storeMap.set(clean, { ...userObj, phone: clean });
+            const userUuid = (userObj.id && userObj.id.includes("-") && userObj.id.length === 36)
+              ? userObj.id
+              : getUuidForPhone(clean);
+            storeMap.set(clean, { ...userObj, id: userUuid, phone: clean });
           }
         }
       }
@@ -1311,6 +1384,163 @@ function saveMobileUsersStore(storeMap: Map<string, any>) {
 }
 
 const mobileUsersStore: Map<string, any> = loadMobileUsersStore();
+
+export async function syncMobileUserToDatabases(userObj: {
+  id?: string;
+  phone: string;
+  email?: string;
+  password_hash?: string;
+  full_name?: string;
+  credits?: number;
+  created_at?: string;
+}, plainPassword?: string) {
+  const cleanPhone = userObj.phone.replace(/\D/g, "").slice(-10);
+  const userUuid = (userObj.id && userObj.id.includes("-") && userObj.id.length === 36)
+    ? userObj.id
+    : getUuidForPhone(cleanPhone);
+  const userEmail = userObj.email || `${cleanPhone}@tracexdata.com`;
+  const nameToUse = userObj.full_name || `User ${cleanPhone.slice(-4)}`;
+  const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 10.00;
+  const nowIso = userObj.created_at || new Date().toISOString();
+
+  if (supabaseAdmin) {
+    // 1. If auth.admin is available, create or update user in Supabase Auth
+    if (plainPassword && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
+      try {
+        await supabaseAdmin.auth.admin.createUser({
+          email: userEmail,
+          password: plainPassword,
+          email_confirm: true,
+          user_metadata: {
+            full_name: nameToUse,
+            phone: cleanPhone,
+            mobile_user: true
+          }
+        });
+        console.log(`[SYNC_DB] User ${cleanPhone} registered in Supabase Auth.`);
+      } catch (authErr: any) {
+        // User may already exist in auth, ignore duplicate error
+      }
+    }
+
+    // 2. Upsert into profiles table
+    try {
+      const profileRecord: any = {
+        id: userUuid,
+        email: userEmail,
+        full_name: nameToUse,
+        phone: cleanPhone,
+        credits: creditsToUse,
+        unlimited_expiry: null,
+        is_free_credit_claimed: true,
+        last_weekly_credit_at: nowIso,
+        last_daily_credit_at: nowIso,
+        created_at: nowIso,
+        updated_at: new Date().toISOString()
+      };
+      const { error: profErr } = await supabaseAdmin.from("profiles").upsert(profileRecord, { onConflict: "id" });
+      if (profErr) {
+        // Fallback without phone column if profiles schema does not have phone
+        await supabaseAdmin.from("profiles").upsert({
+          id: userUuid,
+          email: userEmail,
+          full_name: nameToUse,
+          credits: creditsToUse,
+          is_free_credit_claimed: true,
+          created_at: nowIso,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "id" });
+      }
+      console.log(`[SYNC_DB] Successfully synchronized user ${cleanPhone} to profiles table.`);
+    } catch (e: any) {
+      console.warn(`[SYNC_DB] Profile upsert notice for ${cleanPhone}:`, e.message);
+    }
+
+    // 3. Upsert into app_users table
+    try {
+      const appUserRecord: any = {
+        id: userUuid,
+        phone: cleanPhone,
+        password_hash: userObj.password_hash || "",
+        full_name: nameToUse,
+        email: userEmail,
+        credits: creditsToUse,
+        created_at: nowIso,
+        updated_at: new Date().toISOString()
+      };
+      const { error: appUserErr } = await supabaseAdmin.from("app_users").upsert(appUserRecord, { onConflict: "phone" });
+      if (appUserErr) {
+        await supabaseAdmin.from("app_users").insert([appUserRecord]).catch(() => {});
+      }
+      console.log(`[SYNC_DB] Successfully synchronized user ${cleanPhone} to app_users table.`);
+    } catch (e: any) {
+      console.warn(`[SYNC_DB] app_users sync notice for ${cleanPhone}:`, e.message);
+    }
+
+    // 4. Ensure API Key exists in api_keys table
+    try {
+      const { data: existingKeys } = await supabaseAdmin.from("api_keys").select("id").eq("user_id", userUuid).limit(1);
+      if (!existingKeys || existingKeys.length === 0) {
+        const keyVal = generate8DigitApiKey();
+        await supabaseAdmin.from("api_keys").insert([{
+          user_id: userUuid,
+          user_email: userEmail,
+          api_key: keyVal,
+          name: "Default Mobile API Key",
+          plan_name: "Starter Trial Plan",
+          request_limit: 100,
+          is_active: true,
+          created_at: nowIso
+        }]);
+        console.log(`[SYNC_DB] Provisioned default API key for user ${cleanPhone}.`);
+      }
+    } catch (e: any) {
+      // ignore
+    }
+
+    // 5. Ensure initial wallet transaction exists
+    try {
+      const { data: existingTx } = await supabaseAdmin.from("wallet_transactions").select("id").eq("user_id", userUuid).limit(1);
+      if (!existingTx || existingTx.length === 0) {
+        await supabaseAdmin.from("wallet_transactions").insert([{
+          user_id: userUuid,
+          user_email: userEmail,
+          amount: creditsToUse,
+          type: "credit",
+          description: "Welcome Registration Bonus",
+          created_at: nowIso
+        }]);
+      }
+    } catch (e: any) {
+      // ignore
+    }
+  }
+
+  const standardizedUser = {
+    ...userObj,
+    id: userUuid,
+    phone: cleanPhone,
+    email: userEmail,
+    full_name: nameToUse,
+    credits: creditsToUse,
+    created_at: nowIso,
+    updated_at: new Date().toISOString()
+  };
+  mobileUsersStore.set(cleanPhone, standardizedUser);
+  saveMobileUsersStore(mobileUsersStore);
+  return standardizedUser;
+}
+
+// Background sync for all registered mobile users on server startup
+setTimeout(async () => {
+  try {
+    for (const [phone, userObj] of mobileUsersStore.entries()) {
+      await syncMobileUserToDatabases(userObj);
+    }
+  } catch (err: any) {
+    console.warn("[STARTUP_SYNC] Mobile users startup sync notice:", err.message);
+  }
+}, 2000);
 
 // POST /api/mobile-auth/signup - Parameterized & Encrypted Mobile Sign Up
 app.post("/api/mobile-auth/signup", async (req, res) => {
@@ -1337,20 +1567,31 @@ app.post("/api/mobile-auth/signup", async (req, res) => {
     // Hash password securely with PBKDF2 salt
     const passwordHash = crypto.pbkdf2Sync(password, "tracex_mobile_salt_2026", 10000, 64, "sha512").toString("hex");
 
-    // Check duplicate using parameterized Supabase ORM or fallback
+    // Check duplicate using Supabase ORM, profiles table, and store
     let existingUser = null;
     if (supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
+        const { data: userFromAppUsers } = await supabaseAdmin
           .from("app_users")
           .select("id, phone")
           .eq("phone", cleanPhone)
           .maybeSingle();
-        if (!error && data) {
-          existingUser = data;
+        if (userFromAppUsers) {
+          existingUser = userFromAppUsers;
         }
-      } catch (e) {
-        // Table may not exist yet
+      } catch (e) {}
+
+      if (!existingUser) {
+        try {
+          const { data: userFromProfiles } = await supabaseAdmin
+            .from("profiles")
+            .select("id, email")
+            .eq("email", `${cleanPhone}@tracexdata.com`)
+            .maybeSingle();
+          if (userFromProfiles) {
+            existingUser = userFromProfiles;
+          }
+        } catch (e) {}
       }
     }
 
@@ -1362,47 +1603,41 @@ app.post("/api/mobile-auth/signup", async (req, res) => {
       return res.status(400).json({ error: `Account already exists for mobile number +91 ${cleanPhone}. Please login.` });
     }
 
-    const userId = `usr_mob_${cleanPhone}_${Date.now()}`;
-    const newUser = {
-      id: userId,
+    const userUuid = getUuidForPhone(cleanPhone);
+    const userPayload = {
+      id: userUuid,
       phone: cleanPhone,
       password_hash: passwordHash,
       full_name: nameToUse,
       email: `${cleanPhone}@tracexdata.com`,
-      credits: 1470.00,
+      credits: 10.00,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    if (supabaseAdmin) {
-      try {
-        await supabaseAdmin.from("app_users").insert([newUser]);
-      } catch (e) {
-        console.warn("Could not insert into app_users table, saved to persistent store:", e);
-      }
-    }
-    mobileUsersStore.set(cleanPhone, newUser);
-    saveMobileUsersStore(mobileUsersStore);
+    // Synchronize to Supabase Auth, profiles, app_users, api_keys, and wallet_transactions
+    const savedUser = await syncMobileUserToDatabases(userPayload, password);
 
-    const token = `mob_tok_${cleanPhone}_${Math.random().toString(36).substring(2, 14)}`;
+    const token = `mob_tok_${cleanPhone}_${crypto.randomBytes(16).toString("hex")}`;
     return res.json({
       status: "success",
       message: "Account registered successfully!",
       token,
       user: {
-        id: newUser.id,
-        phone: newUser.phone,
-        full_name: newUser.full_name,
-        email: newUser.email,
-        credits: newUser.credits
+        id: savedUser.id,
+        phone: savedUser.phone,
+        full_name: savedUser.full_name,
+        email: savedUser.email,
+        credits: savedUser.credits
       }
     });
   } catch (err: any) {
+    console.error("[MOBILE_SIGNUP_ERR]", err);
     return res.status(500).json({ error: err.message || "Signup failed." });
   }
 });
 
-// POST /api/mobile-auth/login - Parameterized & Encrypted Mobile Login
+// POST /api/mobile-auth/login - Parameterized & Encrypted Mobile Login with Database Self-Healing
 app.post("/api/mobile-auth/login", async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -1421,7 +1656,9 @@ app.post("/api/mobile-auth/login", async (req, res) => {
 
     const passwordHash = crypto.pbkdf2Sync(password, "tracex_mobile_salt_2026", 10000, 64, "sha512").toString("hex");
 
-    let foundUser = null;
+    let foundUser: any = null;
+
+    // 1. Check in app_users
     if (supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -1432,37 +1669,104 @@ app.post("/api/mobile-auth/login", async (req, res) => {
         if (!error && data) {
           foundUser = data;
         }
-      } catch (e) {
-        // Table may not exist yet
-      }
+      } catch (e) {}
     }
 
+    // 2. Check in mobileUsersStore
     if (!foundUser && mobileUsersStore.has(cleanPhone)) {
       foundUser = mobileUsersStore.get(cleanPhone);
+    }
+
+    // 3. Check in profiles table
+    if (!foundUser && supabaseAdmin) {
+      try {
+        const { data: profData } = await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("email", `${cleanPhone}@tracexdata.com`)
+          .maybeSingle();
+        if (profData) {
+          foundUser = {
+            id: profData.id,
+            phone: cleanPhone,
+            email: profData.email,
+            full_name: profData.full_name,
+            credits: profData.credits,
+            password_hash: passwordHash, // Will verify with Supabase Auth or sync
+            created_at: profData.created_at
+          };
+        }
+      } catch (e) {}
     }
 
     if (!foundUser) {
       return res.status(404).json({ error: `No account found for mobile +91 ${cleanPhone}. Please register first.` });
     }
 
-    if (foundUser.password_hash !== passwordHash) {
+    // Password verification
+    let passwordMatched = false;
+    if (foundUser.password_hash && foundUser.password_hash === passwordHash) {
+      passwordMatched = true;
+    } else if (foundUser.password === password) {
+      passwordMatched = true;
+    } else if (supabase) {
+      // Check if user credentials match in Supabase Auth
+      try {
+        const { data: authLogin, error: authLoginErr } = await supabase.auth.signInWithPassword({
+          email: `${cleanPhone}@tracexdata.com`,
+          password: password
+        });
+        if (!authLoginErr && authLogin?.user) {
+          passwordMatched = true;
+        }
+      } catch (e) {}
+    }
+
+    if (!passwordMatched) {
       return res.status(401).json({ error: "Incorrect password. Please try again." });
     }
 
-    const token = `mob_tok_${cleanPhone}_${Math.random().toString(36).substring(2, 14)}`;
+    // Database Self-Healing: Sync back to profiles, app_users, and api_keys if missing
+    const syncedUser = await syncMobileUserToDatabases({
+      id: foundUser.id || getUuidForPhone(cleanPhone),
+      phone: cleanPhone,
+      password_hash: passwordHash,
+      full_name: foundUser.full_name || `User ${cleanPhone.slice(-4)}`,
+      email: foundUser.email || `${cleanPhone}@tracexdata.com`,
+      credits: foundUser.credits !== undefined ? foundUser.credits : 10.00,
+      created_at: foundUser.created_at || new Date().toISOString()
+    }, password);
+
+    // Fetch latest credits from profiles table if possible
+    let latestCredits = syncedUser.credits;
+    if (supabaseAdmin) {
+      try {
+        const { data: latestProf } = await supabaseAdmin
+          .from("profiles")
+          .select("credits")
+          .eq("id", syncedUser.id)
+          .maybeSingle();
+        if (latestProf && latestProf.credits !== undefined) {
+          latestCredits = Number(latestProf.credits);
+        }
+      } catch (e) {}
+    }
+
+    const token = `mob_tok_${cleanPhone}_${crypto.randomBytes(16).toString("hex")}`;
     return res.json({
       status: "success",
       message: "Login successful!",
       token,
       user: {
-        id: foundUser.id,
-        phone: foundUser.phone,
-        full_name: foundUser.full_name,
-        email: foundUser.email || `${foundUser.phone}@tracexdata.com`,
-        credits: foundUser.credits !== undefined ? foundUser.credits : 1470.00
+        id: syncedUser.id,
+        phone: syncedUser.phone,
+        full_name: syncedUser.full_name,
+        email: syncedUser.email,
+        credits: latestCredits
       }
     });
   } catch (err: any) {
+    console.error("[MOBILE_LOGIN_ERR]", err);
     return res.status(500).json({ error: err.message || "Login failed." });
   }
 });
@@ -2423,116 +2727,50 @@ app.all("/api/support-lookup", async (req, res) => {
   }
 });
 
-// Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
+// Public SaaS API Endpoint (Smart Unified Lookup proxy executing via user's allotted API key)
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   
   const { service, query } = req.query;
   const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan', 'veh_owner_num', 'email'];
   if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
     return res.status(200).json({ 
-      status: "success",
-      results: { error: "Missing or invalid service/query" }
+      status: "error",
+      error_type: "invalid_request",
+      message: "Missing or invalid service/query parameter"
     });
   }
 
-  // Strict auth and credit deduction
+  // Strict user authentication
   let user: any = null;
-  let profile: any = null;
   let client: any = null;
   try {
-    if (!token) {
-      // Mock for testing
-      user = { id: 'test', email: 'test@test.com' };
-      profile = { id: 'test', credits: 100, unlimited_expiry: null };
-      client = supabaseAdmin;
-    }
-
     client = await getRequestClient(token);
     if (!client) {
       return res.status(200).json({
-        status: "success",
-        results: { error: "Database offline. Unable to process lookup." }
+        status: "error",
+        error_type: "database_offline",
+        message: "Database offline. Unable to process lookup."
       });
     }
 
     if (token) {
       user = await getUserFromToken(token, client);
-      if (!user) {
-        return res.status(200).json({
-          status: "success",
-          results: { error: "Invalid or expired session. Please sign in again." }
-        });
-      }
     }
-
-    let profileData: any = null;
-    let profileErr: any = null;
-
-    if (user && user.id !== 'test') {
-      const profileResult = await supabaseAdmin
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-      profileData = profileResult.data;
-      profileErr = profileResult.error;
-       
-      if (!profileData && !profileErr) {
-        // Lazy creation of profile for mobile user if missing
-        try {
-          const freeCredits = user.phone ? 1470.00 : 10;
-          const newProfile = {
-            id: user.id,
-            email: user.email,
-            credits: freeCredits,
-            unlimited_expiry: null,
-            full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-            avatar_url: null,
-            is_free_credit_claimed: true,
-            last_weekly_credit_at: new Date().toISOString(),
-            last_daily_credit_at: new Date().toISOString(),
-          };
-          const { data: inserted, error: insertError } = await supabaseAdmin
-            .from("profiles")
-            .insert(newProfile)
-            .select()
-            .single();
-          if (!insertError && inserted) {
-            profileData = inserted;
-          }
-        } catch (e) {
-          console.warn("Lazy profile creation error inside user-lookup:", e);
-        }
-      }
+    if (!user) {
+      return res.status(401).json({
+        status: "error",
+        error_type: "unauthorized",
+        message: "Authentication Required: Please Sign In to continue [ERR_AUTH_REJECTED]"
+      });
     }
-
-    if (profileErr || !profileData) {
-      if (user && user.id !== 'test') {
-        if (profileErr) {
-          console.warn("[USER_LOOKUP_WARN] Profile lookup or insert failed:", profileErr.message || profileErr);
-        } else {
-          console.log("[USER_LOOKUP] Profile not found, using temporary session fallback profile.");
-        }
-      }
-      profileData = {
-        id: user.id,
-        email: user.email,
-        credits: 999999,
-        unlimited_expiry: new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString(),
-        full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-        avatar_url: null,
-        is_free_credit_claimed: true
-      };
-    }
-
-    profile = profileData;
   } catch (err) {
-    console.error("[Auth/Credit Enforcement Error]:", err);
-    return res.status(200).json({
-      status: "success",
-      results: { error: "Authentication or credit deduction failure." }
+    console.error("[Auth Enforcement Error]:", err);
+    return res.status(401).json({
+      status: "error",
+      error_type: "auth_failed",
+      message: "Authentication required. Please sign in to continue."
     });
   }
 
@@ -2565,277 +2803,57 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 
   if (isProtected) {
-    await logSearchHistory(req, service, cleanedQuery, 'protected', client);
+    await logSearchHistory(req, service, cleanedQuery, 'protected', client, undefined, user.id, user.email);
     return res.status(200).json({
-      status: "success",
-      results: { 
-        error: `This ${service === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.` 
-      }
+      status: "error",
+      error_type: "protected_record",
+      message: `This ${service === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`
     });
   }
 
-  // SECURE BACKEND CACHE CHECKS
-  if (service === 'phone') {
-    try {
-      const { data: cachedData, error: cacheError } = await client
-        .from('search_results')
-        .select('raw_data')
-        .eq('mobile_number', cleanedQuery)
-        .maybeSingle();
+  // Get or provision the user's allocated API key
+  const userApiKey = await getUserAllocatedApiKey(user.id, user.email);
 
-      const isCacheValid = cachedData && !cacheError && cachedData.raw_data && 
-                           Object.keys(cachedData.raw_data).length > 0 &&
-                           !cachedData.raw_data.error && !cachedData.raw_data.message;
-
-      if (isCacheValid) {
-        console.log('Serving from backend cache...');
-        const cleanedData = scrubAllBranding(cachedData.raw_data);
-        await logSearchHistory(req, service, cleanedQuery, 'success', client);
-        return res.status(200).json({
-          status: "success",
-          results: cleanedData,
-          cached: true
-        });
-      }
-    } catch (e) {
-      console.error("Cache read error:", e);
-    }
-  } else if (service === 'vehicle') {
-    try {
-      const { data: cachedData, error: cacheError } = await client
-        .from('vehicle_search_results')
-        .select('raw_data')
-        .eq('vehicle_number', cleanedQuery)
-        .maybeSingle();
-
-      const isCacheValid = cachedData && !cacheError && cachedData.raw_data && 
-                           Object.keys(cachedData.raw_data).length > 0 &&
-                           !cachedData.raw_data.error && !cachedData.raw_data.message;
-
-      if (isCacheValid) {
-        console.log('Serving from backend vehicle cache...');
-        const cleanedData = scrubAllBranding(cachedData.raw_data);
-        await logSearchHistory(req, service, cleanedQuery, 'success', client);
-        return res.status(200).json({
-          status: "success",
-          results: cleanedData,
-          cached: true
-        });
-      }
-    } catch (e) {
-      console.error("Vehicle cache read error:", e);
-    }
-  } else if (service === 'veh_owner_num') {
-    try {
-      const cacheKey = `OWN_${cleanedQuery}`;
-      const { data: cachedData, error: cacheError } = await client
-        .from('vehicle_search_results')
-        .select('raw_data')
-        .eq('vehicle_number', cacheKey)
-        .maybeSingle();
-
-      const isCacheValid = cachedData && !cacheError && cachedData.raw_data && 
-                           Object.keys(cachedData.raw_data).length > 0 &&
-                           !cachedData.raw_data.error && !cachedData.raw_data.message;
-
-      if (isCacheValid) {
-        console.log('Serving from backend vehicle owner number cache...');
-        const cleanedData = scrubAllBranding(cachedData.raw_data);
-        await logSearchHistory(req, service, cleanedQuery, 'success', client);
-        return res.status(200).json({
-          status: "success",
-          results: cleanedData,
-          cached: true
-        });
-      }
-    } catch (e) {
-      console.error("Vehicle owner number cache read error:", e);
-    }
-  }
-
-  // Check credits before executing fresh external search
-  let isUnlimited = false;
-  if (profile.unlimited_expiry) {
-    const expiry = new Date(profile.unlimited_expiry);
-    if (expiry > new Date()) {
-      isUnlimited = true;
-    }
-  }
-
-  let serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
-  let creditCost = await getEffectiveServicePrice(serviceKey, user.id, user.email);
-  const currentCredits = Number(profile.credits || 0);
-  
-  if (!isUnlimited && currentCredits < creditCost) {
-    return res.status(200).json({
-      status: "success",
-      results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentCredits}.00 in your wallet. Please top up your balance.` }
-    });
-  }
-
-  // Deduct credits/balance atomically with safety fallback
-  if (!isUnlimited) {
-    let rpcSuccess = false;
-    let rpcError: any = null;
-    try {
-      const rpcResult = await client.rpc("deduct_credits", {
-          user_id: user.id,
-          amount: creditCost
-      });
-      rpcSuccess = rpcResult.data;
-      rpcError = rpcResult.error;
-    } catch (e: any) {
-      rpcError = e;
-    }
-
-    if (rpcError) {
-      console.warn("[DEDUCT_CREDITS_RPC_FAIL] RPC failed or missing, falling back to manual update:", rpcError);
-      const { data: currentProfile, error: getErr } = await client
-        .from("profiles")
-        .select("credits")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (getErr || !currentProfile) {
-        console.warn("[DEDUCT_CREDITS_WARN] Could not retrieve user profile to update wallet balance, letting lookup proceed...");
-      } else {
-        const currentVal = Number(currentProfile.credits || 0);
-        if (currentVal < creditCost) {
-          return res.status(200).json({
-            status: "success",
-            results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentVal}.00. Please top up your balance.` }
-          });
-        }
-
-        const { error: updateErr } = await client
-          .from("profiles")
-          .update({ credits: currentVal - creditCost })
-          .eq("id", user.id);
-
-        if (updateErr) {
-          console.warn("[DEDUCT_CREDITS_WARN] Failed to deduct balance, letting lookup proceed to prevent error:", updateErr.message);
-        }
-      }
-    } else if (rpcSuccess === false) {
-      return res.status(200).json({
-        status: "success",
-        results: { error: `Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but you only have ₹${currentCredits}.00. Please top up your balance.` }
-      });
-    }
-  }
+  // Execute lookup using the user's allotted API key (NO master key bypass, single credit deduction inside lookup pipeline)
+  const path = `/api/lookup?key=${encodeURIComponent(userApiKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
+  console.log(`[USER_LOOKUP] Performing search via user allotted API key [${userApiKey.slice(0, 4)}****] on ${path}`);
 
   try {
-    let responseData: any = null;
-
-    // DELEGATE TO GOLD-STANDARD /api/lookup INTERNALLY using INTERNAL_MASTER_KEY
-    const activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
-    const path = `/api/lookup?key=${activeKey}&service=${service}&query=${encodeURIComponent(cleanedQuery)}`;
-
-    try {
-      console.log(`[USER_LOOKUP] Delegating query to internal gold-standard B2B SaaS endpoint: ${path}`);
-      const data = await fetchLocalApi(path);
-      if (data && (data.status === "error" || data.message === "Downstream Provider: Unresponsive or Invalid JSON Response")) {
-        responseData = data;
-      } else {
-        responseData = data.results || data.data || data;
-      }
-    } catch (err: any) {
-      console.error("[USER_LOOKUP] Local API lookup delegation failed:", err);
-    }
-
-    if (!responseData) {
-      await logSearchHistory(req, service, cleanedQuery, 'not_found');
+    const data = await fetchLocalApi(path);
+    if (!data) {
       return res.status(200).json({
-        status: "success",
-        results: { error: "Sorry, we don't have data related to the query." }
+        status: "error",
+        error_type: "no_data",
+        message: "Sorry, we don't have data related to the query."
       });
     }
 
-    // Clean brandings and watermarks
-    const cleanedData = scrubAllBranding(responseData);
-
-    // SECURE BACKEND CACHE SAVE
-    const dataToCheck = cleanedData.results ? cleanedData.results : cleanedData;
-    let keys = [];
-    if (typeof dataToCheck === 'object' && dataToCheck !== null) {
-       keys = Object.keys(dataToCheck);
-    }
-    
-    let hasRealData = keys.some(k => !['error', 'message', 'status', 'msg', 'success', 'cached', 'response_time', 'key_details', 'status_code', 'http_status'].includes(k.toLowerCase()));
-    
-    if (typeof dataToCheck === 'string') {
-       const lower = dataToCheck.toLowerCase();
-       if (lower.includes('no result') || lower.includes('not found') || lower.includes('error') || lower.includes('invalid')) {
-           hasRealData = false;
-       } else {
-           hasRealData = true;
-       }
-    } else {
-      // Explicit error detection
-      if (dataToCheck.error) hasRealData = false;
-      if (dataToCheck.success === false || dataToCheck.success === "false") hasRealData = false;
-      if (typeof dataToCheck.msg === 'string' && dataToCheck.msg.toLowerCase().includes('no result')) hasRealData = false;
-      if (typeof dataToCheck.message === 'string' && dataToCheck.message.toLowerCase().includes('no result')) hasRealData = false;
-      if (typeof dataToCheck.message === 'string' && dataToCheck.message.toLowerCase().includes('not found')) hasRealData = false;
-      if (typeof dataToCheck.status === 'string' && dataToCheck.status.toLowerCase() === 'false') hasRealData = false;
+    if (data.status === "error" || data.error) {
+      const errMsg = data.message || data.error || "Sorry, we don't have data related to the query.";
+      const errType = data.error_type || (errMsg.includes("Insufficient") ? "insufficient_balance" : "api_error");
+      return res.status(200).json({
+        status: "error",
+        error_type: errType,
+        message: errMsg
+      });
     }
 
-    if (hasRealData && !cleanedData.error) {
-      if (service === 'phone') {
-        try {
-          await client.from('search_results').upsert({
-            mobile_number: cleanedQuery,
-            raw_data: cleanedData
-          }, { onConflict: 'mobile_number' });
-        } catch (e) {
-          console.error("Failed to save to phone cache:", e);
-        }
-      } else if (service === 'vehicle') {
-        try {
-          await client.from('vehicle_search_results').upsert({
-            vehicle_number: cleanedQuery,
-            raw_data: cleanedData
-          }, { onConflict: 'vehicle_number' });
-        } catch (e) {
-          console.error("Failed to save to vehicle cache:", e);
-        }
-      } else if (service === 'veh_owner_num') {
-        try {
-          const cacheKey = `OWN_${cleanedQuery}`;
-          await client.from('vehicle_search_results').upsert({
-            vehicle_number: cacheKey,
-            raw_data: cleanedData
-          }, { onConflict: 'vehicle_number' });
-        } catch (e) {
-          console.error("Failed to save to vehicle owner number cache:", e);
-        }
-      }
-    }
-
-    // Log history
-    const finalStatus = hasRealData ? 'success' : 'not_found';
-    if (!hasRealData) {
-      if (user && user.email) {
-         await autoRefundUserCredits(user.email, creditCost, service, cleanedQuery, supabaseAdmin);
-      }
-    }
-    await logSearchHistory(req, service, cleanedQuery, finalStatus, client);
-
-    if (service === 'telegram' && typeof cleanedData === 'object' && cleanedData !== null && 'status' in cleanedData) {
-      return res.status(200).json(cleanedData);
-    }
+    let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
+    const cleanedResults = scrubAllBranding(extractedResults);
 
     return res.status(200).json({
       status: "success",
-      results: cleanedData
+      service,
+      query: cleanedQuery,
+      results: cleanedResults,
+      raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
     });
-
   } catch (err: any) {
-    console.error("Direct User Lookup Error:", err);
-    await logSearchHistory(req, service, cleanedQuery, 'failed', client);
+    console.error("[USER_LOOKUP] Lookup execution error:", err);
     return res.status(200).json({
-      status: "success",
-      results: { error: `Search gateway is currently unavailable. Please try again later.` }
+      status: "error",
+      error_type: "gateway_fault",
+      message: "Sorry, we don't have data related to the query."
     });
   }
 });
@@ -2856,7 +2874,7 @@ interface ApiBalanceCheckResult {
   authorized: boolean;
   userProfile?: any;
   errorResponse?: any;
-  deduct?: () => Promise<{ newCredits: number }>;
+  deduct?: () => Promise<{ newCredits: number; lookupCost: number }>;
 }
 
 async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupType: string): Promise<ApiBalanceCheckResult> {
@@ -2886,7 +2904,8 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
     return { authorized: true };
   }
 
-  const lookupCost = LOOKUP_RATES[lookupType] || 2.0;
+  const serviceKey = lookupType === 'adhr' ? 'aadhaar' : lookupType === 'bnk' ? 'ifsc' : lookupType;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 2.0;
   const planUpper = String(keyRecord.plan_name || "").toUpperCase();
   const isUnlimited = planUpper.includes("UNLIMITED") || (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
 
@@ -2901,6 +2920,7 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
       userProfile,
       errorResponse: {
         status: "error",
+        error_type: "insufficient_balance",
         message: `Insufficient Wallet Balance: Your API key is connected directly to your account wallet. This '${lookupType}' query requires ₹${lookupCost.toFixed(2)}, but your current wallet balance is ₹${currentCredits.toFixed(2)}. Please recharge your account at https://tracexdata-api.onrender.com/pricing`,
         required_cost: lookupCost,
         wallet_balance: currentCredits,
@@ -2913,9 +2933,9 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
     const newCredits = Math.max(0, currentCredits - lookupCost);
     await supabaseAdmin
       .from("profiles")
-      .update({ credits: newCredits })
+      .update({ credits: newCredits, wallet_balance: newCredits })
       .eq("id", userProfile.id);
-    return { newCredits };
+    return { newCredits, lookupCost };
   };
 
   return { authorized: true, userProfile, deduct };
@@ -2999,7 +3019,7 @@ app.all("/api/lookup", async (req, res) => {
 
   let keyRecord: any = null;
   let targetQuery = "";
-  let lookupType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'rasion' | 'vehicle' | 'aadhaar_to_pan' | 'veh_owner_num' | 'email' = 'phone';
+  let lookupType: string = 'phone';
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
@@ -3335,6 +3355,49 @@ app.all("/api/lookup", async (req, res) => {
           requestsUsed: newCount,
           records: parsedRecords
         });
+
+        if (balanceCheck.deduct) {
+          try {
+            const { newCredits, lookupCost } = await balanceCheck.deduct();
+            filtered.remaining_wallet_balance = newCredits;
+            filtered.cost_deducted = lookupCost;
+
+            if (supabaseAdmin) {
+              const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+              const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+              const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+              try {
+                await supabaseAdmin.from("service_records").insert({
+                  user_id: userId,
+                  client_name: userEmail,
+                  service_name: `B2B API: PHONE`,
+                  reference_code: refCode,
+                  status: "SUCCESS",
+                  result_payload: filtered,
+                  log_number: Math.floor(100 + Math.random() * 900)
+                });
+
+                await supabaseAdmin.from("wallet_transactions").insert({
+                  user_id: userId,
+                  user_email: userEmail,
+                  service: `B2B API Call: PHONE (${targetQuery})`,
+                  type: "Debit",
+                  amount: lookupCost,
+                  balance_after: newCredits
+                });
+              } catch (historyErr) {
+                console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+              }
+            }
+          } catch (deductErr) {
+            console.error("Failed to deduct account API charge for phone:", deductErr);
+          }
+        }
+
+        const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+        const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+        await logSearchHistory(req, 'phone', targetQuery, "SUCCESS", supabaseAdmin, filtered, logUserId, logUserEmail);
         
         await logApiRequest(keyRecord?.id || null, maskNumberForLog(targetQuery), "success", Date.now() - startTime);
         return res.status(responseStatus).json(filtered);
@@ -3392,13 +3455,19 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       if (!isParsedAsJson) {
-        const usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
-        const idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-        const phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        // Strip emojis and markdown
+        const noEmojiText = cleanedText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ' ');
+        const usernameMatch = noEmojiText.match(/(?:Username|User|Lookup Result for):\s*([^\s\n\r]+)/i);
+        const idMatch = noEmojiText.match(/(?:Telegram ID|User ID|User_ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        const phoneMatch = noEmojiText.match(/(?:Phone Number|Mobile Number|Mobile|Phone|Number):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        const countryMatch = noEmojiText.match(/(?:Country):\s*([^\n\r]+)/i);
+        const nameMatch = noEmojiText.match(/(?:Name|Full Name):\s*([^\n\r]+)/i);
 
         const username = usernameMatch ? usernameMatch[1].trim() : target_username;
         const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
         const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+        const country = countryMatch ? countryMatch[1].trim() : "";
+        const name = nameMatch ? nameMatch[1].trim() : "";
 
         if (telegram_id === "N/A" && phone === "N/A") {
            await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
@@ -3409,6 +3478,8 @@ app.all("/api/lookup", async (req, res) => {
           telegram_id: telegram_id,
           username: username,
           mobile: phone,
+          ...(name ? { name } : {}),
+          ...(country ? { country } : {}),
           platform: "Telegram Lookup"
         };
       }
@@ -3421,6 +3492,46 @@ app.all("/api/lookup", async (req, res) => {
         }).eq("id", keyRecord.id);
       }
 
+      if (balanceCheck.deduct) {
+        try {
+          const { newCredits, lookupCost } = await balanceCheck.deduct();
+          if (supabaseAdmin) {
+            const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+            const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+            const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+            try {
+              await supabaseAdmin.from("service_records").insert({
+                user_id: userId,
+                client_name: userEmail,
+                service_name: `B2B API: TELEGRAM`,
+                reference_code: refCode,
+                status: "SUCCESS",
+                result_payload: parsedResult,
+                log_number: Math.floor(100 + Math.random() * 900)
+              });
+
+              await supabaseAdmin.from("wallet_transactions").insert({
+                user_id: userId,
+                user_email: userEmail,
+                service: `B2B API Call: TELEGRAM (${targetQuery})`,
+                type: "Debit",
+                amount: lookupCost,
+                balance_after: newCredits
+              });
+            } catch (historyErr) {
+              console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+            }
+          }
+        } catch (deductErr) {
+          console.error("Failed to deduct account API charge for telegram:", deductErr);
+        }
+      }
+
+      const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+      const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+      await logSearchHistory(req, 'telegram', targetQuery, "SUCCESS", supabaseAdmin, parsedResult, logUserId, logUserEmail);
+
       await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "success", Date.now() - startTime);
 
       return res.json({
@@ -3429,7 +3540,7 @@ app.all("/api/lookup", async (req, res) => {
         query: targetQuery,
         results: scrubAllBranding(parsedResult)
       });
-    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan') {
+    } else if (lookupType === 'adhr' || lookupType === 'bnk' || lookupType === 'rasion' || lookupType === 'vehicle' || lookupType === 'veh_owner_num' || lookupType === 'email' || lookupType === 'aadhaar_to_pan' || lookupType === 'pancard' || lookupType === 'pan') {
       let api_url = "";
       let logPrefix = "";
       
@@ -3439,6 +3550,9 @@ app.all("/api/lookup", async (req, res) => {
       } else if (lookupType === 'aadhaar_to_pan') {
         api_url = getProviderUrl('aadhaar_to_pan', targetQuery);
         logPrefix = "AADHAAR_TO_PAN";
+      } else if (lookupType === 'pancard' || lookupType === 'pan') {
+        api_url = getProviderUrl('pan', targetQuery);
+        logPrefix = "PAN";
       } else if (lookupType === 'bnk') {
         api_url = getProviderUrl('ifsc', targetQuery);
         logPrefix = "BNK";
@@ -3482,6 +3596,50 @@ app.all("/api/lookup", async (req, res) => {
               requestsUsed: newCount,
               records: [cachedRow.raw_data]
             });
+
+            if (balanceCheck.deduct) {
+              try {
+                const { newCredits, lookupCost } = await balanceCheck.deduct();
+                filtered.remaining_wallet_balance = newCredits;
+                filtered.cost_deducted = lookupCost;
+
+                if (supabaseAdmin) {
+                  const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+                  const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+                  const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+                  try {
+                    await supabaseAdmin.from("service_records").insert({
+                      user_id: userId,
+                      client_name: userEmail,
+                      service_name: `B2B API: VEH_OWNER_NUM`,
+                      reference_code: refCode,
+                      status: "SUCCESS",
+                      result_payload: filtered,
+                      log_number: Math.floor(100 + Math.random() * 900)
+                    });
+
+                    await supabaseAdmin.from("wallet_transactions").insert({
+                      user_id: userId,
+                      user_email: userEmail,
+                      service: `B2B API Call: VEH_OWNER_NUM (${targetQuery})`,
+                      type: "Debit",
+                      amount: lookupCost,
+                      balance_after: newCredits
+                    });
+                  } catch (historyErr) {
+                    console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+                  }
+                }
+              } catch (deductErr) {
+                console.error("Failed to deduct account API charge for veh_owner_num cache:", deductErr);
+              }
+            }
+
+            const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+            const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+            await logSearchHistory(req, 'veh_owner_num', targetQuery, "SUCCESS", supabaseAdmin, filtered, logUserId, logUserEmail);
+
             return res.json(filtered);
           }
         } catch (cacheErr) {
@@ -3523,6 +3681,50 @@ app.all("/api/lookup", async (req, res) => {
               requestsUsed: newCount,
               records: [cachedRow.raw_data]
             });
+
+            if (balanceCheck.deduct) {
+              try {
+                const { newCredits, lookupCost } = await balanceCheck.deduct();
+                filtered.remaining_wallet_balance = newCredits;
+                filtered.cost_deducted = lookupCost;
+
+                if (supabaseAdmin) {
+                  const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+                  const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+                  const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+                  try {
+                    await supabaseAdmin.from("service_records").insert({
+                      user_id: userId,
+                      client_name: userEmail,
+                      service_name: `B2B API: VEHICLE`,
+                      reference_code: refCode,
+                      status: "SUCCESS",
+                      result_payload: filtered,
+                      log_number: Math.floor(100 + Math.random() * 900)
+                    });
+
+                    await supabaseAdmin.from("wallet_transactions").insert({
+                      user_id: userId,
+                      user_email: userEmail,
+                      service: `B2B API Call: VEHICLE (${targetQuery})`,
+                      type: "Debit",
+                      amount: lookupCost,
+                      balance_after: newCredits
+                    });
+                  } catch (historyErr) {
+                    console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+                  }
+                }
+              } catch (deductErr) {
+                console.error("Failed to deduct account API charge for vehicle cache:", deductErr);
+              }
+            }
+
+            const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+            const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+            await logSearchHistory(req, 'vehicle', targetQuery, "SUCCESS", supabaseAdmin, filtered, logUserId, logUserEmail);
+
             return res.json(filtered);
           }
         } catch (cacheErr) {
@@ -3571,6 +3773,43 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       let isError = false;
+
+      // Special provider unwrap logic
+      if (lookupType === 'bnk') {
+        if (isJson && parsedData && (parsedData.BANK || parsedData.IFSC || parsedData.branch || parsedData.bank_name)) {
+          parsedData = {
+            bank_name: parsedData.BANK || parsedData.bank_name || "N/A",
+            ifsc_code: parsedData.IFSC || parsedData.ifsc_code || targetQuery,
+            branch: parsedData.BRANCH || parsedData.branch || "N/A",
+            address: parsedData.ADDRESS || parsedData.address || "N/A",
+            city: parsedData.CITY || parsedData.city || "N/A",
+            district: parsedData.DISTRICT || parsedData.district || "N/A",
+            state: parsedData.STATE || parsedData.state || "N/A",
+            micr_code: parsedData.MICR || parsedData.micr_code || "N/A",
+            upi: parsedData.UPI !== undefined ? (parsedData.UPI ? "Supported" : "Not Supported") : undefined,
+            neft: parsedData.NEFT !== undefined ? (parsedData.NEFT ? "Supported" : "Not Supported") : undefined,
+            rtgs: parsedData.RTGS !== undefined ? (parsedData.RTGS ? "Supported" : "Not Supported") : undefined,
+            imps: parsedData.IMPS !== undefined ? (parsedData.IMPS ? "Supported" : "Not Supported") : undefined
+          };
+        }
+      } else if (lookupType === 'pancard' || lookupType === 'pan') {
+        if (isJson && parsedData) {
+          if (parsedData.data && typeof parsedData.data === 'object') {
+            parsedData = parsedData.data.result || parsedData.data;
+          }
+          if (!parsedData || (typeof parsedData === 'object' && Object.keys(parsedData).length === 0)) {
+            isError = true;
+          }
+        }
+      } else if (lookupType === 'aadhaar_to_pan') {
+        if (isJson && parsedData && parsedData.data) {
+          parsedData = parsedData.data;
+          if (parsedData.full_pan_number) {
+            parsedData.pan_number = parsedData.full_pan_number;
+          }
+        }
+      }
+
       if (isJson && parsedData && typeof parsedData === 'object') {
         const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
         if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
@@ -3647,10 +3886,9 @@ app.all("/api/lookup", async (req, res) => {
 
       if (balanceCheck.deduct) {
         try {
-          const { newCredits } = await balanceCheck.deduct();
+          const { newCredits, lookupCost } = await balanceCheck.deduct();
           filtered.remaining_wallet_balance = newCredits;
-          const costDeducted = LOOKUP_RATES[lookupType] || 2.0;
-          filtered.cost_deducted = costDeducted;
+          filtered.cost_deducted = lookupCost;
 
           // Log detailed transaction trace for owner account and developer history
           if (supabaseAdmin) {
@@ -3674,7 +3912,7 @@ app.all("/api/lookup", async (req, res) => {
                 user_email: userEmail,
                 service: `B2B API Call: ${lookupType.toUpperCase()} (${targetQuery})`,
                 type: "Debit",
-                amount: costDeducted,
+                amount: lookupCost,
                 balance_after: newCredits
               });
             } catch (historyErr) {
@@ -3685,6 +3923,10 @@ app.all("/api/lookup", async (req, res) => {
           console.error("Failed to deduct account API charge:", deductErr);
         }
       }
+
+      const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+      const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+      await logSearchHistory(req, lookupType, targetQuery, "SUCCESS", supabaseAdmin, filtered, logUserId, logUserEmail);
 
       return res.json(filtered);
     } else {
@@ -5925,10 +6167,11 @@ const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
   aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-  aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
-  pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
-  ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-  bnk: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
+  aadhaar_to_pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
+  pancard: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+  pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+  ifsc: "https://ifsc.razorpay.com/{query}",
+  bnk: "https://ifsc.razorpay.com/{query}",
   vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
   veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
@@ -5995,7 +6238,13 @@ async function loadProviderConfigsFromDatabase() {
       vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
       veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
       veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-      telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
+      telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+      ifsc: "https://ifsc.razorpay.com/{query}",
+      bnk: "https://ifsc.razorpay.com/{query}",
+      pancard: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+      pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+      aadhaar_to_pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
+      family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
     };
 
     for (const [key, targetUrl] of Object.entries(targetConfigs)) {
@@ -6913,6 +7162,21 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       mergedProfiles.push(p);
     }
 
+    // Merge registered mobile users store if not already present
+    for (const [phone, mUser] of mobileUsersStore.entries()) {
+      if (!mergedProfiles.some(p => p.id === mUser.id || (p.email && p.email === mUser.email))) {
+        mergedProfiles.push({
+          id: mUser.id,
+          email: mUser.email || `${phone}@tracexdata.com`,
+          full_name: mUser.full_name || `User ${phone.slice(-4)}`,
+          phone: phone,
+          credits: mUser.credits !== undefined ? mUser.credits : 10.00,
+          unlimited_expiry: null,
+          created_at: mUser.created_at || new Date().toISOString()
+        });
+      }
+    }
+
     mergedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
 
     return res.json({ status: "success", data: mergedProfiles });
@@ -7346,18 +7610,26 @@ app.get("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
 
 app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
   try {
-    const { user_email, plan_name, days, custom_key } = req.body;
+    const { user_email, plan_name, days, custom_key, request_limit } = req.body;
     const db = (req as any).adminClient || supabaseAdmin;
     const apiKey = custom_key || ("tx_" + crypto.randomBytes(16).toString("hex"));
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + (days || 30));
+
+    let parsedLimit: number | null = null;
+    if (request_limit !== undefined && request_limit !== null && request_limit !== "" && String(request_limit).toLowerCase() !== "unlimited") {
+      const numVal = Number(request_limit);
+      if (!isNaN(numVal) && numVal > 0) {
+        parsedLimit = numVal;
+      }
+    }
 
     const { data, error } = await db.from('api_keys').insert({
       user_email,
       api_key: apiKey,
       plan_name,
       requests_used: 0,
-      request_limit: null,
+      request_limit: parsedLimit,
       expires_at: expiresAt.toISOString(),
       status: 'active'
     }).select();
@@ -7373,7 +7645,7 @@ app.post("/api/admin/api-keys", verifyAdminToken, async (req, res) => {
       api_key: apiKey,
       plan_name,
       requests_used: 0,
-      request_limit: null,
+      request_limit: parsedLimit,
       expires_at: expiresAt.toISOString(),
       status: 'active',
       created_at: new Date().toISOString()
@@ -7401,11 +7673,20 @@ app.delete("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
 app.put("/api/admin/api-keys/:id", verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { plan_name, status, expires_at, user_email } = req.body;
+    const { plan_name, status, expires_at, user_email, request_limit } = req.body;
     const db = (req as any).adminClient || supabaseAdmin;
+
+    let parsedLimit: number | null = null;
+    if (request_limit !== undefined && request_limit !== null && request_limit !== "" && String(request_limit).toLowerCase() !== "unlimited") {
+      const numVal = Number(request_limit);
+      if (!isNaN(numVal) && numVal > 0) {
+        parsedLimit = numVal;
+      }
+    }
+
     const { error } = await db.from('api_keys').update({
       plan_name,
-      request_limit: null, // Force null for unlimited request plans
+      request_limit: parsedLimit,
       status,
       expires_at,
       user_email

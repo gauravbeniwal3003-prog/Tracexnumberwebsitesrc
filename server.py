@@ -488,7 +488,7 @@ async def get_profile(request: Request):
                 full_name = user_email_val.split("@")[0]
                 
             is_mobile = str(user_id_val).startswith("usr_mob_")
-            credits_val = 1470.00 if is_mobile else 10
+            credits_val = 10.00
             
             new_profile = {
                 "id": user_id_val,
@@ -1049,6 +1049,16 @@ async def create_admin_api_key(payload: dict = Body(...), request: Request = Non
     days = int(payload.get("days") or 30)
     custom_key = payload.get("custom_key")
     
+    # Check if request_limit is specified or unlimited
+    req_limit = payload.get("request_limit")
+    if req_limit is not None and str(req_limit).strip() != "" and str(req_limit).lower() != "null" and str(req_limit).lower() != "unlimited":
+        try:
+            req_limit = int(req_limit)
+        except Exception:
+            req_limit = None
+    else:
+        req_limit = None
+    
     api_key = custom_key or f"tx_{secrets.token_hex(16)}"
     expires_at = (datetime.utcnow() + timedelta(days=days)).isoformat() + "Z"
     
@@ -1057,7 +1067,7 @@ async def create_admin_api_key(payload: dict = Body(...), request: Request = Non
         "api_key": api_key,
         "plan_name": plan_name,
         "requests_used": 0,
-        "request_limit": None,
+        "request_limit": req_limit,
         "expires_at": expires_at,
         "status": "active"
     }
@@ -1080,9 +1090,18 @@ async def update_admin_api_key(id: str, payload: dict = Body(...), request: Requ
     expires_at = payload.get("expires_at")
     user_email = payload.get("user_email")
     
+    req_limit = payload.get("request_limit")
+    if req_limit is not None and str(req_limit).strip() != "" and str(req_limit).lower() != "null" and str(req_limit).lower() != "unlimited":
+        try:
+            req_limit = int(req_limit)
+        except Exception:
+            req_limit = None
+    else:
+        req_limit = None
+    
     update_payload = {
         "plan_name": plan_name,
-        "request_limit": None,
+        "request_limit": req_limit,
         "status": status,
         "expires_at": expires_at,
         "user_email": user_email
@@ -2453,6 +2472,20 @@ async def saas_lookup(
             except Exception as e:
                 print(f"[EXPIRY_PARSE_ERR] {e}")
                 pass
+
+            # Usage limit / Quota check (null means unlimited)
+            req_limit = license.get('request_limit')
+            req_used = license.get('requests_used') or 0
+            if req_limit is not None and req_limit != "" and str(req_limit).lower() != "null" and str(req_limit).lower() != "unlimited":
+                try:
+                    num_limit = int(req_limit)
+                    if req_used >= num_limit:
+                        return make_api_response({
+                            "status": "error", 
+                            "message": f"Quota Exhausted: You have reached your limit of {num_limit} requests for this API key. Please upgrade or renew."
+                        })
+                except Exception as el:
+                    print(f"[REQ_LIMIT_PARSE_ERR] {el}")
             
             user_id = license.get('user_id')
             user_email = license.get('user_email')

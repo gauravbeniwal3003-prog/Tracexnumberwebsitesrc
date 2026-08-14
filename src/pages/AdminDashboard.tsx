@@ -109,7 +109,8 @@ export default function AdminDashboard() {
   const [newKeyData, setNewKeyData] = useState({
     user_email: '',
     plan_name: 'Unified Pro API (15 Days)',
-    request_limit: null as number | null,
+    request_limit: '' as string | number | null,
+    is_unlimited: true,
     days_expiry: 15,
     custom_key: ''
   });
@@ -300,7 +301,8 @@ export default function AdminDashboard() {
       return;
     }
 
-    const days = newKeyData.plan_name.includes("15 Days") ? 15 : 30;
+    const days = newKeyData.days_expiry || (newKeyData.plan_name.includes("15 Days") ? 15 : 30);
+    const calculatedLimit = newKeyData.is_unlimited ? null : (newKeyData.request_limit ? Number(newKeyData.request_limit) : null);
 
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -317,7 +319,8 @@ export default function AdminDashboard() {
             user_email: newKeyData.user_email.trim(), 
             plan_name: newKeyData.plan_name, 
             days,
-            custom_key: newKeyData.custom_key.trim() || undefined
+            custom_key: newKeyData.custom_key.trim() || undefined,
+            request_limit: calculatedLimit
           })
         });
         const json = await res.json();
@@ -339,7 +342,8 @@ export default function AdminDashboard() {
       setNewKeyData({
         user_email: '',
         plan_name: 'Unified Pro API (15 Days)',
-        request_limit: null,
+        request_limit: '',
+        is_unlimited: true,
         days_expiry: 15,
         custom_key: ''
       });
@@ -353,6 +357,10 @@ export default function AdminDashboard() {
     const token = session?.access_token;
     let error = null;
 
+    const updatedLimit = selectedKey.request_limit !== null && selectedKey.request_limit !== undefined && selectedKey.request_limit !== ''
+      ? Number(selectedKey.request_limit)
+      : null;
+
     if (token) {
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/admin/api-keys/${selectedKey.id}`, {
@@ -365,7 +373,8 @@ export default function AdminDashboard() {
             plan_name: selectedKey.plan_name,
             status: selectedKey.status,
             expires_at: selectedKey.expires_at,
-            user_email: selectedKey.user_email
+            user_email: selectedKey.user_email,
+            request_limit: updatedLimit
           })
         });
         if (!res.ok) {
@@ -1511,8 +1520,14 @@ export default function AdminDashboard() {
                             <td className="px-6 py-4 text-slate-500 font-mono text-[11px]">
                               {expiryString}
                             </td>
-                            <td className="px-6 py-4 font-mono font-bold text-emerald-600">
-                              {key.requests_used || 0} reqs
+                            <td className="px-6 py-4 font-mono text-xs">
+                              <span className="font-bold text-emerald-600">{key.requests_used || 0}</span>
+                              <span className="text-slate-400"> / </span>
+                              {key.request_limit ? (
+                                <span className="font-semibold text-slate-700">{key.request_limit} max</span>
+                              ) : (
+                                <span className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] uppercase border border-indigo-100">Unlimited</span>
+                              )}
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
@@ -2066,25 +2081,91 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-slate-600 font-bold uppercase mb-1">Access Plan</label>
-                  <select 
-                    value={newKeyData.plan_name}
-                    onChange={(e) => setNewKeyData({...newKeyData, plan_name: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500"
-                  >
-                    <option value="Unified Pro API (15 Days)">Unified Pro API (15 Days)</option>
-                    <option value="Unified Infinity API (30 Days)">Unified Infinity API (30 Days)</option>
-                    <option value="Number Lookup (1 Month)">Number Lookup (1 Month)</option>
-                    <option value="Telegram Lookup (1 Month)">Telegram Lookup (1 Month)</option>
-                    <option value="Identity Card Lookup (1 Month)">Identity Card Lookup (1 Month)</option>
-                    <option value="BA&NK Lookup (1 Month)">BA&NK Lookup (1 Month)</option>
-                    <option value="Vehicle Lookup (1 Month)">Vehicle Lookup (1 Month)</option>
-                    <option value="Vehicle To Owner Lookup (1 Month)">Vehicle To Owner Lookup (1 Month)</option>
-                    <option value="PN Card Lookup (1 Month)">PN Card Lookup (1 Month)</option>
-                    <option value="Email Lookup (1 Month)">Email Lookup (1 Month)</option>
-                    <option value="All Combo Special (1 Month)">All Combo Special (1 Month)</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-slate-600 font-bold uppercase mb-1">Access Plan</label>
+                    <select 
+                      value={newKeyData.plan_name}
+                      onChange={(e) => setNewKeyData({...newKeyData, plan_name: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500"
+                    >
+                      <option value="Unified Pro API (15 Days)">Unified Pro API (15 Days)</option>
+                      <option value="Unified Infinity API (30 Days)">Unified Infinity API (30 Days)</option>
+                      <option value="Number Lookup (1 Month)">Number Lookup (1 Month)</option>
+                      <option value="Telegram Lookup (1 Month)">Telegram Lookup (1 Month)</option>
+                      <option value="Identity Card Lookup (1 Month)">Identity Card Lookup (1 Month)</option>
+                      <option value="BA&NK Lookup (1 Month)">BA&NK Lookup (1 Month)</option>
+                      <option value="Vehicle Lookup (1 Month)">Vehicle Lookup (1 Month)</option>
+                      <option value="Vehicle To Owner Lookup (1 Month)">Vehicle To Owner Lookup (1 Month)</option>
+                      <option value="PN Card Lookup (1 Month)">PN Card Lookup (1 Month)</option>
+                      <option value="Email Lookup (1 Month)">Email Lookup (1 Month)</option>
+                      <option value="All Combo Special (1 Month)">All Combo Special (1 Month)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold uppercase mb-1">Validity (Days)</label>
+                    <input 
+                      type="number"
+                      min={1}
+                      max={3650}
+                      value={newKeyData.days_expiry}
+                      onChange={(e) => setNewKeyData({...newKeyData, days_expiry: parseInt(e.target.value) || 30})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500 font-mono"
+                      placeholder="30"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-slate-800">Usage Limit Mode</span>
+                      <p className="text-[11px] text-slate-500">Choose between unlimited lookups or a strict request cap.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewKeyData({...newKeyData, is_unlimited: true, request_limit: ''})}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          newKeyData.is_unlimited 
+                            ? 'bg-indigo-600 text-white shadow-xs' 
+                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        }`}
+                      >
+                        Unlimited
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewKeyData({...newKeyData, is_unlimited: false, request_limit: newKeyData.request_limit || 500})}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          !newKeyData.is_unlimited 
+                            ? 'bg-indigo-600 text-white shadow-xs' 
+                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        }`}
+                      >
+                        Capped / Limited
+                      </button>
+                    </div>
+                  </div>
+
+                  {!newKeyData.is_unlimited && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pt-2 border-t border-slate-200"
+                    >
+                      <label className="block text-slate-600 font-bold uppercase mb-1">Max Allowed Requests</label>
+                      <input 
+                        type="number" 
+                        min={1}
+                        value={newKeyData.request_limit ?? ''}
+                        onChange={(e) => setNewKeyData({...newKeyData, request_limit: e.target.value})}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 font-mono"
+                        placeholder="e.g. 500 or 1000"
+                      />
+                    </motion.div>
+                  )}
                 </div>
 
                 <div>
@@ -2182,6 +2263,58 @@ export default function AdminDashboard() {
                       <option value="revoked">Revoked</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-slate-800">Usage Limit Mode</span>
+                      <p className="text-[11px] text-slate-500">Choose between unlimited lookups or a strict request cap.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedKey({...selectedKey, request_limit: null})}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          selectedKey.request_limit === null || selectedKey.request_limit === undefined || selectedKey.request_limit === ''
+                            ? 'bg-indigo-600 text-white shadow-xs' 
+                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        }`}
+                      >
+                        Unlimited
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedKey({...selectedKey, request_limit: selectedKey.request_limit || 500})}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          selectedKey.request_limit !== null && selectedKey.request_limit !== undefined && selectedKey.request_limit !== ''
+                            ? 'bg-indigo-600 text-white shadow-xs' 
+                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        }`}
+                      >
+                        Capped / Limited
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedKey.request_limit !== null && selectedKey.request_limit !== undefined && selectedKey.request_limit !== '' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pt-2 border-t border-slate-200"
+                    >
+                      <label className="block text-slate-600 font-bold uppercase mb-1">Max Allowed Requests</label>
+                      <input 
+                        type="number" 
+                        min={1}
+                        value={selectedKey.request_limit ?? ''}
+                        onChange={(e) => setSelectedKey({...selectedKey, request_limit: e.target.value})}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 font-mono"
+                        placeholder="e.g. 500 or 1000"
+                      />
+                    </motion.div>
+                  )}
                 </div>
 
                 <button 

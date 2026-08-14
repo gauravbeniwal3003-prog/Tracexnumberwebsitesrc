@@ -615,17 +615,32 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupEmail(targetVal);
       }
 
-      const hasValidData = !!(data.results || data.raw_results || data.error);
-         
-      if (data.status === false && !data.results && !data.raw_results && data.error && (data.error.includes('credits') || data.error.includes('sign in') || data.error.includes('protected'))) {
-        setError(data.error);
+      if (!data || data.status === false) {
+        setResult(null);
+        setError(data?.error || "Sorry, we don't have data related to the query.");
       } else {
-        setResult(data);
-        setCooldown(5);
+        const resObj = data.results;
+        const resKeys = typeof resObj === 'object' && resObj !== null ? Object.keys(resObj) : [];
+        const hasMeaningfulData = resKeys.some(k => !['error', 'message', 'status', 'success', 'found'].includes(k.toLowerCase()));
+        
+        if (typeof resObj === 'string' && resObj.trim().length > 0 && !resObj.toLowerCase().includes('no result') && !resObj.toLowerCase().includes('not found') && !resObj.toLowerCase().includes('no record')) {
+          setError(null);
+          setResult(data);
+          setCooldown(5);
+        } else if (hasMeaningfulData || data.raw_results) {
+          setError(null);
+          setResult(data);
+          setCooldown(5);
+        } else {
+          setResult(null);
+          setError(data.error || (typeof resObj === 'object' && resObj?.error) || "Sorry, we don't have data related to the query.");
+        }
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
-      setError(err.message || 'The TRACEXDATA engine encountered a connection fault. Please retry.');
+      const { formatApiError } = await import('./services/api.ts');
+      setError(formatApiError(err, service === 'phone' ? 'Mobile' : service));
+      setResult(null);
     } finally {
       setIsLoading(false);
       // Always refresh user profile state to sync latest credit balance with database after lookup attempt
