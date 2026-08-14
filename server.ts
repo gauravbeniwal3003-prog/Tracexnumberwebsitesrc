@@ -222,8 +222,8 @@ const getUserFromToken = async (token: string, client?: any) => {
     
     if (!cleanPhone) return await getFallbackUser();
     
-    let foundUser = null;
-    if (supabaseAdmin) {
+    let foundUser = (cleanPhone && mobileUsersStore.has(cleanPhone)) ? mobileUsersStore.get(cleanPhone) : null;
+    if (!foundUser && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
           .from("app_users")
@@ -236,9 +236,6 @@ const getUserFromToken = async (token: string, client?: any) => {
       } catch (e) {
         console.warn("Could not fetch user from app_users during token resolution:", e);
       }
-    }
-    if (!foundUser && mobileUsersStore.has(cleanPhone)) {
-      foundUser = mobileUsersStore.get(cleanPhone);
     }
     if (!foundUser) return await getFallbackUser();
     
@@ -1260,14 +1257,33 @@ app.get("/api/profile", async (req, res) => {
     }
 
     const isAdmin = checkIsAdmin(user.email);
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
+    let profile: any = null;
+    if (supabaseAdmin) {
+      try {
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        profile = prof;
+      } catch (e: any) {
+        console.warn("[API_PROFILE_WARN] Could not fetch profile from Supabase:", e?.message);
+      }
+    }
 
-    if (profileErr) {
-      return res.status(500).json({ error: profileErr.message });
+    if (!profile && user.phone && mobileUsersStore.has(user.phone)) {
+      const mob = mobileUsersStore.get(user.phone);
+      if (mob) {
+        profile = {
+          id: user.id,
+          email: user.email,
+          full_name: mob.full_name || user.user_metadata?.full_name || "User",
+          credits: mob.credits !== undefined ? mob.credits : 10.00,
+          wallet_balance: mob.credits !== undefined ? mob.credits : 10.00,
+          is_free_credit_claimed: true,
+          created_at: mob.created_at || new Date().toISOString()
+        };
+      }
     }
 
     const now = new Date();
@@ -2857,12 +2873,25 @@ app.get("/api/user-lookup", async (req, res) => {
 
     // Retrieve user's current profile & balance
     if (supabaseAdmin && user.id) {
-      const { data: prof } = await supabaseAdmin
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-      profile = prof;
+      try {
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        profile = prof;
+      } catch (profErr) {
+        console.warn("[USER_LOOKUP] Failed to query profile from Supabase:", profErr);
+      }
+    }
+
+    if ((!profile || profile.credits === undefined) && user.phone && mobileUsersStore.has(user.phone)) {
+      const mob = mobileUsersStore.get(user.phone);
+      if (mob) {
+        if (!profile) profile = {};
+        profile.credits = mob.credits !== undefined ? mob.credits : 10.00;
+        profile.is_free_credit_claimed = true;
+      }
     }
   } catch (err) {
     console.error("[Auth Enforcement Error]:", err);
@@ -2879,26 +2908,30 @@ app.get("/api/user-lookup", async (req, res) => {
   let isProtected = false;
   if (service === 'phone') {
     const cleanPhone = cleanedQuery.replace(/\D/g, '');
-    const { data } = await client
-      .from('protected_numbers')
-      .select('phone_number')
-      .eq('phone_number', cleanPhone)
-      .maybeSingle();
-    if (data) isProtected = true;
+    try {
+      const { data } = await client
+        .from('protected_numbers')
+        .select('phone_number')
+        .eq('phone_number', cleanPhone)
+        .maybeSingle();
+      if (data) isProtected = true;
+    } catch (e) {}
   } else if (service === 'telegram') {
     const cleanTelegram = cleanedQuery.replace(/^@/, '').trim();
     const withAt = `@${cleanTelegram}`;
-    const { data: data1 } = await client
-      .from('protected_telegrams')
-      .select('telegram_id')
-      .eq('telegram_id', cleanTelegram)
-      .maybeSingle();
-    const { data: data2 } = await client
-      .from('protected_telegrams')
-      .select('telegram_id')
-      .eq('telegram_id', withAt)
-      .maybeSingle();
-    if (data1 || data2) isProtected = true;
+    try {
+      const { data: data1 } = await client
+        .from('protected_telegrams')
+        .select('telegram_id')
+        .eq('telegram_id', cleanTelegram)
+        .maybeSingle();
+      const { data: data2 } = await client
+        .from('protected_telegrams')
+        .select('telegram_id')
+        .eq('telegram_id', withAt)
+        .maybeSingle();
+      if (data1 || data2) isProtected = true;
+    } catch (e) {}
   }
 
   if (isProtected) {
@@ -2923,6 +2956,12 @@ app.get("/api/user-lookup", async (req, res) => {
     if (!profile?.is_free_credit_claimed || currentCredits === 0) {
       const freeBonus = 25.00;
       currentCredits = freeBonus;
+      if (user.phone && mobileUsersStore.has(user.phone)) {
+        const mob = mobileUsersStore.get(user.phone);
+        mob.credits = freeBonus;
+        mobileUsersStore.set(user.phone, mob);
+        saveMobileUsersStore(mobileUsersStore);
+      }
       if (supabaseAdmin && user.id) {
         try {
           await supabaseAdmin
@@ -2942,26 +2981,34 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Deduct balance upfront at the time of query forward (No refunds policy)
+  // Deduct balance upfront
   let newBalance = currentCredits;
-  if (!isUnlimited && supabaseAdmin) {
+  if (!isUnlimited) {
     newBalance = Math.max(0, currentCredits - lookupCost);
-    try {
-      await supabaseAdmin
-        .from("profiles")
-        .update({ credits: newBalance, wallet_balance: newBalance })
-        .eq("id", user.id);
+    if (user.phone && mobileUsersStore.has(user.phone)) {
+      const mob = mobileUsersStore.get(user.phone);
+      mob.credits = newBalance;
+      mobileUsersStore.set(user.phone, mob);
+      saveMobileUsersStore(mobileUsersStore);
+    }
+    if (supabaseAdmin && user.id) {
+      try {
+        await supabaseAdmin
+          .from("profiles")
+          .update({ credits: newBalance, wallet_balance: newBalance })
+          .eq("id", user.id);
 
-      await supabaseAdmin.from("wallet_transactions").insert({
-        user_id: user.id,
-        user_email: user.email || "User",
-        service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
-        type: "Debit",
-        amount: lookupCost,
-        balance_after: newBalance
-      });
-    } catch (dbErr) {
-      console.error("[USER_LOOKUP] Failed to record upfront wallet debit:", dbErr);
+        await supabaseAdmin.from("wallet_transactions").insert({
+          user_id: user.id,
+          user_email: user.email || "User",
+          service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
+          type: "Debit",
+          amount: lookupCost,
+          balance_after: newBalance
+        });
+      } catch (dbErr) {
+        console.error("[USER_LOOKUP] Failed to record upfront wallet debit:", dbErr);
+      }
     }
   }
 
@@ -3005,13 +3052,22 @@ app.get("/api/user-lookup", async (req, res) => {
       }
     }
 
+    // Handle error payloads from downstream provider or proxy
+    if (data && (data.status === "error" || data.error_type === "insufficient_balance" || data.error_type === "protected_record")) {
+      return res.status(200).json({
+        status: "error",
+        error_type: data.error_type || "lookup_failed",
+        message: data.message || data.error || "Sorry, we don't have data related to the query.",
+        remaining_balance: newBalance
+      });
+    }
+
     if (!data) {
       await logSearchHistory(req, service, cleanedQuery, 'completed', client, { message: "No data returned" }, user.id, user.email);
       return res.status(200).json({
-        status: "success",
-        service,
-        query: cleanedQuery,
-        results: { message: "No data found related to the query." },
+        status: "error",
+        error_type: "no_data_found",
+        message: "Sorry, we don't have data related to the query.",
         remaining_balance: newBalance,
         cost_deducted: isUnlimited ? 0 : lookupCost
       });
@@ -3019,6 +3075,17 @@ app.get("/api/user-lookup", async (req, res) => {
 
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
+
+    // Check if extracted results indicate "no data found"
+    if (cleanedResults && typeof cleanedResults === 'object' && cleanedResults.message && String(cleanedResults.message).toLowerCase().includes('no data')) {
+      return res.status(200).json({
+        status: "error",
+        error_type: "no_data_found",
+        message: "Sorry, we don't have data related to the query.",
+        remaining_balance: newBalance,
+        cost_deducted: isUnlimited ? 0 : lookupCost
+      });
+    }
 
     if (supabaseAdmin) {
       try {
@@ -3204,7 +3271,8 @@ app.all("/api/lookup", async (req, res) => {
   }
 
 
-  if (!supabaseAdmin) {
+  const isMasterKeyRequest = checkIsMasterKey(key);
+  if (!supabaseAdmin && !isMasterKeyRequest) {
     return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
   }
 

@@ -301,6 +301,31 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
 
     if (data?.status === "success" || data?.status === true) {
       const cleanResults = scrubBranding(data.results || data.data || data);
+
+      // Inspect if cleanResults contains error payload or no data notice
+      if (cleanResults && typeof cleanResults === 'object') {
+        if (cleanResults.status === 'error' || cleanResults.error) {
+          return {
+            status: false,
+            results: {},
+            error: cleanResults.message || cleanResults.error || "Sorry, we don't have data related to the query.",
+            remaining_balance: data.remaining_balance
+          };
+        }
+        if (cleanResults.message && (
+          String(cleanResults.message).toLowerCase().includes('no data') || 
+          String(cleanResults.message).toLowerCase().includes('no record') ||
+          String(cleanResults.message).toLowerCase().includes('required')
+        )) {
+          return {
+            status: false,
+            results: {},
+            error: cleanResults.message || "Sorry, we don't have data related to the query.",
+            remaining_balance: data.remaining_balance
+          };
+        }
+      }
+
       return {
         status: true,
         results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },

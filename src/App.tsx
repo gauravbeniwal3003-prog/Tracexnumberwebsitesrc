@@ -638,6 +638,10 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupEmail(targetVal);
       }
 
+      if (data?.remaining_balance !== undefined && profile) {
+        setProfile(prev => prev ? { ...prev, credits: data.remaining_balance } : null);
+      }
+
       if (!data || data.status === false) {
         setResult(null);
         setError(data?.error || "Sorry, we don't have data related to the query.");

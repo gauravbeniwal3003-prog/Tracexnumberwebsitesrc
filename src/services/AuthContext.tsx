@@ -125,12 +125,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         const profileData = await response.json();
         setProfile(profileData);
+
+        // Sync fresh credits to local mobile session
+        const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+        if (savedMobileSession) {
+          try {
+            const parsed = JSON.parse(savedMobileSession);
+            if (parsed.user && profileData.credits !== undefined) {
+              parsed.user.credits = profileData.credits;
+              localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
+            }
+          } catch (e) {}
+        }
       } else {
         const errorText = await response.text();
         console.error('Failed to fetch secure profile:', errorText);
-        if (response.status === 401) {
+        const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+        if (response.status === 401 && !savedMobileSession) {
           console.warn('Unauthorized session detected, clearing invalid auth state.');
-          localStorage.removeItem('tracex_mobile_session');
           await supabase.auth.signOut().catch(() => {});
           setUser(null);
           setProfile(null);
@@ -194,9 +206,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user);
           // Don't let profile fetch block the master loading state clearing
           fetchProfile(session.user.id).catch(err => console.error('Profile fetch error:', err));
-        } else if (!localStorage.getItem('tracex_mobile_session')) {
-          setUser(null);
-          setProfile(null);
+        } else {
+          const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+          if (savedMobileSession) {
+            try {
+              const parsed = JSON.parse(savedMobileSession);
+              if (parsed?.user) {
+                setUser({
+                  id: parsed.user.id,
+                  email: parsed.user.email,
+                  phone: parsed.user.phone,
+                  user_metadata: { full_name: parsed.user.full_name },
+                  app_metadata: {},
+                  aud: 'authenticated',
+                  created_at: new Date().toISOString(),
+                  role: 'authenticated',
+                  updated_at: new Date().toISOString()
+                } as any);
+                setProfile({
+                  id: parsed.user.id,
+                  email: parsed.user.email,
+                  full_name: parsed.user.full_name,
+                  credits: parsed.user.credits !== undefined ? parsed.user.credits : 10.00,
+                  avatar_url: '',
+                  is_free_credit_claimed: true,
+                  last_weekly_credit_at: new Date().toISOString()
+                } as UserProfile);
+              }
+            } catch (e) {}
+          } else {
+            setUser(null);
+            setProfile(null);
+          }
         }
       } catch (err) {
         console.error('Error in auth event handler:', err);
