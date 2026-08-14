@@ -584,19 +584,51 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
   }
 }
 
+// Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
+const LOOKUP_RATES: Record<string, number> = {
+  phone: 3.0,            // Number lookup: ₹3.00 per lookup
+  number: 3.0,
+  mobile: 3.0,
+  telegram: 10.0,        // Telegram lookup: ₹10.00 per lookup
+  tg: 10.0,
+  bnk: 5.0,              // Bank/IFSC lookup: ₹5.00 per lookup
+  bank: 5.0,
+  ifsc: 5.0,
+  email: 20.0,           // Email lookup: ₹20.00 per lookup
+  mail: 20.0,
+  rasion: 5.0,           // Ration card lookup: ₹5.00
+  family: 5.0,
+  ration: 5.0,
+  adhr: 25.0,            // Identity/Aadhaar lookup: ₹25.00
+  aadhar: 25.0,
+  aadhaar: 25.0,
+  identity: 25.0,
+  vehicle: 20.0,         // Vehicle RC lookup: ₹20.00
+  veh: 20.0,
+  veh_owner_num: 35.0,   // Vehicle Owner Number: ₹35.00
+  veh_numm: 35.0,
+  vehicle_owner: 35.0,
+  pancard: 20.0,         // PAN Card lookup: ₹20.00
+  pan: 20.0,
+  aadhaar_to_pan: 150.0, // Aadhaar to PAN: ₹150.00
+  adhar2panlink: 150.0,
+  balance: 0.0
+};
+
 // Dynamic Price Calculator: Retrieves custom per-user pricing or discount
 async function getEffectiveServicePrice(serviceKey: string, userId?: string, userEmail?: string): Promise<number> {
-  let basePrice = serviceKey === 'aadhaar_to_pan' ? 150 : 1;
+  const normKey = (serviceKey || "").trim().toLowerCase();
+  let basePrice = LOOKUP_RATES[normKey] ?? (normKey === 'aadhaar_to_pan' || normKey === 'adhar2panlink' ? 150.0 : 3.0);
   if (!supabaseAdmin) return basePrice;
 
   try {
     const { data: serviceData } = await supabaseAdmin
       .from("api_services")
       .select("base_price")
-      .eq("service_key", serviceKey)
+      .eq("service_key", normKey)
       .maybeSingle();
 
-    if (serviceData && serviceData.base_price !== undefined && serviceData.base_price !== null) {
+    if (serviceData && serviceData.base_price !== undefined && serviceData.base_price !== null && Number(serviceData.base_price) > 0) {
       basePrice = Number(serviceData.base_price);
     }
 
@@ -2219,14 +2251,15 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
   }
 
   const defaultServicesList = [
-    { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 1.00 },
-    { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 1.00 },
-    { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 1.00 },
-    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 1.00 },
-    { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 1.00 },
-    { service_key: "rasion", service_name: "Ration Card Search & Family Details", category: "Identity & Govt", base_price: 1.00 },
-    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 5.00 },
-    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 15.00 },
+    { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 3.00 },
+    { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 20.00 },
+    { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 10.00 },
+    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 25.00 },
+    { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 5.00 },
+    { service_key: "rasion", service_name: "Ration Card Search & Family Details", category: "Identity & Govt", base_price: 5.00 },
+    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 20.00 },
+    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 35.00 },
+    { service_key: "pancard", service_name: "PAN Card Verification & Details", category: "Identity & Govt", base_price: 20.00 },
     { service_key: "aadhaar_to_pan", service_name: "Aadhaar to PAN Find / Link", category: "Identity & Govt", base_price: 150.00 },
     { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00 }
   ];
@@ -2833,7 +2866,7 @@ app.get("/api/user-lookup", async (req, res) => {
 
   // Pre-lookup wallet balance & plan check
   const serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
-  const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 2.0;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 3.0;
   const currentCredits = Number(profile?.credits ?? profile?.wallet_balance ?? 0);
   const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
@@ -2951,18 +2984,6 @@ app.get("/api/user-lookup", async (req, res) => {
   }
 });
 
-const LOOKUP_RATES: Record<string, number> = {
-  phone: 2.0,            // Number lookup: ₹2.00 per lookup
-  telegram: 2.0,         // Telegram lookup: ₹2.00 per lookup
-  bnk: 2.0,              // Bank/IFSC lookup: ₹2.00 per lookup
-  email: 2.0,            // Email lookup: ₹2.00 per lookup
-  rasion: 5.0,           // Ration card lookup: ₹5.00
-  adhr: 5.0,             // Identity/Aadhaar lookup: ₹5.00
-  vehicle: 5.0,          // Vehicle RC lookup: ₹5.00
-  veh_owner_num: 15.0,   // Vehicle Owner Number: ₹15.00
-  aadhaar_to_pan: 150.0  // Aadhaar to PAN: ₹150.00
-};
-
 interface ApiBalanceCheckResult {
   authorized: boolean;
   userProfile?: any;
@@ -2998,7 +3019,7 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   }
 
   const serviceKey = lookupType === 'adhr' ? 'aadhaar' : lookupType === 'bnk' ? 'ifsc' : lookupType;
-  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 2.0;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 3.0;
   const planUpper = String(keyRecord.plan_name || "").toUpperCase();
   const isUnlimited = planUpper.includes("UNLIMITED") || (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
 
@@ -3503,6 +3524,82 @@ app.all("/api/lookup", async (req, res) => {
       }
     } else if ((lookupType as string) === 'telegram') {
       const target_username = targetQuery.replace(/^@/, "");
+      const cache_key = `tg_${target_username.toLowerCase()}`;
+
+      // Check database cache first if it contains valid mobile data
+      try {
+        if (supabaseAdmin) {
+          const { data: cachedRow } = await supabaseAdmin
+            .from('search_results')
+            .select('raw_data')
+            .eq('mobile_number', cache_key)
+            .maybeSingle();
+
+          if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
+            const hasMobile = cachedRow.raw_data.mobile && cachedRow.raw_data.mobile !== "N/A" && cachedRow.raw_data.mobile !== "PROTECTED @ TRACEX SHIELD";
+            if (hasMobile) {
+              console.log(`[Telegram Cache Hit in /api/lookup] Serving ${targetQuery} from database cache`);
+              const newCount = (keyRecord.requests_used || 0) + 1;
+              if (!isMaster && keyRecord?.id) {
+                await supabaseAdmin.from("api_keys").update({ 
+                  requests_used: newCount,
+                  last_used_at: new Date().toISOString()
+                }).eq("id", keyRecord.id);
+              }
+
+              if (balanceCheck.deduct) {
+                try {
+                  const { newCredits, lookupCost } = await balanceCheck.deduct();
+                  if (supabaseAdmin) {
+                    const userId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+                    const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "API Developer";
+                    const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+                    try {
+                      await supabaseAdmin.from("service_records").insert({
+                        user_id: userId,
+                        client_name: userEmail,
+                        service_name: `B2B API: TELEGRAM`,
+                        reference_code: refCode,
+                        status: "SUCCESS",
+                        result_payload: cachedRow.raw_data,
+                        log_number: Math.floor(100 + Math.random() * 900)
+                      });
+                      await supabaseAdmin.from("wallet_transactions").insert({
+                        user_id: userId,
+                        user_email: userEmail,
+                        service: `B2B API Call: TELEGRAM (${targetQuery})`,
+                        type: "Debit",
+                        amount: lookupCost,
+                        balance_after: newCredits
+                      });
+                    } catch (historyErr) {
+                      console.error("[HISTORY_TRACE_ERROR] Failed to save service record or wallet trace:", historyErr);
+                    }
+                  }
+                } catch (deductErr) {
+                  console.error("Failed to deduct account API charge for telegram:", deductErr);
+                }
+              }
+
+              const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+              const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+              await logSearchHistory(req, 'telegram', targetQuery, "SUCCESS", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
+              await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "success", Date.now() - startTime);
+
+              return res.json({
+                status: "success",
+                service: "telegram",
+                query: targetQuery,
+                results: scrubAllBranding(cachedRow.raw_data)
+              });
+            }
+          }
+        }
+      } catch (cacheErr) {
+        console.error("[Telegram Cache Read Error in /api/lookup]", cacheErr);
+      }
+
       const api_url = getProviderUrl('telegram', target_username);
       const response = await fetch(api_url);
       if (!response.ok) {
@@ -3531,11 +3628,19 @@ app.all("/api/lookup", async (req, res) => {
         const cleaned_json = scrubAllBranding(parsed);
         if (cleaned_json && typeof cleaned_json === 'object') {
           let raw_res = cleaned_json.results || cleaned_json.data || cleaned_json;
-          if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile) {
+          if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile || raw_res.user_id || raw_res.phone || raw_res.mobile_number) {
+             const mob = String(raw_res.number || raw_res.mobile || raw_res.phone || raw_res.mobile_number || "N/A").trim();
+             const tgid = String(raw_res.tg_id || raw_res.telegram_id || raw_res.user_id || "N/A").trim();
              parsedResult = {
-               telegram_id: raw_res.tg_id || raw_res.telegram_id || "N/A",
-               username: raw_res.username || target_username,
-               mobile: raw_res.number || raw_res.mobile || "N/A",
+               username: (raw_res.username || target_username).replace(/^@/, ''),
+               telegram_id: tgid,
+               user_id: tgid,
+               mobile: mob,
+               mobile_number: mob,
+               number: mob,
+               phone: mob,
+               ...(raw_res.country ? { country: raw_res.country } : {}),
+               ...(raw_res.name ? { name: raw_res.name } : {}),
                platform: "Telegram Lookup"
              };
           } else {
@@ -3548,17 +3653,23 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       if (!isParsedAsJson) {
-        // Strip emojis and markdown
-        const noEmojiText = cleanedText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ' ');
-        const usernameMatch = noEmojiText.match(/(?:Username|User|Lookup Result for):\s*([^\s\n\r]+)/i);
-        const idMatch = noEmojiText.match(/(?:Telegram ID|User ID|User_ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-        const phoneMatch = noEmojiText.match(/(?:Phone Number|Mobile Number|Mobile|Phone|Number):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-        const countryMatch = noEmojiText.match(/(?:Country):\s*([^\n\r]+)/i);
-        const nameMatch = noEmojiText.match(/(?:Name|Full Name):\s*([^\n\r]+)/i);
+        // Strip emojis and formatting characters for ultra resilient regex matching
+        const noEmojiText = cleanedText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
+        let usernameMatch = noEmojiText.match(/(?:Username|User|Lookup Result for|Handle):\s*@?([^\s\n\r<]+)/i);
+        if (!usernameMatch) usernameMatch = noEmojiText.match(/"(?:username|name)"\s*:\s*"([^"]+)"/i);
 
-        const username = usernameMatch ? usernameMatch[1].trim() : target_username;
+        let idMatch = noEmojiText.match(/(?:Telegram ID|User ID|User_ID|Telegram_ID|Account ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+        if (!idMatch) idMatch = noEmojiText.match(/"(?:tg_id|telegram_id|user_id)"\s*:\s*"?(\d+)"?/i);
+
+        let phoneMatch = noEmojiText.match(/(?:Phone Number|Mobile Number|Mobile Phone|Mobile|Phone|Number|Num):\s*(?:<code>)?\+?(\d[\d\s\-]{6,15}\d|\d{10})(?:<\/code>)?/i);
+        if (!phoneMatch) phoneMatch = noEmojiText.match(/"(?:number|mobile|phone|mobile_number)"\s*:\s*"?(\+?\d+)"?/i);
+
+        let countryMatch = noEmojiText.match(/(?:Country|Region|Location):\s*([^\n\r<]+)/i);
+        let nameMatch = noEmojiText.match(/(?:Name|Full Name):\s*([^\n\r<]+)/i);
+
+        const username = (usernameMatch ? usernameMatch[1].trim() : target_username).replace(/^@/, '');
         const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-        const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+        const phone = phoneMatch ? phoneMatch[1].replace(/[^\d+]/g, '').trim() : "N/A";
         const country = countryMatch ? countryMatch[1].trim() : "";
         const name = nameMatch ? nameMatch[1].trim() : "";
 
@@ -3568,13 +3679,30 @@ app.all("/api/lookup", async (req, res) => {
         }
 
         parsedResult = {
-          telegram_id: telegram_id,
           username: username,
+          telegram_id: telegram_id,
+          user_id: telegram_id,
           mobile: phone,
+          mobile_number: phone,
+          number: phone,
+          phone: phone,
           ...(name ? { name } : {}),
           ...(country ? { country } : {}),
           platform: "Telegram Lookup"
         };
+      }
+
+      // Save to database cache if result contains a valid phone number
+      try {
+        if (supabaseAdmin && parsedResult && parsedResult.mobile && parsedResult.mobile !== "N/A") {
+          await supabaseAdmin.from('search_results').upsert({
+            mobile_number: cache_key,
+            raw_data: parsedResult
+          }, { onConflict: 'mobile_number' });
+          console.log(`[Telegram Cache Save] Successfully cached lookup for: ${target_username}`);
+        }
+      } catch (cacheSaveErr) {
+        console.error("[Telegram Cache Save Error in /api/lookup]", cacheSaveErr);
       }
 
       const newCount = (keyRecord.requests_used || 0) + 1;
@@ -4947,18 +5075,21 @@ app.get("/api/telegram", async (req, res) => {
           .maybeSingle();
 
         if (cachedRow && cachedRow.raw_data && Object.keys(cachedRow.raw_data).length > 0) {
-          console.log(`[Telegram Cache Hit] Serving ${targetTelegramId} from database cache`);
-          
-          // Record telemetry for successful cached search
-          if (!isMaster && keyRecord?.id) {
-            await supabaseAdmin.from("api_keys").update({ 
-              requests_used: (keyRecord.requests_used || 0) + 1,
-              last_used_at: new Date().toISOString()
-            }).eq("id", keyRecord.id);
-          }
+          const hasMobile = cachedRow.raw_data.mobile && cachedRow.raw_data.mobile !== "N/A" && cachedRow.raw_data.mobile !== "PROTECTED @ TRACEX SHIELD";
+          if (hasMobile) {
+            console.log(`[Telegram Cache Hit] Serving ${targetTelegramId} from database cache`);
+            
+            // Record telemetry for successful cached search
+            if (!isMaster && keyRecord?.id) {
+              await supabaseAdmin.from("api_keys").update({ 
+                requests_used: (keyRecord.requests_used || 0) + 1,
+                last_used_at: new Date().toISOString()
+              }).eq("id", keyRecord.id);
+            }
 
-          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "success", Date.now() - startTime);
-          return res.status(200).json({ status: "success", results: cachedRow.raw_data, cached: true });
+            await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "success", Date.now() - startTime);
+            return res.status(200).json({ status: "success", results: scrubAllBranding(cachedRow.raw_data), cached: true });
+          }
         }
       }
     } catch (cacheErr) {
@@ -5014,11 +5145,19 @@ app.get("/api/telegram", async (req, res) => {
       const cleaned_json = scrubAllBranding(parsed);
       if (cleaned_json && typeof cleaned_json === 'object') {
         let raw_res = cleaned_json.results || cleaned_json.data || cleaned_json;
-        if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile) {
+        if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile || raw_res.user_id || raw_res.phone || raw_res.mobile_number) {
+           const mob = String(raw_res.number || raw_res.mobile || raw_res.phone || raw_res.mobile_number || "N/A").trim();
+           const tgid = String(raw_res.tg_id || raw_res.telegram_id || raw_res.user_id || "N/A").trim();
            results = {
-             username: raw_res.username || targetTelegramId,
-             telegram_id: raw_res.tg_id || raw_res.telegram_id || "N/A",
-             mobile: raw_res.number || raw_res.mobile || "N/A",
+             username: (raw_res.username || target_username).replace(/^@/, ''),
+             telegram_id: tgid,
+             user_id: tgid,
+             mobile: mob,
+             mobile_number: mob,
+             number: mob,
+             phone: mob,
+             ...(raw_res.country ? { country: raw_res.country } : {}),
+             ...(raw_res.name ? { name: raw_res.name } : {}),
              platform: "Telegram Lookup"
            };
         } else {
@@ -5031,18 +5170,24 @@ app.get("/api/telegram", async (req, res) => {
     }
 
     if (!isParsedAsJson) {
-      let usernameMatch = cleanedText.match(/(?:Username|User):\s*([^\s\n\r]+)/i);
-      if (!usernameMatch) usernameMatch = cleanedText.match(/"(?:username|name)"\s*:\s*"([^"]+)"/i);
+      const noEmojiText = cleanedText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
+      let usernameMatch = noEmojiText.match(/(?:Username|User|Lookup Result for|Handle):\s*@?([^\s\n\r<]+)/i);
+      if (!usernameMatch) usernameMatch = noEmojiText.match(/"(?:username|name)"\s*:\s*"([^"]+)"/i);
 
-      let idMatch = cleanedText.match(/(?:Telegram ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-      if (!idMatch) idMatch = cleanedText.match(/"(?:tg_id|telegram_id)"\s*:\s*"?(\d+)"?/i);
+      let idMatch = noEmojiText.match(/(?:Telegram ID|User ID|User_ID|Telegram_ID|Account ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
+      if (!idMatch) idMatch = noEmojiText.match(/"(?:tg_id|telegram_id|user_id)"\s*:\s*"?(\d+)"?/i);
 
-      let phoneMatch = cleanedText.match(/(?:Phone Number|Mobile|Phone):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-      if (!phoneMatch) phoneMatch = cleanedText.match(/"(?:number|mobile|phone)"\s*:\s*"?(\d+)"?/i);
+      let phoneMatch = noEmojiText.match(/(?:Phone Number|Mobile Number|Mobile Phone|Mobile|Phone|Number|Num):\s*(?:<code>)?\+?(\d[\d\s\-]{6,15}\d|\d{10})(?:<\/code>)?/i);
+      if (!phoneMatch) phoneMatch = noEmojiText.match(/"(?:number|mobile|phone|mobile_number)"\s*:\s*"?(\+?\d+)"?/i);
 
-      const username = usernameMatch ? usernameMatch[1].trim() : target_username;
+      let countryMatch = noEmojiText.match(/(?:Country|Region|Location):\s*([^\n\r<]+)/i);
+      let nameMatch = noEmojiText.match(/(?:Name|Full Name):\s*([^\n\r<]+)/i);
+
+      const username = (usernameMatch ? usernameMatch[1].trim() : target_username).replace(/^@/, '');
       const telegram_id = idMatch ? idMatch[1].trim() : "N/A";
-      const phone = phoneMatch ? phoneMatch[1].trim() : "N/A";
+      const phone = phoneMatch ? phoneMatch[1].replace(/[^\d+]/g, '').trim() : "N/A";
+      const country = countryMatch ? countryMatch[1].trim() : "";
+      const name = nameMatch ? nameMatch[1].trim() : "";
 
       if (telegram_id === "N/A" && phone === "N/A") {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
@@ -5050,16 +5195,22 @@ app.get("/api/telegram", async (req, res) => {
       }
 
       results = {
-        telegram_id: telegram_id,
         username: username,
+        telegram_id: telegram_id,
+        user_id: telegram_id,
         mobile: phone,
+        mobile_number: phone,
+        number: phone,
+        phone: phone,
+        ...(name ? { name } : {}),
+        ...(country ? { country } : {}),
         platform: "Telegram Lookup"
       };
     }
 
     // Save successful result to database cache
     try {
-      if (supabaseAdmin && results) {
+      if (supabaseAdmin && results && results.mobile && results.mobile !== "N/A") {
         await supabaseAdmin.from('search_results').upsert({
           mobile_number: cache_key,
           raw_data: results

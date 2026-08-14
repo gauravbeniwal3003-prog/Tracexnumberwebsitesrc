@@ -9,7 +9,7 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
-  'developer', 'owner', 'buy_api', 'provider', 'credits', 'telegram', 'site', 
+  'developer', 'owner', 'buy_api', 'provider', 'credits', 'site', 
   'website', 'api_buy_link', 'website_link', 'support', 'contact', 'bought_from',
   'vendor', 'bot_owner', 'channel', 'dev', 'admin', 'bot', 'seller', 'paid_by', 
   'copyright', 'created_by', 'tg_channel', 'tg_owner'
@@ -18,7 +18,7 @@ const BANNED_KEYS = [
 function isBannedKey(key: string): boolean {
   if (!key) return false;
   const k = key.toLowerCase().replace(/[\s\-_]/g, '');
-  if (k === 'telegramid') return false;
+  if (k.startsWith('telegram') || k.startsWith('tgid') || k === 'telegramid' || k === 'telegramusername') return false;
   return BANNED_KEYS.some(banned => k === banned || k.includes(banned));
 }
 
@@ -32,12 +32,34 @@ function isBannedValue(val: any): boolean {
     v.includes('s0ldier') ||
     v.includes('anish') ||
     v.includes('exploits') ||
-    (v.includes('@') && (v.includes('boss') || v.includes('tech') || v.includes('dev') || v.includes('soldier') || v.includes('admin')))
+    (v.includes('@') && (v.includes('boss') || v.includes('tech') || v.includes('dev') || v.includes('soldier') || v.includes('admin') || v.includes('vectraen')))
   );
 }
 
 function formatKeyLabel(key: string): string {
   if (!key) return '';
+  const lower = key.toLowerCase().replace(/[\s\-_]/g, '');
+  if (lower === 'mobile' || lower === 'mobilenumber' || lower === 'phone' || lower === 'phonenumber' || lower === 'number') {
+    return 'MOBILE NUMBER';
+  }
+  if (lower === 'telegramid' || lower === 'tgid' || lower === 'userid') {
+    return 'TELEGRAM USER ID';
+  }
+  if (lower === 'username' || lower === 'telegramusername') {
+    return 'TELEGRAM USERNAME';
+  }
+  if (lower === 'aadharnumber' || lower === 'aadhaarnumber' || lower === 'aadharno' || lower === 'uid') {
+    return 'AADHAAR NUMBER';
+  }
+  if (lower === 'fathername' || lower === 'fathersname') {
+    return 'FATHER / HUSBAND NAME';
+  }
+  if (lower === 'statecircle' || lower === 'circle') {
+    return 'STATE / CIRCLE';
+  }
+  if (lower === 'altmobile' || lower === 'alternatephone') {
+    return 'ALTERNATE NUMBER';
+  }
   return key
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
@@ -174,6 +196,21 @@ export function extractDisplayEntries(obj: any): Array<[string, string]> {
         entries.push(['RESULT', strVal]);
       }
     }
+    // Deduplicate entries with identical formatted labels and values
+    const seenMap = new Map<string, string>();
+    const deduplicatedEntries: Array<[string, string]> = [];
+
+    for (const [k, v] of entries) {
+      const label = formatKeyLabel(k);
+      const lowerVal = v.toLowerCase().trim();
+      const comboKey = `${label}:::${lowerVal}`;
+      if (!seenMap.has(comboKey)) {
+        seenMap.set(comboKey, v);
+        deduplicatedEntries.push([k, v]);
+      }
+    }
+
+    return deduplicatedEntries;
   } catch (e) {
     console.error('Error extracting display entries:', e);
   }
