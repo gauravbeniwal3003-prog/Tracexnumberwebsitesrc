@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import LiquidBackground from '../components/LiquidBackground';
+import HeaderNavbar from '../components/HeaderNavbar';
 import { getApiBaseUrl } from '../services/api.ts';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
 
@@ -252,25 +253,10 @@ export default function ScriptPurchase() {
     <div className="min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between relative font-sans">
       <LiquidBackground />
 
-      {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-4 md:p-6 z-[60] flex items-center justify-between">
-        <button 
-          onClick={() => navigate('/dashboard')} 
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-sky-200 backdrop-blur-xl transition-all hover:bg-sky-50 shadow-sm cursor-pointer"
-        >
-          <ArrowLeft size={14} className="text-sky-600" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-800">Back to Lookup</span>
-        </button>
+      {/* Universal Header Navbar */}
+      <HeaderNavbar title="TRACEXDATA" subtitle="AUTOMATION SCRIPT" />
 
-        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 backdrop-blur-xl shadow-sm">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-            <ShieldCheck size={12} className="text-emerald-600" /> SECURE DECRYPTION
-          </span>
-        </div>
-      </nav>
-
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-start pt-24 pb-16 px-4 max-w-4xl mx-auto w-full">
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-start pt-8 pb-16 px-4 max-w-4xl mx-auto w-full">
         
         {/* Banner Headers */}
         <header className="text-center max-w-lg mx-auto mb-8">

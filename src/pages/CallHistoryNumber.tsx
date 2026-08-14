@@ -13,6 +13,7 @@ import {
   IndianRupee
 } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground.tsx';
+import HeaderNavbar from '../components/HeaderNavbar';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
 import { getApiBaseUrl } from '../services/api.ts';
 
@@ -153,23 +154,10 @@ export default function CallHistoryNumber() {
       </div>
 
       {/* Top Navbar */}
-      <nav className="fixed top-0 left-0 right-0 p-3.5 md:p-5 z-[60] flex items-center justify-between bg-white/60 backdrop-blur-xl border-b border-sky-100/80 shadow-[0_2px_15px_rgba(14,165,233,0.04)]">
-        <Link 
-          to="/" 
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-50/80 border border-sky-200/80 text-sky-800 hover:bg-sky-100/80 transition-all shadow-sm group"
-        >
-          <ArrowLeft className="w-4 h-4 text-sky-600 group-hover:-translate-x-0.5 transition-transform" />
-          <span className="text-xs font-semibold">Back to Home</span>
-        </Link>
-
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-300/40 text-sky-800 shadow-sm">
-          <ShieldCheck className="w-4 h-4 text-sky-600" />
-          <span className="text-[11px] font-semibold tracking-wide">256-Bit SSL Encrypted</span>
-        </div>
-      </nav>
+      <HeaderNavbar title="TRACEXDATA" subtitle="CALL HISTORY" />
 
       {/* Main Content Container */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-24 pb-12 relative z-10 max-w-2xl mx-auto w-full">
+      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-8 pb-12 relative z-10 max-w-2xl mx-auto w-full">
         
         {/* Header Info */}
         <div className="text-center mb-6 md:mb-8">

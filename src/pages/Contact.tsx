@@ -11,15 +11,7 @@ export default function Contact() {
       <LiquidBackground />
       <HeaderNavbar title="TRACEXDATA" subtitle="SUPPORT & CONTACT" />
       
-      <div className="relative z-10 max-w-3xl mx-auto px-6 py-12">
-        <Link 
-          to="/" 
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-sky-600 transition-colors mb-12 group"
-        >
-          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          <span className="text-sm font-extrabold uppercase tracking-widest">Back to Home</span>
-        </Link>
-
+      <div className="relative z-10 max-w-3xl mx-auto px-6 py-6 space-y-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

@@ -7,7 +7,7 @@ export interface SubService {
   plan: 'Silver' | 'Gold' | 'VIP';
   inputLabel: string;
   inputPlaceholder: string;
-  serviceType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' | 'veh_owner_num';
+  serviceType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'email' | 'veh_owner_num';
 }
 
 export interface Category {
@@ -36,7 +36,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'phone',
         title: 'Number Lookup',
         subtitle: 'Carrier, Location & Telecom Record Lookup',
-        fee: 3,
+        fee: 2,
         plan: 'Silver',
         inputLabel: 'MOBILE NUMBER',
         inputPlaceholder: 'Enter 10-digit Mobile No (e.g. 9876543210)',
@@ -80,7 +80,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'telegram',
         title: 'Telegram To Number Lookup',
         subtitle: 'Identify Linked Phone Number from Telegram Handle',
-        fee: 10,
+        fee: 5,
         plan: 'Silver',
         inputLabel: 'TELEGRAM USERNAME / ID',
         inputPlaceholder: 'Enter Telegram Username (e.g. @username)',
@@ -102,7 +102,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'aadhaar',
         title: 'Aadhar Lookup',
         subtitle: 'Aadhaar Verification & Identity Info',
-        fee: 25,
+        fee: 20,
         plan: 'Silver',
         inputLabel: 'AADHAAR NUMBER',
         inputPlaceholder: 'Enter 12-digit Aadhaar No (e.g. 998877665544)',
@@ -146,7 +146,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'vehicle',
         title: 'Vehicle Lookup',
         subtitle: 'Vehicle RC Details, Registration & RTO Specs',
-        fee: 20,
+        fee: 10,
         plan: 'Silver',
         inputLabel: 'VEHICLE NUMBER',
         inputPlaceholder: 'Enter Vehicle Reg No (e.g. DL01AB1234)',
@@ -157,7 +157,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'vehicle',
         title: 'Vehicle To Owner Number',
         subtitle: 'Fetch Owner Mobile Phone Number from Vehicle No',
-        fee: 35,
+        fee: 20,
         plan: 'Gold',
         inputLabel: 'VEHICLE NUMBER',
         inputPlaceholder: 'Enter Vehicle Reg No (e.g. DL01AB1234)',

@@ -68,7 +68,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#1",
         name: "Number Lookup",
         serviceCode: "phone",
-        price: "₹3.00 / call",
+        price: "₹2.00 / call",
         category: "Phone & Telecom",
         paramPlaceholder: "ENTER_MOBILE_NUMBER",
         sampleQuery: "9876543210"
@@ -96,7 +96,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#3",
         name: "Telegram To Number Lookup",
         serviceCode: "telegram",
-        price: "₹10.00 / call",
+        price: "₹5.00 / call",
         category: "Telegram & Social",
         paramPlaceholder: "ENTER_TELEGRAM_USERNAME",
         sampleQuery: "@username"
@@ -110,7 +110,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#4",
         name: "Aadhar Lookup",
         serviceCode: "adhr",
-        price: "₹25.00 / call",
+        price: "₹20.00 / call",
         category: "Aadhaar Services",
         paramPlaceholder: "ENTER_AADHAAR_NUMBER",
         sampleQuery: "998877665544"
@@ -138,7 +138,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#6",
         name: "Vehicle Lookup",
         serviceCode: "vehicle",
-        price: "₹20.00 / call",
+        price: "₹10.00 / call",
         category: "Vehicle & Transport",
         paramPlaceholder: "ENTER_VEHICLE_NUMBER",
         sampleQuery: "DL01AB1234"
@@ -147,7 +147,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#7",
         name: "Vehicle To Owner Number",
         serviceCode: "veh_owner_num",
-        price: "₹35.00 / call",
+        price: "₹20.00 / call",
         category: "Vehicle & Transport",
         paramPlaceholder: "ENTER_VEHICLE_NUMBER",
         sampleQuery: "DL01AB1234"
@@ -562,18 +562,7 @@ export default function ApiDocs() {
       <LiquidBackground />
       <HeaderNavbar title="TRACEXDATA" subtitle="DEVELOPER API HUB" />
       
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 space-y-6">
-        {/* BREADCRUMB NAVIGATION */}
-        <div>
-          <Link
-            to="/dashboard"
-            className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-500" />
-            <span>Back to Dashboard</span>
-          </Link>
-        </div>
-        
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-6 space-y-6">
         {/* 1. TOP BLUE HERO BANNER */}
         <div className="bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 text-white rounded-2xl p-6 sm:p-8 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
           <div className="space-y-2 max-w-2xl relative z-10">
@@ -581,7 +570,7 @@ export default function ApiDocs() {
               Developer API Hub
             </h1>
             <p className="text-blue-100 text-xs sm:text-sm font-medium leading-relaxed">
-              Integrate Digi Seva Premium directly into your applications.
+              Integrate TRACEXDATA Premium directly into your applications.
             </p>
           </div>
 

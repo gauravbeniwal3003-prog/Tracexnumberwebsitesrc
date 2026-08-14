@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Wallet, History, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw } from 'lucide-react';
+import { Wallet, History, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
@@ -61,10 +61,9 @@ export default function WalletHistory() {
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans pb-20">
       <LiquidBackground />
       {/* Universal Header Navbar */}
-      <HeaderNavbar title="DIGI SEVA WALLET" subtitle="WALLET HISTORY" />
+      <HeaderNavbar title="TRACEXDATA" subtitle="WALLET HISTORY" />
 
       <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-6 space-y-6">
-        
         {/* GREEN WALLET BALANCE BANNER CARD (Matching Screenshot 4) */}
         <div className="bg-[#00a884] text-white rounded-2xl p-6 sm:p-8 shadow-md flex items-center justify-between gap-6 relative overflow-hidden">
           <div className="space-y-1 relative z-10">

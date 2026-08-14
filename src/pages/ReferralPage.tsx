@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Gift, Copy, Check, Users, DollarSign, FolderOpen, Receipt } from 'lucide-react';
+import { Gift, Copy, Check, Users, DollarSign, FolderOpen, Receipt, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import { getApiBaseUrl } from '../services/api';
@@ -9,6 +10,7 @@ import LiquidBackground from '../components/LiquidBackground';
 
 export default function ReferralPage() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const baseDomain = getApiBaseUrl().replace(/\/$/, "");
 
@@ -59,7 +61,6 @@ export default function ReferralPage() {
       <HeaderNavbar title="REFER & EARN" subtitle="COMMISSION PORTAL" />
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-6 space-y-6">
-        
         {/* TOP CARDS GRID (Matching Screenshot 3) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ShieldCheck, ArrowLeft, Loader2, Sparkles, AlertCircle, FileSearch, Check, Shield, Search, Send, CreditCard, Clipboard } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground';
+import HeaderNavbar from '../components/HeaderNavbar';
 import FormattedResponseCard from '../components/FormattedResponseCard';
 import { safeFetchJson, getApiBaseUrl } from '../services/api.ts';
 
@@ -140,26 +141,11 @@ export default function PanFind() {
     <div className="relative min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 overflow-x-hidden flex flex-col justify-between font-sans">
       <LiquidBackground />
 
-      {/* Secure Header */}
-      <nav className="fixed top-0 left-0 right-0 p-4 md:p-6 z-[60] flex items-center justify-between pointer-events-none">
-        <Link 
-          to="/"
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-sky-200 backdrop-blur-xl pointer-events-auto transition-all hover:bg-sky-50 shadow-sm"
-        >
-          <ArrowLeft size={14} className="text-slate-600" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-800">TRACEXDATA</span>
-        </Link>
-
-        <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 backdrop-blur-xl pointer-events-auto shadow-sm">
-          <Shield size={12} className="text-emerald-600" />
-          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest font-mono">
-            SECURE CHECKOUT
-          </span>
-        </div>
-      </nav>
+      {/* Universal Header Navbar */}
+      <HeaderNavbar title="TRACEXDATA" subtitle="AADHAAR TO PAN" />
 
       {/* Main Container */}
-      <div className="relative z-10 flex-grow flex items-center justify-center px-4 py-24 md:py-32">
+      <div className="relative z-10 flex-grow flex items-center justify-center px-4 py-8 md:py-16">
         <div className="w-full max-w-xl">
           
           <AnimatePresence mode="wait">

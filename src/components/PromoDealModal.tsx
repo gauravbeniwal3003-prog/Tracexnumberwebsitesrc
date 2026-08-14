@@ -13,7 +13,7 @@ export default function PromoDealModal({ onClose }: PromoDealModalProps) {
 
   useEffect(() => {
     // Only show on primary search pages
-    const allowedPaths = ['/', '/telegram', '/identity', '/bank', '/vehicle', '/pancard', '/panfind'];
+    const allowedPaths = ['/', '/telegram', '/identity', '/bank', '/vehicle', '/email'];
     const currentPath = window.location.pathname;
     if (!allowedPaths.includes(currentPath)) return;
 

@@ -13,7 +13,7 @@ import SubscriptionBadge from './components/SubscriptionBadge.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
 import ProtectNumberModal from './components/ProtectNumberModal.tsx';
 import FormattedResponseCard from './components/FormattedResponseCard.tsx';
-import { lookupNumber, ApiResponse, getApiBaseUrl } from './services/api.ts';
+import { lookupNumber, ApiResponse, getApiBaseUrl, saveLocalSearchHistory } from './services/api.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
 import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
@@ -144,6 +144,8 @@ export default function App() {
         <Route path="/service-records" element={<ServiceRecords />} />
         <Route path="/history" element={<ServiceRecords />} />
         <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
+        <Route path="/support" element={<TelegramRedirect />} />
+        <Route path="/contact" element={<TelegramRedirect />} />
         
         {/* Separate Free Public & Payment Pages */}
         <Route path="/supportgauravbeniwalonyoutube" element={<SupportGauravBeniwalPage />} />
@@ -164,6 +166,22 @@ export default function App() {
         )}
       </AnimatePresence>
     </Router>
+  );
+}
+
+function TelegramRedirect() {
+  useEffect(() => {
+    window.location.href = 'https://t.me/Gaurav_beni_0001';
+  }, []);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white font-sans">
+      <div className="text-center space-y-3 p-6">
+        <div className="w-12 h-12 rounded-full border-4 border-sky-500 border-t-transparent animate-spin mx-auto" />
+        <h2 className="text-lg font-bold">Redirecting to Official Telegram Support...</h2>
+        <p className="text-xs text-slate-400">If you are not redirected automatically, <a href="https://t.me/Gaurav_beni_0001" className="text-sky-400 underline font-bold">click here</a>.</p>
+      </div>
+    </div>
   );
 }
 
@@ -475,33 +493,38 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
     }
 
-    let creditCost = 2;
+    const ADMIN_EMAILS = [
+      'yashwinderbeniwaldm@gmail.com', 
+      'gaurav_beniwal_0001@example.com',
+      'gauravbeniwal30003@gmail.com'
+    ];
+    const isAdmin = Boolean(user?.email && ADMIN_EMAILS.some(e => e.toLowerCase() === user.email?.toLowerCase()));
+    const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+
+    let creditCost = 3;
     if (activeService === 'telegram') {
-      creditCost = 8;
+      creditCost = 10;
     } else if (activeService === 'adhr') {
-      creditCost = 10;
+      creditCost = 25;
     } else if (activeService === 'bnk') {
-      creditCost = 10;
-    } else if (activeService === 'vehicle') {
       creditCost = 5;
+    } else if (activeService === 'vehicle') {
+      creditCost = 20;
     } else if (activeService === 'veh_owner_num') {
-      creditCost = 15;
+      creditCost = 35;
     } else if (activeService === 'pancard') {
-      creditCost = 10;
+      creditCost = 20;
     } else if (activeService === 'aadhaar_to_pan') {
       creditCost = 150;
     } else if (activeService === 'email') {
       creditCost = 20;
     }
 
-    if ((profile?.credits || 0) < creditCost) {
+    if (!isUnlimited && profile && profile.credits !== undefined && profile.credits < creditCost && profile.is_free_credit_claimed) {
       setError(`Insufficient Wallet Balance: This lookup costs ₹${creditCost}.00, but your current balance is ₹${profile?.credits || 0}.00. Please top up your wallet.`);
       handleOpenPricing();
       return;
     }
-
-
-    // Credit checks are now handled securely on the backend.
   
 
     setError(null);
@@ -512,13 +535,13 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     try {
       // CHECK PROTECTION
       let isProtected = false;
-      if (service === 'phone' || service === 'telegram') {
+      if (activeService === 'phone' || activeService === 'telegram') {
         const checkProtectedResponse = await fetch(`${getApiBaseUrl()}/api/check-protected`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ type: service, query: targetVal })
+          body: JSON.stringify({ type: activeService, query: targetVal })
         });
         if (checkProtectedResponse.ok) {
           const { isProtected: protectedResult } = await checkProtectedResponse.json();
@@ -527,15 +550,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       if (isProtected) {
-        setError(`This ${service === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`);
+        setError(`This ${activeService === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`);
         setIsLoading(false);
         return;
       }
 
       // Import corresponding lookups
-      const { lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupVehOwnerNum, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
+      const { lookupNumber, lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupVehOwnerNum, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
 
-      if (service === 'aadhaar_to_pan') {
+      if (activeService === 'aadhaar_to_pan') {
         setAadhaarPanResult(null);
         setResult(null);
         setError(null);
@@ -597,21 +620,21 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       let data: any;
-      if (service === 'phone') {
+      if (activeService === 'phone') {
         data = await lookupNumber(targetVal);
-      } else if (service === 'telegram') {
+      } else if (activeService === 'telegram') {
         data = await lookupTelegram(targetVal);
-      } else if (service === 'adhr') {
+      } else if (activeService === 'adhr') {
         data = await lookupAdhr(targetVal);
-      } else if (service === 'bnk') {
+      } else if (activeService === 'bnk') {
         data = await lookupBnk(targetVal);
-      } else if (service === 'vehicle') {
+      } else if (activeService === 'vehicle') {
         data = await lookupVehicle(targetVal);
-      } else if (service === 'veh_owner_num') {
+      } else if (activeService === 'veh_owner_num') {
         data = await lookupVehOwnerNum(targetVal);
-      } else if (service === 'pancard') {
+      } else if (activeService === 'pancard') {
         data = await lookupPancard(targetVal);
-      } else if (service === 'email') {
+      } else if (activeService === 'email') {
         data = await lookupEmail(targetVal);
       }
 
@@ -627,10 +650,12 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           setError(null);
           setResult(data);
           setCooldown(5);
+          saveLocalSearchHistory(user?.id, activeService, targetVal, data.results || data);
         } else if (hasMeaningfulData || data.raw_results) {
           setError(null);
           setResult(data);
           setCooldown(5);
+          saveLocalSearchHistory(user?.id, activeService, targetVal, data.results || data);
         } else {
           setResult(null);
           setError(data.error || (typeof resObj === 'object' && resObj?.error) || "Sorry, we don't have data related to the query.");
@@ -639,7 +664,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
       const { formatApiError } = await import('./services/api.ts');
-      setError(formatApiError(err, service === 'phone' ? 'Mobile' : service));
+      setError(formatApiError(err, activeService === 'phone' ? 'Mobile' : activeService));
       setResult(null);
     } finally {
       setIsLoading(false);
@@ -687,16 +712,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   };
 
   return (
-    <div className={`relative min-h-screen text-slate-800 selection:bg-sky-200 selection:text-sky-900 overflow-x-hidden bg-slate-50/50 ${IS_TESTING_MODE ? 'pt-[36px]' : ''}`}>
+    <div className="relative min-h-screen text-slate-800 selection:bg-sky-200 selection:text-sky-900 overflow-x-hidden bg-slate-50/50">
       <LiquidBackground />
-      
-      {IS_TESTING_MODE && (
-        <div className="fixed top-0 left-0 right-0 h-[36px] bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-600 text-white text-[10px] md:text-xs font-bold text-center z-[100] flex items-center justify-center gap-2 border-b border-sky-300/30 backdrop-blur-md shadow-md">
-          <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-300" />
-          <span>🧪 Testing Mode Active — Free Search Enabled Without Sign-In</span>
-          <span className="hidden sm:inline bg-white/20 text-white border border-white/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider font-extrabold">Unrestricted Admin Access</span>
-        </div>
-      )}
 
       <HeaderNavbar />
 

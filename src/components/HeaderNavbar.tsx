@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, 
@@ -18,7 +18,15 @@ import {
   Code, 
   FileText, 
   Cpu, 
-  BookOpen 
+  BookOpen,
+  Smartphone,
+  Send,
+  Building2,
+  Car,
+  CreditCard,
+  Mail,
+  ChevronRight,
+  ExternalLink
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, IS_TESTING_MODE } from '../services/AuthContext';
@@ -28,23 +36,29 @@ interface HeaderNavbarProps {
   subtitle?: string;
 }
 
+const TELEGRAM_SUPPORT_URL = 'https://t.me/Gaurav_beni_0001';
+
 export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
   const { user, profile, isDemoMode, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
 
-  const isDashboardActive = currentPath === '/dashboard' || currentPath === '/' || currentPath.startsWith('/category') || currentPath.startsWith('/service') || currentPath === '/phone' || currentPath === '/telegram' || currentPath === '/identity' || currentPath === '/bank' || currentPath === '/vehicle' || currentPath === '/pancard' || currentPath === '/panfind' || currentPath === '/email';
-  const isHistoryActive = currentPath === '/history' || currentPath === '/callhistorynumber';
-  const isPricingActive = currentPath === '/pricing' || currentPath === '/buy-api' || currentPath === '/pgpay';
-  const isReferralActive = currentPath === '/referral';
-  const isApiDocsActive = currentPath === '/api-docs';
-  const isTermsActive = currentPath === '/terms';
-  const isRefundActive = currentPath === '/refund';
-  const isAdminActive = currentPath === '/admin';
-
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState<number>(IS_TESTING_MODE ? 120 : 86);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (headerRef.current) {
+        setHeaderHeight(headerRef.current.offsetHeight);
+      }
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   const handleOpenPricing = () => {
     navigate('/pricing');
@@ -54,90 +68,95 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
     window.dispatchEvent(new CustomEvent('open-login'));
   };
 
+  const handleOpenTelegram = () => {
+    try {
+      window.open(TELEGRAM_SUPPORT_URL, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.location.href = TELEGRAM_SUPPORT_URL;
+    }
+  };
+
+  const navItemClass = (isActive: boolean) => 
+    `w-full p-3 rounded-2xl font-extrabold text-xs flex items-center justify-between transition-all cursor-pointer ${
+      isActive
+        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+        : "text-slate-700 hover:bg-slate-100/90 active:scale-[0.99]"
+    }`;
+
   return (
     <>
-      {IS_TESTING_MODE && (
-        <div className="fixed top-0 left-0 right-0 h-[36px] bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-600 text-white text-[10px] md:text-xs font-bold text-center z-[100] flex items-center justify-center gap-2 border-b border-sky-300/30 backdrop-blur-md shadow-md px-2">
-          <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-300 shrink-0" />
-          <span className="truncate">🧪 Testing Mode Active — Free Search Enabled Without Sign-In</span>
-          <span className="hidden sm:inline bg-white/20 text-white border border-white/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider font-extrabold shrink-0">Unrestricted Admin Access</span>
-        </div>
-      )}
+      {/* 1. FIXED TOP HEADER BAR - Never hides on scroll */}
+      <header ref={headerRef} className="fixed top-0 left-0 right-0 z-50 w-full max-w-full shadow-xs bg-white">
+        {IS_TESTING_MODE && (
+          <div className="w-full h-[34px] bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-600 text-white text-[10px] sm:text-xs font-bold text-center flex items-center justify-center gap-2 border-b border-sky-300/30 backdrop-blur-md shadow-xs px-2">
+            <span className="inline-block animate-pulse w-2 h-2 rounded-full bg-emerald-300 shrink-0" />
+            <span className="truncate">🧪 Testing Mode Active — Free Search Enabled Without Sign-In</span>
+            <span className="hidden sm:inline bg-white/20 text-white border border-white/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-wider font-extrabold shrink-0">Admin Access</span>
+          </div>
+        )}
 
-      {/* 1. TOP DISCLAIMER BLUE RIBBON BANNER */}
-      <div className="w-full bg-blue-600 text-white py-1.5 px-2 text-[10px] sm:text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-xs border-b border-blue-700 relative z-50">
-        <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-        <span className="truncate max-w-full">महत्वपूर्ण सूचना: यह कोई सरकारी पोर्टल नहीं है और न ही इसका सरकार से कोई संबंध है।</span>
-      </div>
-
-      {/* 2. TOP HEADER NAVBAR */}
-      <nav className="sticky top-0 left-0 right-0 px-2 sm:px-4 py-2 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-[0_4px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 z-40 flex items-center justify-between shadow-xs max-w-full overflow-hidden">
-        
-        {/* Left: Drawer Menu Icon */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-            aria-label="Open Sidebar Menu"
-            title="Open Menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+        {/* TOP DISCLAIMER BLUE RIBBON */}
+        <div className="w-full bg-blue-600 text-white py-1.5 px-3 text-[10px] sm:text-xs font-bold text-center flex items-center justify-center gap-1.5 border-b border-blue-700">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+          <span className="truncate max-w-full">महत्वपूर्ण सूचना: यह कोई सरकारी पोर्टल नहीं है और न ही इसका सरकार से कोई संबंध है।</span>
         </div>
 
-        {/* Center: Brand Title */}
-        <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2 group cursor-pointer shrink-0">
-          <span className="font-black text-sm sm:text-base text-slate-900 tracking-tight uppercase group-hover:text-blue-600 transition-colors">
-            TRACEXDATA
-          </span>
-          <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200/80 px-2 py-0.5 rounded-md uppercase tracking-wider">
-            PORTAL
-          </span>
-        </Link>
+        {/* TOP HEADER NAVBAR - Clean Minimalist Web App Style */}
+        <nav className="w-full px-3 sm:px-5 py-2.5 bg-white/95 backdrop-blur-xl border-b border-slate-200/90 shadow-[0_2px_16px_rgba(0,0,0,0.04)] flex items-center justify-between max-w-full">
+          
+          {/* Left: Hamburger Menu Button + Logo */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer flex items-center justify-center shrink-0 active:scale-95 shadow-2xs hover:shadow-xs group"
+              aria-label="Open Left Sidebar Navigation"
+              title="Open Navigation Menu"
+            >
+              <Menu className="w-5 h-5 group-hover:text-blue-600 transition-colors" />
+            </button>
 
-        {/* Right: Dark Mode Toggle & Green Wallet Capsule */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-1.5 sm:p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer shrink-0"
-            title="Toggle Theme Mode"
-          >
-            {isDarkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-slate-600" />}
-          </button>
+            <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-1.5 group cursor-pointer shrink-0">
+              <span className="font-black text-sm sm:text-base text-slate-900 tracking-tight uppercase group-hover:text-blue-600 transition-colors">
+                TRACEXDATA
+              </span>
+              <span className="text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                PORTAL
+              </span>
+            </Link>
+          </div>
 
-          {/* Green Wallet Balance Capsule (e.g. ₹1,470.00) */}
-          {user ? (
-            <div className="flex items-center gap-1 shrink-0">
+          {/* Right: Balance Capsule & Sign In */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Wallet Balance Capsule */}
+            {user ? (
               <button
                 onClick={handleOpenPricing}
-                className="bg-emerald-100 hover:bg-emerald-200 border border-emerald-300/80 text-emerald-800 font-extrabold text-[11px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-full flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
-                title="Wallet Balance & Add Money"
+                className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-black text-[11px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                title="Wallet Balance — Click to Add Balance"
               >
-                <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
-                <span className="font-mono whitespace-nowrap">₹{profile?.credits || 0}.00</span>
+                <Coins className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="font-mono whitespace-nowrap">₹{profile?.credits || profile?.wallet_balance || 0}.00</span>
               </button>
-              {isDemoMode ? (
-                <span className="hidden md:inline-flex text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
-                  Demo
-                </span>
-              ) : (
-                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-blue-600 text-white font-extrabold text-[10px] sm:text-xs flex items-center justify-center border border-blue-200 shadow-xs uppercase shrink-0">
-                  {user.email?.charAt(0) || 'U'}
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={handleOpenLogin}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-2.5 sm:px-4 py-1.5 rounded-full shadow-xs cursor-pointer shrink-0"
-            >
-              Sign In
-            </button>
-          )}
-        </div>
-      </nav>
+            ) : (
+              <button
+                onClick={handleOpenLogin}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3 sm:px-4 py-1.5 rounded-full shadow-xs cursor-pointer shrink-0"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+        </nav>
+      </header>
 
-      {/* 3. SLIDE-OVER SIDEBAR DRAWER MENU */}
+      {/* Spacer to prevent fixed header from overlapping main body content */}
+      <div 
+        style={{ height: `${headerHeight}px` }} 
+        className="w-full shrink-0 select-none pointer-events-none transition-[height] duration-150" 
+        aria-hidden="true" 
+      />
+
+      {/* 3. SLIDE-OVER LEFT SIDEBAR DRAWER MENU */}
       <AnimatePresence>
         {isSidebarOpen && (
           <>
@@ -147,172 +166,49 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100]"
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-[100]"
             />
 
-            {/* Slide-in Drawer Container */}
+            {/* Slide-in Drawer Container from Left */}
             <motion.aside
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-              className="fixed top-0 left-0 bottom-0 w-[290px] sm:w-[320px] bg-white/90 backdrop-blur-2xl border-r border-white/60 z-[101] shadow-[24px_0_48px_rgba(0,0,0,0.1)] ring-1 ring-slate-900/5 flex flex-col justify-between overflow-y-auto"
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="fixed top-0 left-0 bottom-0 w-[290px] sm:w-[330px] max-w-[85vw] bg-white border-r border-slate-200 z-[101] shadow-[24px_0_60px_rgba(0,0,0,0.18)] flex flex-col justify-between overflow-hidden"
             >
               {/* Drawer Header */}
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">
-                    TRACEXDATA
-                  </h2>
-                  <p className="text-[11px] font-extrabold uppercase tracking-widest text-blue-600 mt-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">
+                      TRACEXDATA
+                    </h2>
+                    <span className="text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase">
+                      PRO
+                    </span>
+                  </div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-600 mt-0.5">
                     INTELLIGENCE PORTAL
                   </p>
                 </div>
                 <button
                   onClick={() => setIsSidebarOpen(false)}
-                  className="p-2 text-slate-400 hover:text-slate-800 rounded-lg cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors"
+                  aria-label="Close Sidebar"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Drawer Navigation Links */}
-              <div className="p-4 space-y-6 flex-1 overflow-y-auto">
-                {/* Main Navigation */}
-                <div className="space-y-1.5">
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate(user ? '/dashboard' : '/'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isDashboardActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Terminal className={`w-4.5 h-4.5 ${isDashboardActive ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Main Dashboard</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/history'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isHistoryActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <History className={`w-4.5 h-4.5 ${isHistoryActive ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Service Records & Logs</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/pricing'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isPricingActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Wallet className={`w-4.5 h-4.5 ${isPricingActive ? 'text-white' : 'text-emerald-600'}`} />
-                    <span>Wallet & Add Money</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/referral'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isReferralActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Gift className={`w-4.5 h-4.5 ${isReferralActive ? 'text-white' : 'text-rose-500'}`} />
-                    <span>Refer & Earn (5% Bonus)</span>
-                  </button>
-                </div>
-
-                {/* API & DEVELOPER SERVICES */}
-                <div className="space-y-1.5 pt-3 border-t border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
-                    API & DEVELOPER PORTAL
-                  </span>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/api-docs'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isApiDocsActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <BookOpen className={`w-4.5 h-4.5 ${isApiDocsActive ? 'text-white' : 'text-indigo-500'}`} />
-                    <span>API Documentation</span>
-                  </button>
-                </div>
-
-                {/* ACCOUNT & SUPPORT */}
-                <div className="space-y-1.5 pt-3 border-t border-slate-100">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
-                    LEGAL & SUPPORT
-                  </span>
-
-                  <button
-                    onClick={() => {
-                      setIsSidebarOpen(false);
-                      window.open("https://t.me/Gaurav_beni_0001", "_blank");
-                    }}
-                    className="w-full p-3 rounded-2xl text-slate-700 hover:bg-slate-100 font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer"
-                  >
-                    <HelpCircle className="w-4.5 h-4.5 text-sky-500" />
-                    <span>Contact & Support (Telegram)</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/terms'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isTermsActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <FileText className={`w-4.5 h-4.5 ${isTermsActive ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Terms & Conditions</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/refund'); }}
-                    className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                      isRefundActive
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <ShieldCheck className={`w-4.5 h-4.5 ${isRefundActive ? 'text-white' : 'text-slate-500'}`} />
-                    <span>Refund Policy</span>
-                  </button>
-
-                  {profile && (profile as any).is_admin && (
-                    <button
-                      onClick={() => { setIsSidebarOpen(false); navigate('/admin'); }}
-                      className={`w-full p-3 rounded-2xl font-extrabold text-xs flex items-center gap-3 transition-colors cursor-pointer ${
-                        isAdminActive
-                          ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                          : "text-purple-700 hover:bg-purple-50 border border-purple-100"
-                      }`}
-                    >
-                      <ShieldCheck className={`w-4.5 h-4.5 ${isAdminActive ? 'text-white' : 'text-purple-600'}`} />
-                      <span>Admin Management Console</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Drawer Footer User Profile & Logout */}
-              <div className="p-4 border-t border-slate-100 bg-slate-50/50 space-y-2.5">
+              {/* User Wallet / Account Summary Card */}
+              <div className="p-4 border-b border-slate-100 bg-gradient-to-br from-blue-50/50 to-indigo-50/30">
                 {user ? (
-                  <>
-                    <div className="p-3 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between shadow-2xs">
+                  <div className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 uppercase">
-                          {user.email?.charAt(0) || 'D'}
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0 uppercase shadow-xs">
+                          {user.email?.charAt(0) || 'U'}
                         </div>
                         <div className="truncate">
                           <p className="text-xs font-black text-slate-900 truncate">
@@ -321,30 +217,293 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                           <p className="text-[10px] text-slate-500 truncate font-mono">{user.email}</p>
                         </div>
                       </div>
-                      <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md shrink-0">
-                        ₹{profile?.credits || 0}
-                      </span>
                     </div>
 
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500">Wallet Balance:</span>
+                      <button
+                        onClick={() => {
+                          setIsSidebarOpen(false);
+                          handleOpenPricing();
+                        }}
+                        className="text-[11px] font-black font-mono bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Coins className="w-3 h-3 text-emerald-600" />
+                        <span>₹{profile?.credits || profile?.wallet_balance || 0}.00</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-white border border-slate-200 rounded-2xl text-center space-y-2">
+                    <p className="text-xs font-bold text-slate-700">Sign in to save searches and access your wallet</p>
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         setIsSidebarOpen(false);
-                        await signOut();
-                        navigate('/login');
+                        handleOpenLogin();
                       }}
-                      className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors cursor-pointer"
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4" />
-                      <span>{isDemoMode ? 'Exit Demo Mode' : 'Sign Out Account'}</span>
+                      Sign In / Register
                     </button>
-                  </>
+                  </div>
+                )}
+              </div>
+
+              {/* Drawer Navigation Links */}
+              <div className="p-3.5 sm:p-4 space-y-5 flex-1 overflow-y-auto">
+                {/* Core Navigation */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
+                    MAIN NAVIGATION
+                  </span>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate(user ? '/dashboard' : '/'); }}
+                    className={navItemClass(currentPath === '/dashboard' || currentPath === '/')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Terminal className="w-4.5 h-4.5 text-blue-600" />
+                      <span>Dashboard & Services</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/history'); }}
+                    className={navItemClass(currentPath === '/history' || currentPath === '/service-records')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <History className="w-4.5 h-4.5 text-indigo-600" />
+                      <span>Search History & Logs</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/pricing'); }}
+                    className={navItemClass(currentPath === '/pricing')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Wallet className="w-4.5 h-4.5 text-emerald-600" />
+                      <span>Wallet Recharge & Rates</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/referral'); }}
+                    className={navItemClass(currentPath === '/referral')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Gift className="w-4.5 h-4.5 text-rose-500" />
+                      <span>Refer & Earn (5% Bonus)</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+                </div>
+
+                {/* Popular Services Quick Access */}
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
+                    SEARCH SERVICES
+                  </span>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/phone_basic'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Smartphone className="w-4 h-4 text-cyan-600" />
+                      <span>Mobile Number Details</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹3</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/number_lookup'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Smartphone className="w-4 h-4 text-cyan-600" />
+                      <span>Number Lookup</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹2</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/email_osint'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Mail className="w-4 h-4 text-indigo-600" />
+                      <span>Email Lookup</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/telegram_osint'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Send className="w-4 h-4 text-sky-500" />
+                      <span>Telegram Intelligence</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹5</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/adhr_basic'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ShieldCheck className="w-4 h-4 text-amber-600" />
+                      <span>Aadhar Lookup</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/vehicle_rc'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Car className="w-4 h-4 text-orange-600" />
+                      <span>Vehicle RC Details</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹10</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/veh_owner_num'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Car className="w-4 h-4 text-orange-700" />
+                      <span>Vehicle To Owner Number</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/bank_ifsc'); }}
+                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <span>Bank IFSC Lookup</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹5</span>
+                  </button>
+                </div>
+
+                {/* API & DEVELOPER */}
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
+                    DEVELOPER & B2B
+                  </span>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/api-docs'); }}
+                    className={navItemClass(currentPath === '/api-docs')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
+                      <span>B2B API Documentation</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/protect'); }}
+                    className={navItemClass(currentPath === '/protect')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="w-4.5 h-4.5 text-amber-500" />
+                      <span>Protect Your Record</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+                </div>
+
+                {/* SUPPORT & LEGAL */}
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 px-3">
+                    SUPPORT & LEGAL
+                  </span>
+
+                  <button
+                    onClick={() => {
+                      setIsSidebarOpen(false);
+                      handleOpenTelegram();
+                    }}
+                    className="w-full p-3 rounded-2xl bg-sky-50 hover:bg-sky-100 text-sky-800 font-extrabold text-xs flex items-center justify-between transition-colors cursor-pointer border border-sky-200/80"
+                  >
+                    <div className="flex items-center gap-3">
+                      <HelpCircle className="w-4.5 h-4.5 text-sky-600" />
+                      <span>Official Telegram Support</span>
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-sky-500" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/terms'); }}
+                    className={navItemClass(currentPath === '/terms')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4.5 h-4.5 text-slate-500" />
+                      <span>Terms & Conditions</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/refund'); }}
+                    className={navItemClass(currentPath === '/refund')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="w-4.5 h-4.5 text-slate-500" />
+                      <span>Refund Policy</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  {profile && (profile as any).is_admin && (
+                    <button
+                      onClick={() => { setIsSidebarOpen(false); navigate('/admin'); }}
+                      className="w-full p-3 rounded-2xl bg-purple-50 text-purple-800 border border-purple-200 font-extrabold text-xs flex items-center justify-between transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ShieldCheck className="w-4.5 h-4.5 text-purple-600" />
+                        <span>Admin Console</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 opacity-50" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Drawer Footer / Sign Out */}
+              <div className="p-3.5 sm:p-4 border-t border-slate-100 bg-slate-50/70">
+                {user ? (
+                  <button
+                    onClick={async () => {
+                      setIsSidebarOpen(false);
+                      await signOut();
+                      navigate('/login');
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>{isDemoMode ? 'Exit Demo Mode' : 'Sign Out Account'}</span>
+                  </button>
                 ) : (
                   <button
                     onClick={() => {
                       setIsSidebarOpen(false);
                       handleOpenLogin();
                     }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
+                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors cursor-pointer"
                   >
                     <span>Sign In to Account</span>
                   </button>

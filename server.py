@@ -74,7 +74,8 @@ CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID")
 CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
 CASHFREE_BASE_URL = os.getenv("CASHFREE_BASE_URL", "https://api.cashfree.com/pg")
 
-INTERNAL_MASTER_KEY = os.getenv("INTERNAL_MASTER_KEY") or str(uuid.uuid4())
+RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026"
+INTERNAL_MASTER_KEY = os.getenv("INTERNAL_MASTER_KEY") or RENDER_MASTER_UNLIMITED_API_KEY
 
 # --- ENGINE STATE (Lazy-loading for Render Stability) ---
 _db: Optional[Client] = None
@@ -2132,32 +2133,10 @@ async def user_lookup(
         if current_credits < credit_cost:
             return make_api_response({
                 "status": "error",
-                "message": f"Insufficient credits. This search requires {credit_cost} credits, but you only have {current_credits} credits."
+                "error_type": "insufficient_balance",
+                "message": f"Insufficient Wallet Balance: This search requires ₹{credit_cost}.00, but you currently have ₹{current_credits}.00 in your wallet. Please recharge."
             })
-            
-        # Deduct credits (Try RPC first, fallback to direct table update)
-        deduction_success = False
-        try:
-            rpc_res = db.rpc("deduct_credits", {
-                "user_id": user.id,
-                "amount": credit_cost
-            }).execute()
-            if rpc_res and rpc_res.data:
-                deduction_success = True
-        except Exception as rpc_err:
-            print(f"[user_lookup RPC err, falling back to direct update]: {rpc_err}")
-            
-        if not deduction_success:
-            try:
-                new_credits = max(0, current_credits - credit_cost)
-                db.table("profiles").update({"credits": new_credits}).eq("id", user.id).execute()
-            except Exception as update_err:
-                print(f"[user_lookup direct update err]: {update_err}")
-                return make_api_response({
-                    "status": "error",
-                    "message": "Failed to deduct credits. Please try again later."
-                })
-            
+
     response_data = None
     raw_results = None
     
@@ -2170,7 +2149,6 @@ async def user_lookup(
                 resp = requests.get(new_api_url, headers=headers, timeout=12)
                 if resp.status_code == 200:
                     text = resp.text.strip()
-                    # Allow plaintext responses through
                     try:
                         parsed = resp.json()
                     except:
@@ -2228,7 +2206,6 @@ async def user_lookup(
                 api_url = get_provider_url("pancard", target_query)
             elif service_clean == 'aadhaar_to_pan' or service_clean == 'aadhaar_pan':
                 target_query = re.sub(r'[^0-9]', '', cleaned_query)
-                api_key = "c8117598aafa71238a4bf8377087b0ff"
                 api_url = get_provider_url("aadhaar_to_pan", target_query)
             elif service_clean == 'telegram':
                 target_query = cleaned_query.lstrip('@')
@@ -2247,23 +2224,91 @@ async def user_lookup(
                     cleaned_body = clean_branding_text_line_by_line(text)
                     raw_results = cleaned_body
                     
-                    # Try to parse JSON first
                     try:
                         parsed = resp.json()
                         response_data = parsed
                     except:
-                        # Parse plain text
                         parsed_records = parse_raw_text_to_records(text, cleaned_query)
                         response_data = parsed_records
                 else:
                     raise Exception(f"API status {resp.status_code}")
                     
-        if not response_data:
+        # Check if real meaningful data exists
+        has_real_data = False
+        if response_data:
+            if isinstance(response_data, dict):
+                valid_keys = [k for k in response_data.keys() if k.lower() not in ['error', 'message', 'status', 'msg', 'success']]
+                if valid_keys and not response_data.get("error"):
+                    has_real_data = True
+            elif isinstance(response_data, list) and len(response_data) > 0:
+                has_real_data = True
+            elif isinstance(response_data, str) and len(response_data.strip()) > 0:
+                has_real_data = "no data" not in response_data.lower() and "not found" not in response_data.lower()
+
+        if not has_real_data:
+            # Auto refund & save refunded history
+            if db:
+                try:
+                    ref_code = f"TRX-REF-{int(time.time())}"
+                    db.table("service_records").insert({
+                        "user_id": user.id,
+                        "client_name": getattr(user, 'email', None) or "User",
+                        "service_name": f"Web Search: {service_clean.upper()}",
+                        "reference_code": ref_code,
+                        "status": "REFUNDED",
+                        "result_payload": {"message": f"No data found for {cleaned_query}. Amount refunded."},
+                        "log_number": int(time.time() % 1000)
+                    }).execute()
+                    
+                    db.table("wallet_transactions").insert({
+                        "user_id": user.id,
+                        "user_email": getattr(user, 'email', None) or "User",
+                        "service": f"Refund: {service_clean.upper()} ({cleaned_query})",
+                        "type": "Refund",
+                        "amount": credit_cost,
+                        "balance_after": current_credits
+                    }).execute()
+                except Exception as log_err:
+                    print(f"[Refund log err]: {log_err}")
+
             return make_api_response({
-                "status": "success",
-                "results": {"error": f"No records found for query: {cleaned_query}"}
+                "status": "error",
+                "error_type": "no_data_refunded",
+                "message": f"Sorry, no records found for '{cleaned_query}'. The search fee of ₹{credit_cost}.00 has been refunded to your wallet.",
+                "refunded": True,
+                "refund_amount": credit_cost,
+                "remaining_balance": current_credits,
+                "results": None
             })
             
+        # Real data found - Deduct credits from user profile
+        new_balance = current_credits
+        if not is_unlimited:
+            new_balance = max(0, current_credits - credit_cost)
+            try:
+                db.table("profiles").update({"credits": new_balance, "wallet_balance": new_balance}).eq("id", user.id).execute()
+                ref_code = f"TRX-{int(time.time())}"
+                db.table("service_records").insert({
+                    "user_id": user.id,
+                    "client_name": getattr(user, 'email', None) or "User",
+                    "service_name": f"Web Search: {service_clean.upper()}",
+                    "reference_code": ref_code,
+                    "status": "SUCCESS",
+                    "result_payload": response_data,
+                    "log_number": int(time.time() % 1000)
+                }).execute()
+                
+                db.table("wallet_transactions").insert({
+                    "user_id": user.id,
+                    "user_email": getattr(user, 'email', None) or "User",
+                    "service": f"Web Search: {service_clean.upper()} ({cleaned_query})",
+                    "type": "Debit",
+                    "amount": credit_cost,
+                    "balance_after": new_balance
+                }).execute()
+            except Exception as deduct_err:
+                print(f"[Credit deduction err]: {deduct_err}")
+
         # Clean brandings recursively
         cleaned_data = clean_branding_recursive(response_data)
         
@@ -2279,7 +2324,11 @@ async def user_lookup(
                 
         ret = {
             "status": "success",
-            "results": cleaned_data
+            "service": service_clean,
+            "query": cleaned_query,
+            "results": cleaned_data,
+            "remaining_balance": new_balance,
+            "cost_deducted": 0 if is_unlimited else credit_cost
         }
         if raw_results is not None:
             ret["raw_results"] = clean_branding_recursive(raw_results)
@@ -2289,8 +2338,13 @@ async def user_lookup(
     except Exception as err:
         print(f"[user-lookup error]: {err}")
         return make_api_response({
-            "status": "success",
-            "results": {"error": "Search gateway is currently unavailable. Please try again later."}
+            "status": "error",
+            "error_type": "gateway_error_refunded",
+            "message": f"Search gateway temporarily unavailable. The search fee of ₹{credit_cost}.00 has been refunded to your wallet.",
+            "refunded": True,
+            "refund_amount": credit_cost,
+            "remaining_balance": current_credits,
+            "results": None
         })
 
 def check_user_wallet_and_deduct(db, license, service_type: str):

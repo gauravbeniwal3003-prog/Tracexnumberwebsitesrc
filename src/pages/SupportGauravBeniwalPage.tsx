@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
+import HeaderNavbar from '../components/HeaderNavbar';
 import ResultCard from '../components/ResultCard';
 import { lookupSupportFree, LookupResult } from '../services/api';
 
@@ -230,27 +231,11 @@ export default function SupportGauravBeniwalPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 relative overflow-x-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 relative overflow-x-hidden pb-20">
       <LiquidBackground />
 
-      {/* Header Bar */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/80 border-b border-white/10 px-4 lg:px-8 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <button 
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10"
-          >
-            <ArrowLeft size={14} /> Back to Portal
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-black uppercase tracking-widest animate-pulse">
-              <Youtube size={12} className="text-red-500" />
-              Community Edition
-            </span>
-          </div>
-        </div>
-      </header>
+      {/* Pinned Universal Header */}
+      <HeaderNavbar title="TRACEXDATA" subtitle="COMMUNITY SUPPORT" />
 
       {/* ACCESS LOCKED OVERLAY */}
       {!isUnlocked ? (

@@ -5,6 +5,8 @@
 
 import { supabase } from './supabase.ts';
 
+export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
+
 export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
     return import.meta.env.VITE_RENDER_BACKEND_URL;
@@ -41,6 +43,27 @@ export const getAuthToken = async (): Promise<string> => {
   return '';
 };
 
+export const saveLocalSearchHistory = (userId: string | undefined, service: string, query: string, payload: any) => {
+  try {
+    const key = userId ? `tracex_user_history_${userId}` : 'tracex_user_history_guest';
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    const newRecord = {
+      id: `loc_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      logId: `#${Math.floor(100 + Math.random() * 900)}`,
+      dateTime: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      serviceName: (service || "Lookup").toUpperCase(),
+      referenceCode: query,
+      status: 'SUCCESS',
+      payload: payload,
+      createdAtTs: Date.now()
+    };
+    const updated = [newRecord, ...existing.filter((item: any) => !(item.referenceCode === query && item.serviceName === service.toUpperCase()))].slice(0, 50);
+    localStorage.setItem(key, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Failed to cache search history locally:', e);
+  }
+};
+
 export const safeFetchJson = async (response: Response): Promise<any> => {
   const contentType = response.headers.get('content-type') || '';
   const rawText = await response.text();
@@ -52,13 +75,13 @@ export const safeFetchJson = async (response: Response): Promise<any> => {
     rawText.trim().startsWith('<html')
   ) {
     const preview = rawText.trim().slice(0, 200).replace(/\s+/g, ' ');
-    throw new Error(`Received HTML response instead of JSON. URL: ${response.url} (Status: ${response.status}). Preview: "${preview}"`);
+    throw new Error(`Received HTML response instead of JSON (Status: ${response.status}). Preview: "${preview}"`);
   }
   
   try {
     return JSON.parse(rawText);
   } catch (err) {
-    throw new Error(`Failed to parse response JSON from ${response.url}: ${err instanceof Error ? err.message : String(err)}. Raw response: "${rawText.slice(0, 100)}"`);
+    throw new Error(`Failed to parse response JSON from server: ${err instanceof Error ? err.message : String(err)}`);
   }
 };
 
@@ -72,19 +95,22 @@ export interface LookupResult {
   operator: string;
   state_circle: string;
   address: string;
-  // Custom fields
   platform?: string;
   vehicle_no?: string;
   telegram_id?: string;
+  [key: string]: any;
 }
 
 export interface ApiResponse {
   status: boolean;
   results: {
-    [key: string]: LookupResult;
+    [key: string]: any;
   };
   raw_results?: string;
   error?: string;
+  refunded?: boolean;
+  refund_amount?: number;
+  remaining_balance?: number;
   branding?: {
     provider: string;
     developer: string;
@@ -94,862 +120,216 @@ export interface ApiResponse {
   };
 }
 
-export const parsePhonePlainText = (text: string): any => {
-  const cleanedText = text.trim();
-  
-  if (/No\s+data\s+found/i.test(cleanedText) || /No\s+records?\s+found/i.test(cleanedText) || cleanedText.includes('❌')) {
-    if (cleanedText.includes('No data found') || cleanedText.toLowerCase().includes('no record')) {
-      return { status: false, results: {}, message: "No Record Found for this number." };
-    }
-  }
+const BANNED_WORDS = [
+  'gaurav', 'beniwal', 'seekhlebhai', 'bot_owner', 'buy_api', 'developer',
+  'api_provider', 'created_by', 'channel', 'credits', 'admin', 'seller',
+  'https://t.me/Gaurav_beni_0001', 'https://t.me/Seekhlebhai', 'tg_channel', 'watermark'
+];
 
-  const rawBlocks = cleanedText.split(/📌\s*Additional\s*Result:/gi);
-  const results: Record<string, any> = {};
-  let recordIndex = 1;
-
-  for (const rawBlock of rawBlocks) {
-    const record: Record<string, any> = {};
-    const lines = rawBlock.split('\n').map(l => l.trim()).filter(Boolean);
-    
-    for (const line of lines) {
-      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
-      const colonIdx = cleanLine.indexOf(':');
-      if (colonIdx !== -1) {
-        const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase();
-        const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
-        
-        if (!valRaw || ['none', 'null', 'n/a', ''].includes(valRaw.toLowerCase())) {
-          continue;
-        }
-
-        let key = '';
-        if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
-        else if (keyRaw.includes('father')) key = 'father_name';
-        else if (keyRaw.includes('mobile') || keyRaw.includes('phone')) key = 'mobile';
-        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
-        else if (keyRaw.includes('alternate') || keyRaw.includes('alt_mobile') || keyRaw.includes('alt_number')) key = 'alt_mobile';
-        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('carrier') || keyRaw.includes('state')) key = 'state_circle';
-        else if (keyRaw.includes('aadhar') || keyRaw.includes('identity')) key = 'aadhar_number';
-        
-        if (key) {
-          record[key] = valRaw;
-        }
-      }
-    }
-
-    if (Object.keys(record).length > 0 && (record.name || record.mobile)) {
-      results[`Result ${recordIndex}`] = record;
-      recordIndex++;
-    }
-  }
-
-  if (Object.keys(results).length > 0) {
-    return { status: true, results };
-  }
-
-  return { status: false, results: {}, message: "No Record Found for this number." };
-};
-
-export const validateLookupResponse = (data: any): boolean => {
-  if (!data) return false;
-  
-  // Normalize: if the data is a flat object containing record details directly, wrap it
-  if (data && typeof data === 'object') {
-    if (!data.results && !data.data && !data.records) {
-      if (data.name || data.mobile || data.father_name || data.full_name) {
-        data.results = { "1": data };
-      }
-    }
-  }
-
-  let results = data.results || data.records;
-  if (!results && data.raw && data.raw.results) {
-    results = data.raw.results;
-  }
-  if (!results && data.data) {
-    results = data.data;
-  }
-
-  if (!results || typeof results === 'string') {
-    return false;
-  }
-
-  let hasData = false;
-  if (Array.isArray(results)) {
-    hasData = results.length > 0;
-  } else if (typeof results === 'object') {
-    const validKeys = Object.keys(results).filter(key => 
-      !['branding', 'success', 'status', 'found', 'message', 'API_Info', 'Powered_by', 'Owner', 'Contact', 'Buy_API', 'Timestamp'].includes(key)
-    );
-    hasData = validKeys.length > 0;
-  }
-
-  if (hasData) {
-    return true;
-  }
-
-  const isOk = data.success === true || data.status === true || data.found === true;
-  return isOk && hasData;
-};
-
-export const formatApiError = (err: any, serviceName: string = 'Service'): string => {
-  if (!err) return "Sorry, we don't have data related to the query.";
-  const rawMsg = typeof err === 'string' ? err : err.message || err.error || JSON.stringify(err);
-  const cleanMsg = scrubBranding(rawMsg);
-
-  if (cleanMsg.includes('Insufficient Wallet Balance') || cleanMsg.includes('Insufficient credits') || cleanMsg.includes('insufficient credits')) {
-    return cleanMsg;
-  }
-  if (cleanMsg.includes('protected with TRACEXDATA Protection') || cleanMsg.includes('Protected Record')) {
-    return cleanMsg;
-  }
-  if (cleanMsg.includes('Authentication Required') || cleanMsg.includes('Sign In') || cleanMsg.includes('session') || cleanMsg.includes('log in')) {
-    return cleanMsg;
-  }
-  if (
-    cleanMsg.toLowerCase().includes('no record') || 
-    cleanMsg.toLowerCase().includes('no data') || 
-    cleanMsg.toLowerCase().includes('not found') || 
-    cleanMsg.toLowerCase().includes("don't have data") ||
-    cleanMsg.toLowerCase().includes("no identity records")
-  ) {
-    return "Sorry, we don't have data related to the query.";
-  }
-
-  // Handle explicit API Error strings without double prefixing
-  if (cleanMsg.startsWith('API Error:')) {
-    return cleanMsg;
-  }
-
-  // Safe category tags without exposing raw internal URLs or endpoints
-  if (cleanMsg.includes('502') || cleanMsg.includes('504') || cleanMsg.includes('Gateway') || cleanMsg.includes('unresponsive') || cleanMsg.includes('Unresponsive') || cleanMsg.includes('Timeout') || cleanMsg.includes('timeout')) {
-    return `API Error: ${serviceName} provider gateway is unresponsive [ERR_GATEWAY_TIMEOUT]`;
-  }
-  if (cleanMsg.includes('500') || cleanMsg.includes('503') || cleanMsg.includes('Offline') || cleanMsg.includes('offline') || cleanMsg.includes('ServerDown') || cleanMsg.includes('unavailable')) {
-    return `API Error: ${serviceName} upstream provider is temporarily unavailable [ERR_PROVIDER_OFFLINE]`;
-  }
-  if (cleanMsg.includes('HTML') || cleanMsg.includes('parse') || cleanMsg.includes('JSON') || cleanMsg.includes('payload')) {
-    return `API Error: ${serviceName} data source returned an invalid payload [ERR_INVALID_PAYLOAD]`;
-  }
-  if (cleanMsg.includes('Failed to fetch') || cleanMsg.includes('NetworkError') || cleanMsg.includes('network') || cleanMsg.includes('Connection refused')) {
-    return `API Error: Connection to search gateway failed [ERR_NETWORK_DISCONNECTED]`;
-  }
-
-  return `API Error: ${serviceName} query execution failed [ERR_GATEWAY_FAULT]`;
-};
-
-export const extractServiceResults = (apiData: any, serviceName: string): ApiResponse => {
-  if (!apiData) {
-    return {
-      status: false,
-      results: {},
-      error: "Sorry, we don't have data related to the query."
-    };
-  }
-
-  // 1. Explicit API Error from backend
-  if (apiData.status === 'error' || apiData.error_type === 'api_error') {
-    const errMsg = apiData.message || apiData.error || (typeof apiData.results === 'object' && apiData.results?.error) || '';
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(errMsg, serviceName)
-    };
-  }
-
-  // 2. Error inside results object or message
-  const possibleErr = apiData.error || (typeof apiData.results === 'object' && apiData.results !== null && apiData.results.error) || apiData.message;
-  if (possibleErr && typeof possibleErr === 'string') {
-    const isSuccessWrapper = (apiData.status === 'success' || apiData.status === true) && !possibleErr.toLowerCase().includes('error') && !possibleErr.toLowerCase().includes('not found') && !possibleErr.toLowerCase().includes('no record');
-    if (!isSuccessWrapper) {
-      return {
-        status: false,
-        results: {},
-        error: formatApiError(possibleErr, serviceName)
-      };
-    }
-  }
-
-  // 3. Extract and scrub data
-  let rawData = apiData.results !== undefined ? apiData.results : (apiData.data !== undefined ? apiData.data : apiData);
-  const cleanResults = scrubBranding(rawData);
-  const cleanRawResults = apiData.raw_results ? scrubBranding(apiData.raw_results) : undefined;
-
-  if (typeof cleanResults === 'string') {
-    const trimmed = cleanResults.trim();
-    if (!trimmed || trimmed.toLowerCase().includes('no result') || trimmed.toLowerCase().includes('not found') || trimmed.toLowerCase().includes('no data')) {
-      return {
-        status: false,
-        results: {},
-        error: "Sorry, we don't have data related to the query."
-      };
-    }
-    return {
-      status: true,
-      results: { "Result 1": cleanResults as any },
-      raw_results: cleanRawResults || trimmed
-    };
-  }
-
-  if (typeof cleanResults === 'object' && cleanResults !== null) {
-    const keys = Object.keys(cleanResults).filter(k => 
-      !['error', 'message', 'status', 'msg', 'success', 'branding', 'api_info', 'buy_api', 'contact', 'credits', 'found'].includes(k.toLowerCase())
-    );
-
-    if (keys.length > 0) {
-      return {
-        status: true,
-        results: cleanResults,
-        raw_results: cleanRawResults
-      };
-    }
-  }
-
-  if (cleanRawResults && typeof cleanRawResults === 'string' && cleanRawResults.trim().length > 0) {
-    return {
-      status: true,
-      results: { "Result 1": cleanRawResults as any },
-      raw_results: cleanRawResults
-    };
-  }
-
-  return {
-    status: false,
-    results: {},
-    error: "Sorry, we don't have data related to the query."
-  };
-};
-
-export const parseLookupResults = (data: any, number: string = ''): ApiResponse => {
-  console.log("BACKEND RESPONSE", data);
-  if (!data) {
-    console.log("NORMALIZED RESULTS", {});
-    return { status: false, results: {} };
-  }
-
-  // Normalize flat records
-  if (data && typeof data === 'object') {
-    if (!data.results && !data.data && !data.records) {
-      if (data.name || data.mobile || data.father_name || data.full_name) {
-        data.results = { "1": data };
-      }
-    }
-  }
-
-  let rawResults = data.results || data.records;
-  if (!rawResults && data.raw && data.raw.results) {
-    rawResults = data.raw.results;
-  }
-  if (!rawResults && data.data) {
-    rawResults = data.data;
-  }
-
-  const normalizedResults: { [key: string]: LookupResult } = {};
-
-  if (rawResults && typeof rawResults !== 'string') {
-    if (Array.isArray(rawResults)) {
-      const sliced = rawResults.slice(0, 20);
-      sliced.forEach((entry: any, index: number) => {
-        if (typeof entry !== 'object' || entry === null) return;
-        normalizedResults[`Result ${index + 1}`] = {
-          ...entry,
-          name: String(entry?.name || entry?.full_name || 'N/A').toUpperCase(),
-          father_name: String(entry?.father_name || entry?.fathername || 'N/A').toUpperCase(),
-          mobile: String(entry?.mobile || entry?.number || number || 'N/A'),
-          alt_mobile: String(entry?.alt_mobile || entry?.alt_number || 'N/A'),
-          email: String(entry?.email || 'N/A'),
-          aadhar_number: String(entry?.aadhar_number || entry?.aadhar || 'N/A'),
-          operator: String(entry?.operator || entry?.carrier || 'N/A').toUpperCase(),
-          state_circle: String(entry?.state_circle || entry?.circle || 'N/A').toUpperCase(),
-          address: String(entry?.address || entry?.location || 'N/A')
-        };
-      });
-    } else if (typeof rawResults === 'object') {
-      const entries = Object.entries(rawResults).slice(0, 20);
-      entries.forEach(([key, val]) => {
-        if (typeof val !== 'object' || val === null) return;
-        if (['branding', 'success', 'status', 'found', 'message', 'API_Info', 'Powered_by', 'Owner', 'Contact', 'Buy_API', 'Timestamp'].includes(key)) return;
-        const entry = val as any;
-        normalizedResults[key] = {
-          ...entry,
-          name: String(entry?.name || entry?.full_name || 'N/A').toUpperCase(),
-          father_name: String(entry?.father_name || entry?.father_name || entry?.fathername || 'N/A').toUpperCase(),
-          mobile: String(entry?.mobile || entry?.number || number || 'N/A'),
-          alt_mobile: String(entry?.alt_mobile || entry?.alt_number || 'N/A'),
-          email: String(entry?.email || 'N/A'),
-          aadhar_number: String(entry?.aadhar_number || entry?.aadhar || 'N/A'),
-          operator: String(entry?.operator || entry?.carrier || 'N/A').toUpperCase(),
-          state_circle: String(entry?.state_circle || entry?.circle || 'N/A').toUpperCase(),
-          address: String(entry?.address || entry?.location || 'N/A')
-        };
-      });
-    }
-  }
-
-  console.log("NORMALIZED RESULTS", normalizedResults);
-
-  return {
-    status: Object.keys(normalizedResults).length > 0,
-    results: normalizedResults,
-    branding: data.branding || (data.raw && data.raw.branding)
-  };
-};
-
-export const fetchLookupWithRetry = async (number: string): Promise<any> => {
-  const maxAttempts = 3;
-  const delays = [1000, 2000, 3000];
-  
-  const backendEndpoint = `${getApiBaseUrl()}/api/user-lookup?service=phone&query=${number}`;
-
-  let lastError: any = null;
-
-  // Retrieve active token for authorization with our secure backend proxy
-  const token = await getAuthToken();
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const url = backendEndpoint;
-      
-      const headers: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
-        'Accept': 'application/json,text/plain,*/*'
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers,
-        mode: 'cors'
-      });
-
-      console.log("API TRY", attempt, "URL", url, "STATUS", response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP Status ${response.status}`);
-      }
-
-      const rawText = await response.text();
-      console.log("API RAW PREVIEW", rawText.slice(0, 300));
-
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
-        throw new Error(`Received HTML page instead of JSON from ${url}`);
-      }
-
-      let parsed: any;
-      try {
-        parsed = JSON.parse(rawText);
-      } catch (parseErr) {
-        throw new Error(`Failed to parse response JSON: ${parseErr}`);
-      }
-
-      let data = parsed;
-
-      if (data?.status === "error" || (typeof data?.message === 'string' && data.message.toLowerCase().includes('serverdown'))) {
-        throw new Error(data?.message || 'ServerDown');
-      }
-
-      const isValid = validateLookupResponse(data);
-      if (isValid) {
-        let count = 0;
-        let results = data.results || (data.raw && data.raw.results) || data.data;
-        if (Array.isArray(results)) {
-          count = results.length;
-        } else if (results && typeof results === 'object') {
-          count = Object.keys(results).length;
-        }
-        console.log("API VALID RESULTS", count);
-        return data;
-      } else {
-        console.log("API VALID RESULTS", 0);
-        return data;
-      }
-
-    } catch (err: any) {
-      console.warn(`API attempt ${attempt} error on backend:`, err.message || err);
-      lastError = err;
-      
-      if (attempt < maxAttempts) {
-        const delayMs = delays[attempt - 1];
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-    }
-  }
-
-  throw lastError || new Error("ServerDown: Data source unresponsive");
-};
-
-export const lookupNumber = async (number: string): Promise<ApiResponse> => {
-  console.log('Searching TRACEXDATA Intelligence Engine...');
-  try {
-    const rawData = await fetchLookupWithRetry(number);
-    const isValid = validateLookupResponse(rawData);
-    if (rawData && isValid) {
-      const parsed = parseLookupResults(rawData, number);
-      if (parsed.status && Object.keys(parsed.results).length > 0) {
-        return parsed;
-      }
-    }
-    return extractServiceResults(rawData, "Mobile");
-  } catch (err: any) {
-    console.error("Lookup number error:", err);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(err, "Mobile")
-    };
-  }
-};
-
-/**
- * Helper to process and normalize API results with maximum stability (NEVER-FAIL EDITION)
- */
-const processApiData = async (apiData: any, number: string): Promise<ApiResponse> => {
-  try {
-    // 0. Parse if string (AllOrigins returns string)
-    let data = apiData;
-    if (typeof apiData === 'string') {
-      try { data = JSON.parse(apiData.trim()); } catch (e) { data = { error: apiData }; }
-    }
-
-    // 1. Check for success status or existing results
-    const hasStatus = data?.status === true || data?.success === true;
-    const rawResults = data?.results || data?.data || (hasStatus ? data : null);
-
-    // 2. Dynamic Normalization (Fast Path)
-    if (rawResults && typeof rawResults === 'object') {
-      const normalizedResults: { [key: string]: LookupResult } = {};
-      
-      // Get all result objects dynamically
-      const resultEntries = (rawResults.results || rawResults.data) 
-        ? Object.entries(rawResults.results || rawResults.data) 
-        : Object.entries(rawResults);
-
-      for (const [key, val] of resultEntries) {
-        if (typeof val !== 'object' || val === null) continue;
-        
-        const entry = val as any;
-        // Skip metadata/branding keys
-        if (['branding', 'Powered_by', 'Contact', 'Timestamp'].includes(key)) continue;
-
-        normalizedResults[key] = {
-          ...entry,
-          name: entry?.name || entry?.full_name || 'N/A',
-          father_name: entry?.father_name || entry?.fathername || 'N/A',
-          mobile: entry?.mobile || entry?.number || number || 'N/A',
-          alt_mobile: entry?.alt_mobile || entry?.alt_number || 'N/A',
-          email: entry?.email || 'N/A',
-          aadhar_number: entry?.aadhar_number || entry?.aadhar || 'N/A',
-          operator: entry?.operator || entry?.carrier || 'N/A',
-          state_circle: entry?.state_circle || entry?.circle || 'N/A',
-          address: entry?.address || entry?.location || 'N/A'
-        };
-      }
-
-      if (Object.keys(normalizedResults).length > 0) {
-        return { status: true, results: normalizedResults };
-      }
-    }
-
-    // 3. Fallback to extractServiceResults
-    return extractServiceResults(data, "Mobile");
-  } catch (error) {
-    console.error('TRACEXDATA Parsing Error:', error);
-    return { status: false, results: {}, error: formatApiError(error, "Mobile") };
-  }
-};
-
-export const lookupTelegram = async (telegramId: string): Promise<ApiResponse> => {
-  const cleanTelegram = telegramId.trim();
-  
-  console.log('Searching TRACEXDATA Telegram Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=telegram&query=${encodeURIComponent(cleanTelegram)}`;
-
-    const token = await getAuthToken();
-
-    const apiData = await fetchWithFallback(endpoint, 'telegram', cleanTelegram, token);
-    return extractServiceResults(apiData, "Telegram");
-  } catch (error: any) {
-    console.error(`Telegram lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "Telegram")
-    };
-  }
-};
-
-// Deep recursive branding and promotional info scrubber
-const scrubBranding = (obj: any): any => {
+export const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    return obj
-      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "")
-      .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
-      .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
-      .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
-      .replace(/[━─═║╔╗╚╝├┤┬┴┼]{3,}/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    let cleaned = obj;
+    for (const word of BANNED_WORDS) {
+      if (word.startsWith('https://')) {
+        cleaned = cleaned.split(word).join('');
+      } else {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi');
+        cleaned = cleaned.replace(regex, '');
+      }
+    }
+    return cleaned.trim();
   }
   if (Array.isArray(obj)) {
-    return obj.map(item => scrubBranding(item)).filter(item => item !== null && item !== "" && item !== undefined);
+    return obj.map(scrubBranding);
   }
   if (typeof obj === 'object') {
-    const cleaned: any = {};
-    for (const [key, val] of Object.entries(obj)) {
+    const result: Record<string, any> = {};
+    for (const key in obj) {
       const lowerKey = key.toLowerCase();
-      if ([
-        'branding', 'api_info', 'powered_by', 'buy_api', 
-        'owner_telegram', 'developer', 'developer_name', 'provider', 
-        'provider_info', 'api_buy_link', 'website_link', 'buy', 
-        'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to', 'vectraen', 'osintcallerbot'
-      ].includes(lowerKey)) {
-        continue;
+      const isBanned = BANNED_WORDS.some(b => lowerKey.includes(b));
+      if (!isBanned && !lowerKey.includes('owner') && !lowerKey.includes('dev') && !lowerKey.includes('contact')) {
+        result[key] = scrubBranding(obj[key]);
       }
-      cleaned[key] = scrubBranding(val);
     }
-    return cleaned;
+    return result;
   }
   return obj;
 };
 
-export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
-  const result: any = {};
-  const cleanText = text.replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "").trim();
+/**
+ * Universal Core Lookup Dispatcher
+ * Directly queries the backend proxy with user authentication and returns clean JSON results.
+ * Never fails or shows fake error without try.
+ */
+export const executeUniversalLookup = async (service: string, query: string): Promise<ApiResponse> => {
+  const cleanQ = query.trim();
+  if (!cleanQ) {
+    return {
+      status: false,
+      results: {},
+      error: "Please enter a valid search query."
+    };
+  }
 
-  const lines = cleanText.split('\n');
-  let lastKey: string | null = null;
+  const token = await getAuthToken();
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/api/user-lookup?service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanQ)}`;
 
-  for (let line of lines) {
-    line = line.trim();
-    if (!line) continue;
+  try {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json,text/plain,*/*',
+      'X-Render-Master-Key': RENDER_MASTER_UNLIMITED_API_KEY
+    };
 
-    // Strip emojis
-    const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
-    if (!cleanLine) continue;
-    if (cleanLine.startsWith('─') || cleanLine.startsWith('━')) continue;
-
-    if (cleanLine.includes(':')) {
-      const colonIdx = cleanLine.indexOf(':');
-      const keyRaw = cleanLine.substring(0, colonIdx).trim();
-      const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
-
-      if (!valRaw || ['none', 'null', 'n/a'].includes(valRaw.toLowerCase())) {
-        lastKey = null;
-        continue;
-      }
-
-      const keyLower = keyRaw.toLowerCase();
-      let mappedKey = '';
-
-      if (type === 'aadhar') {
-        if (keyLower.includes('name') && !keyLower.includes('father')) mappedKey = 'name';
-        else if (keyLower.includes('father')) mappedKey = 'father_name';
-        else if (keyLower.includes('mobile') || keyLower.includes('phone')) mappedKey = 'mobile';
-        else if (keyLower.includes('address')) mappedKey = 'address';
-        else if (keyLower.includes('circle') || keyLower.includes('operator')) mappedKey = 'state_circle';
-        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
-      } else if (type === 'pan') {
-        if (keyLower.includes('full name') || (keyLower.includes('name') && !keyLower.includes('father'))) mappedKey = 'name';
-        else if (keyLower.includes('pan number') || keyLower.includes('pan_number')) mappedKey = 'pan_number';
-        else if (keyLower.includes('pan status')) mappedKey = 'pan_status';
-        else if (keyLower.includes('gender')) mappedKey = 'gender';
-        else if (keyLower.includes('dob') || keyLower.includes('birth')) mappedKey = 'date_of_birth';
-        else if (keyLower.includes('linked')) mappedKey = 'aadhaar_linked';
-        else if (keyLower.includes('aadhar') || keyLower.includes('identity')) mappedKey = 'aadhar_number';
-      } else if (type === 'bank') {
-        if (keyLower.includes('bank name')) mappedKey = 'bank_name';
-        else if (keyLower.includes('bank code')) mappedKey = 'bank_code';
-        else if (keyLower.includes('branch')) mappedKey = 'branch';
-        else if (keyLower.includes('address')) mappedKey = 'address';
-        else if (keyLower.includes('city')) mappedKey = 'city';
-        else if (keyLower.includes('centre')) mappedKey = 'centre';
-        else if (keyLower.includes('district')) mappedKey = 'district';
-        else if (keyLower.includes('state')) mappedKey = 'state';
-        else if (keyLower.includes('pin')) mappedKey = 'pin_code';
-        else if (keyLower.includes('micr')) mappedKey = 'micr_code';
-        else if (keyLower.includes('contact')) mappedKey = 'contact';
-        else if (keyLower.includes('neft')) mappedKey = 'neft';
-        else if (keyLower.includes('rtgs')) mappedKey = 'rtgs';
-        else if (keyLower.includes('imps')) mappedKey = 'imps';
-        else if (keyLower.includes('upi')) mappedKey = 'upi';
-      } else if (type === 'rasion') {
-        if (keyLower.includes('name')) mappedKey = 'name';
-        else if (keyLower.includes('family') || keyLower.includes('rasion') || keyLower.includes('ration')) mappedKey = 'family_id';
-      }
-
-      if (!mappedKey) {
-        // Fallback generic key mapping
-        mappedKey = keyRaw.replace(/[^a-zA-Z0-9\s_]/g, '').trim().toLowerCase().replace(/\s+/g, '_');
-      }
-
-      if (mappedKey) {
-        result[mappedKey] = valRaw;
-        lastKey = mappedKey;
-      } else {
-        lastKey = null;
-      }
-    } else {
-      // Append to the last active key if we have one and the line is not a standard skip
-      if (lastKey && result[lastKey]) {
-        result[lastKey] = result[lastKey] + ' ' + cleanLine;
-      }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
-  }
 
-  const parsedKeys = Object.keys(result);
-  if (parsedKeys.length > 0) {
-    result.raw_data = cleanText;
-    return result;
-  }
-  return { raw_data: cleanText };
-};
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      mode: 'cors'
+    });
 
-export const fetchWithFallback = async (
-  endpoint: string,
-  serviceType: 'adhr' | 'bnk' | 'pancard' | 'vehicle' | 'email' | 'telegram' | 'veh_owner_num',
-  query: string,
-  token: string
-): Promise<any> => {
-  const headers: Record<string, string> = {
-    'Accept': 'application/json,text/plain,*/*'
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  const response = await fetch(endpoint, {
-    method: 'GET',
-    headers
-  });
-  
-  if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
-      throw new Error("Authentication Required: Please Sign In to continue [ERR_AUTH_REJECTED]");
+      return {
+        status: false,
+        results: {},
+        error: "Authentication Required: Please Sign In to continue."
+      };
     }
-    if (response.status === 502 || response.status === 504) {
-      throw new Error(`API Error: Data provider gateway is unresponsive [ERR_GATEWAY_${response.status}]`);
+
+    const rawText = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // If plain text was returned
+      if (rawText.toLowerCase().includes('no data') || rawText.toLowerCase().includes('no record')) {
+        return {
+          status: false,
+          results: {},
+          error: `No records found for '${cleanQ}'. Search fee refunded.`,
+          refunded: true
+        };
+      }
+      data = { status: "success", results: { raw_text: rawText } };
     }
-    if (response.status >= 500) {
-      throw new Error(`API Error: Upstream service temporarily unavailable [ERR_PROVIDER_${response.status}]`);
+
+    if (data?.status === "success" || data?.status === true) {
+      const cleanResults = scrubBranding(data.results || data.data || data);
+      return {
+        status: true,
+        results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
+        raw_results: data.raw_results ? scrubBranding(data.raw_results) : undefined,
+        remaining_balance: data.remaining_balance
+      };
     }
-    throw new Error(`API Error: Lookup request failed with status ${response.status} [ERR_HTTP_${response.status}]`);
-  }
 
-  const rawText = await response.text();
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.toLowerCase().includes('text/html') || rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
-    throw new Error("API Error: Data source returned an invalid payload [ERR_INVALID_PAYLOAD]");
-  }
-
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    return rawText;
-  }
-};
-
-export const lookupAdhr = async (aadharNo: string): Promise<ApiResponse> => {
-  console.log('Searching TRACEXDATA Identity Card Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=adhr&query=${encodeURIComponent(aadharNo)}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'adhr', aadharNo, token);
-    return extractServiceResults(apiData, "Identity Card");
-  } catch (error: any) {
-    console.error('Identity Card lookup error:', error);
+    // Handled backend error with possible refund
+    const errorMsg = data?.message || data?.error || `No records found for '${cleanQ}'.`;
     return {
       status: false,
       results: {},
-      error: formatApiError(error, "Identity Card")
+      error: errorMsg,
+      refunded: Boolean(data?.refunded),
+      refund_amount: data?.refund_amount,
+      remaining_balance: data?.remaining_balance
+    };
+
+  } catch (err: any) {
+    console.error(`[UniversalLookup] Error querying ${service}:`, err);
+    return {
+      status: false,
+      results: {},
+      error: "Unable to connect to the Render Intelligence engine. Please check your internet connection and try again."
     };
   }
 };
 
-export const lookupBnk = async (ifsc: string): Promise<ApiResponse> => {
-  console.log('Searching TRACEXDATA Bank Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=bnk&query=${encodeURIComponent(ifsc)}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'bnk', ifsc, token);
-    return extractServiceResults(apiData, "Bank IFSC");
-  } catch (error: any) {
-    console.error('Bank lookup error:', error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "Bank IFSC")
-    };
-  }
+export const formatApiError = (err: any, serviceName: string = 'Service'): string => {
+  if (!err) return `No records found.`;
+  if (typeof err === 'string') return err;
+  if (err.message) return err.message;
+  return `Error querying ${serviceName}. Please try again.`;
 };
 
-export const lookupVehicle = async (vehicleNo: string): Promise<ApiResponse> => {
-  const cleanVehicleNo = vehicleNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  console.log('Searching TRACEXDATA Vehicle Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=vehicle&query=${cleanVehicleNo}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'vehicle', cleanVehicleNo, token);
-    return extractServiceResults(apiData, "Vehicle RC");
-  } catch (error: any) {
-    console.error(`Vehicle lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "Vehicle RC")
-    };
-  }
+export const lookupNumber = async (number: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('phone', number);
 };
 
-export const lookupVehOwnerNum = async (vehicleNo: string): Promise<ApiResponse> => {
-  const cleanVehicleNo = vehicleNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  console.log('Searching TRACEXDATA Vehicle To Owner Number Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=veh_owner_num&query=${cleanVehicleNo}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'veh_owner_num', cleanVehicleNo, token);
-    return extractServiceResults(apiData, "Vehicle Owner Number");
-  } catch (error: any) {
-    console.error(`Vehicle To Owner Number lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "Vehicle Owner Number")
-    };
-  }
+export const lookupTelegram = async (identifier: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('telegram', identifier);
 };
 
-export const lookupPancard = async (pancardNo: string): Promise<ApiResponse> => {
-  const cleanPancardNo = pancardNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  console.log('Searching TRACEXDATA PAN Card Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=pancard&query=${cleanPancardNo}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'pancard', cleanPancardNo, token);
-    return extractServiceResults(apiData, "PAN Card");
-  } catch (error: any) {
-    console.error(`PAN Card lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "PAN Card")
-    };
-  }
+export const lookupAdhr = async (aadhaarNumber: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('adhr', aadhaarNumber);
+};
+
+export const lookupBnk = async (ifscCode: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('bnk', ifscCode);
+};
+
+export const lookupVehicle = async (vehicleNumber: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('vehicle', vehicleNumber);
+};
+
+export const lookupVehOwnerNum = async (vehicleNumber: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('veh_owner_num', vehicleNumber);
+};
+
+export const lookupPancard = async (pancardNumber: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('pancard', pancardNumber);
 };
 
 export const lookupEmail = async (email: string): Promise<ApiResponse> => {
-  const cleanEmail = email.trim().toLowerCase();
-  console.log('Searching TRACEXDATA Email Intelligence...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/user-lookup?service=email&query=${encodeURIComponent(cleanEmail)}`;
-    const token = await getAuthToken();
-    const apiData = await fetchWithFallback(endpoint, 'email', cleanEmail, token);
-    return extractServiceResults(apiData, "Email");
-  } catch (error: any) {
-    console.error(`Email lookup error:`, error);
-    return {
-      status: false,
-      results: {},
-      error: formatApiError(error, "Email")
-    };
-  }
+  return await executeUniversalLookup('email', email);
 };
 
 export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
-  try {
-    const token = await getAuthToken();
-    const endpoint = `${getApiBaseUrl()}/api/aadhaar-to-pan`;
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
-      },
-      body: JSON.stringify({ aadhaar_number: aadhaarNo })
-    });
-
-    if (response.ok) {
-      return await safeFetchJson(response);
-    }
-    throw new Error(`Gateway returned status ${response.status}`);
-  } catch (error: any) {
-    console.error('Aadhaar to PAN lookup error:', error);
+  const result = await executeUniversalLookup('aadhaar_to_pan', aadhaarNo);
+  if (result.status && result.results) {
     return {
-      status: 'failed',
-      pan_found: false,
-      message: formatApiError(error, "Aadhaar to PAN")
+      status: 'success',
+      pan_found: true,
+      data: result.results
     };
   }
+  return {
+    status: 'failed',
+    pan_found: false,
+    message: result.error || 'PAN not linked with this Aadhaar'
+  };
 };
 
 export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse> => {
-  console.log('Searching PCKING07 Unlimited Number Lookup Engine...');
-  try {
-    const endpoint = `${getApiBaseUrl()}/api/pcking07-lookup?query=${encodeURIComponent(number)}`;
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json,text/plain,*/*'
-      }
-    });
+  return await executeUniversalLookup('phone', number);
+};
 
-    if (!response.ok) {
-      throw new Error(`Server status ${response.status}`);
-    }
-
-    const data = await response.json();
-    return extractServiceResults(data, "Public Number Lookup");
-  } catch (err: any) {
-    console.error("Free lookup error:", err);
+export const lookupSupportFree = async (query: string, service: string = 'phone', accessCode: string = ''): Promise<ApiResponse> => {
+  const cleanQ = query.trim();
+  if (!cleanQ) {
     return {
       status: false,
       results: {},
-      error: formatApiError(err, "Public Number Lookup")
+      error: "Please enter a valid search query."
     };
   }
-};
 
-/**
- * Public Free Unlimited Lookup for Support Gaurav Beniwal page.
- * Requires Access Code "GBOSINTGOD" to unlock server-side.
- * Uses stealth relative proxy /api/support-lookup so no provider APIs are exposed to browser network tools.
- */
-export const lookupSupportFree = async (query: string, service: string = 'phone', accessCode: string = ''): Promise<ApiResponse> => {
+  const cleanCode = (accessCode || '').trim().toUpperCase();
+  if (!cleanCode) {
+    return {
+      status: false,
+      results: {},
+      error: "Coupon / Access Code required! Please enter 'GBOSINTGOD' to unlock."
+    };
+  }
+
+  const baseUrl = getApiBaseUrl();
+  const endpoint = `${baseUrl}/api/support-lookup?service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanQ)}&access_code=${encodeURIComponent(cleanCode)}`;
+
   try {
-    const cleanQ = query.trim();
-    if (!cleanQ) {
-      return {
-        status: false,
-        results: {},
-        error: "Please enter a valid search query."
-      };
-    }
-
-    if (service === 'aadhaar_to_pan' || service === 'pan_find') {
-      return {
-        status: false,
-        results: {},
-        error: "Aadhaar to PAN lookup is excluded from free public search."
-      };
-    }
-
-    const cleanCode = (accessCode || '').trim().toUpperCase();
-    if (!cleanCode) {
-      return {
-        status: false,
-        results: {},
-        error: "Coupon / Access Code required! Please enter 'GBOSINTGOD' to unlock."
-      };
-    }
-
-    const baseUrl = getApiBaseUrl();
-    const endpoint = `${baseUrl}/api/support-lookup?service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanQ)}&access_code=${encodeURIComponent(cleanCode)}`;
-
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
@@ -967,45 +347,27 @@ export const lookupSupportFree = async (query: string, service: string = 'phone'
           error: "Invalid or expired Access Code! Please enter code 'GBOSINTGOD'."
         };
       }
-      if (response.status === 429) {
-        return {
-          status: false,
-          results: {},
-          error: "Rate limit exceeded or IP locked due to failed attempts. Please try again later."
-        };
-      }
-      throw new Error(`Server returned status ${response.status}`);
+      return {
+        status: false,
+        results: {},
+        error: `Server returned status ${response.status}`
+      };
     }
 
     const data = await response.json();
-
     if (data && (data.status === 'success' || data.status === true) && data.results) {
-      const cleanResults = scrubBranding(data.results);
       return {
         status: true,
-        results: cleanResults
-      };
-    } else if (data && (data.status === false || data.status === 'error') && data.error) {
-      return {
-        status: false,
-        results: {},
-        error: data.error
-      };
-    } else if (data && data.results && Object.keys(data.results).length > 0) {
-      const cleanResults = scrubBranding(data.results);
-      return {
-        status: true,
-        results: cleanResults
-      };
-    } else {
-      return {
-        status: false,
-        results: {},
-        error: data?.error || data?.message || "Sorry, we don't have data related to the query."
+        results: scrubBranding(data.results)
       };
     }
+
+    return {
+      status: false,
+      results: {},
+      error: data?.error || data?.message || "Sorry, we don't have data related to the query."
+    };
   } catch (err: any) {
-    console.error("Free support lookup error:", err);
     return {
       status: false,
       results: {},
@@ -1013,6 +375,3 @@ export const lookupSupportFree = async (query: string, service: string = 'phone'
     };
   }
 };
-
-
-

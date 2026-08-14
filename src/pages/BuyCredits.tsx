@@ -236,13 +236,6 @@ export default function BuyCredits() {
       <HeaderNavbar title="TRACEXDATA" subtitle="WALLET RECHARGE" />
 
       <div className="relative z-10 pt-6 pb-20 px-4 max-w-4xl mx-auto space-y-6">
-        <div>
-          <button onClick={() => navigate('/dashboard')} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-sky-200 text-slate-700 hover:text-sky-600 hover:border-sky-300 shadow-2xs transition-all cursor-pointer font-bold text-xs">
-            <ArrowLeft size={16} />
-            <span>Back to Dashboard</span>
-          </button>
-        </div>
-
         <header className="text-center mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

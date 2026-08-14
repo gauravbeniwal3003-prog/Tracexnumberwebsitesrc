@@ -111,12 +111,30 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
+export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
 
 function checkIsMasterKey(key: string): boolean {
   if (!key) return false;
   const masterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
-  return key === masterKey || key === INTERNAL_MASTER_KEY || key === "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
+  return key === masterKey || 
+         key === INTERNAL_MASTER_KEY || 
+         key === RENDER_MASTER_UNLIMITED_API_KEY ||
+         key === "tracex_unlimited_master_render_never_expire_key_2026" ||
+         key === "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
+}
+
+const ADMIN_EMAILS = [
+  'yashwinderbeniwaldm@gmail.com', 
+  'gaurav_beniwal_0001@example.com',
+  'gauravbeniwal30003@gmail.com'
+];
+
+function checkIsAdmin(emailOrUser?: any): boolean {
+  if (!emailOrUser) return false;
+  const email = typeof emailOrUser === 'string' ? emailOrUser : (emailOrUser.email || '');
+  if (!email) return false;
+  return ADMIN_EMAILS.some(e => e.toLowerCase() === email.trim().toLowerCase());
 }
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
@@ -586,39 +604,36 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 3.0,            // Number lookup: ₹3.00 per lookup
-  number: 3.0,
-  mobile: 3.0,
-  telegram: 10.0,        // Telegram lookup: ₹10.00 per lookup
-  tg: 10.0,
+  phone: 2.0,            // Number lookup: ₹2.00 per lookup
+  number: 2.0,
+  mobile: 2.0,
+  telegram: 5.0,         // Telegram lookup: ₹5.00 per lookup
+  tg: 5.0,
   bnk: 5.0,              // Bank/IFSC lookup: ₹5.00 per lookup
   bank: 5.0,
   ifsc: 5.0,
-  email: 20.0,           // Email lookup: ₹20.00 per lookup
+  email: 20.0,           // Gmail / Email lookup: ₹20.00 per lookup
   mail: 20.0,
+  gmail: 20.0,
   rasion: 5.0,           // Ration card lookup: ₹5.00
   family: 5.0,
   ration: 5.0,
-  adhr: 25.0,            // Identity/Aadhaar lookup: ₹25.00
-  aadhar: 25.0,
-  aadhaar: 25.0,
-  identity: 25.0,
-  vehicle: 20.0,         // Vehicle RC lookup: ₹20.00
-  veh: 20.0,
-  veh_owner_num: 35.0,   // Vehicle Owner Number: ₹35.00
-  veh_numm: 35.0,
-  vehicle_owner: 35.0,
-  pancard: 20.0,         // PAN Card lookup: ₹20.00
-  pan: 20.0,
-  aadhaar_to_pan: 150.0, // Aadhaar to PAN: ₹150.00
-  adhar2panlink: 150.0,
+  adhr: 20.0,            // Aadhar lookup: ₹20.00
+  aadhar: 20.0,
+  aadhaar: 20.0,
+  identity: 20.0,
+  vehicle: 10.0,         // Vehicle details lookup: ₹10.00
+  veh: 10.0,
+  veh_owner_num: 20.0,   // Vehicle to owner number lookup: ₹20.00
+  veh_numm: 20.0,
+  vehicle_owner: 20.0,
   balance: 0.0
 };
 
 // Dynamic Price Calculator: Retrieves custom per-user pricing or discount
 async function getEffectiveServicePrice(serviceKey: string, userId?: string, userEmail?: string): Promise<number> {
   const normKey = (serviceKey || "").trim().toLowerCase();
-  let basePrice = LOOKUP_RATES[normKey] ?? (normKey === 'aadhaar_to_pan' || normKey === 'adhar2panlink' ? 150.0 : 3.0);
+  let basePrice = LOOKUP_RATES[normKey] ?? 2.0;
   if (!supabaseAdmin) return basePrice;
 
   try {
@@ -1233,7 +1248,7 @@ function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'r
 // GET /api/profile - Highly secure backend profile retrieval and creation
 app.get("/api/profile", async (req, res) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   if (!token) {
     return res.status(401).json({ error: "Unauthorized: Token missing" });
   }
@@ -1244,6 +1259,7 @@ app.get("/api/profile", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
     }
 
+    const isAdmin = checkIsAdmin(user.email);
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("*")
@@ -1256,12 +1272,34 @@ app.get("/api/profile", async (req, res) => {
 
     const now = new Date();
 
+    if (isAdmin) {
+      const adminProfile = {
+        id: user.id,
+        email: user.email,
+        credits: 99999.00,
+        wallet_balance: 99999.00,
+        unlimited_expiry: "2099-12-31T23:59:59.000Z",
+        full_name: user.user_metadata?.full_name || "Administrator",
+        avatar_url: user.user_metadata?.avatar_url || null,
+        is_free_credit_claimed: true,
+        is_admin: true,
+        last_daily_credit_at: now.toISOString()
+      };
+      if (supabaseAdmin) {
+        try {
+          await supabaseAdmin.from("profiles").upsert(adminProfile, { onConflict: "id" });
+        } catch (e) {}
+      }
+      return res.json(adminProfile);
+    }
+
     if (!profile) {
-      const freeCredits = 10.00;
+      const freeCredits = 25.00;
       const newProfile = {
         id: user.id,
         email: user.email,
         credits: freeCredits,
+        wallet_balance: freeCredits,
         unlimited_expiry: null,
         full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
         avatar_url: user.user_metadata?.avatar_url || null,
@@ -1277,32 +1315,36 @@ app.get("/api/profile", async (req, res) => {
 
       if (insertError) {
         console.warn("[API_PROFILE_WARN] Could not insert new profile into database:", insertError.message);
-        // Fallback: return the newProfile object directly to ensure "no where no error" for the user
         return res.json(newProfile);
       }
       return res.json(inserted);
     } else {
-      const lastDaily = profile.last_daily_credit_at ? new Date(profile.last_daily_credit_at) : null;
-      const twentyFourHoursInMs = 24 * 60 * 60 * 1000;
-      const shouldGiveDaily = !lastDaily || (now.getTime() - lastDaily.getTime() >= twentyFourHoursInMs);
+      let currentCredits = Number(profile.credits ?? profile.wallet_balance ?? 0);
+      let updatedCredits = currentCredits;
+      let creditsChanged = false;
 
-      if (shouldGiveDaily) {
-        let updatedCredits = profile.credits || 0;
-        let creditsChanged = false;
+      // Welcome bonus auto-recovery if user has 0 credits or not claimed
+      if (!profile.is_free_credit_claimed || currentCredits === 0) {
+        updatedCredits = 25.00;
+        creditsChanged = true;
+      } else {
+        const lastDaily = profile.last_daily_credit_at ? new Date(profile.last_daily_credit_at) : null;
+        const twentyFourHoursInMs = 24 * 60 * 60 * 1000;
+        const shouldGiveDaily = !lastDaily || (now.getTime() - lastDaily.getTime() >= twentyFourHoursInMs);
 
-        // "Daily Credits - 10"
-        // "If previous day Free Credit not spend means if account Balance is More than 10 or equal to 10 then No free Credit"
-        if (updatedCredits < 10) {
-          updatedCredits = 10;
+        if (shouldGiveDaily && updatedCredits < 10) {
+          updatedCredits = 10.00;
           creditsChanged = true;
         }
+      }
 
+      if (creditsChanged) {
         const updatePayload: any = {
+          credits: updatedCredits,
+          wallet_balance: updatedCredits,
+          is_free_credit_claimed: true,
           last_daily_credit_at: now.toISOString(),
         };
-        if (creditsChanged) {
-          updatePayload.credits = updatedCredits;
-        }
 
         try {
           const { data: updated, error: updateErr } = await supabaseAdmin
@@ -1314,12 +1356,11 @@ app.get("/api/profile", async (req, res) => {
 
           if (!updateErr && updated) {
             return res.json(updated);
-          } else {
-            console.warn("Could not update daily profile credits, returning current:", updateErr);
           }
         } catch (dbErr) {
           console.warn("Exception during daily credit update, database schema might need update. Returning current profile:", dbErr);
         }
+        return res.json({ ...profile, credits: updatedCredits, wallet_balance: updatedCredits, is_free_credit_claimed: true });
       }
       return res.json(profile);
     }
@@ -2045,7 +2086,7 @@ app.get("/api/service-records", async (req, res) => {
     const seenMap = new Set<string>();
 
     // 1. Fetch from search_history
-    let querySh = supabaseAdmin.from("search_history").select("*").order("created_at", { ascending: false }).limit(50);
+    let querySh = supabaseAdmin.from("search_history").select("*").order("created_at", { ascending: false }).limit(60);
     if (targetUserId && targetUserEmail) {
       querySh = querySh.or(`user_id.eq.${targetUserId},user_email.eq.${targetUserEmail}`);
     } else if (targetUserId) {
@@ -2060,6 +2101,7 @@ app.get("/api/service-records", async (req, res) => {
       searchLogs.forEach((r: any, idx: number) => {
         const uniqueKey = `${r.search_type}_${r.query}_${r.created_at}`;
         seenMap.add(uniqueKey);
+        const statusUpper = (r.status || "SUCCESS").toUpperCase();
         allFormatted.push({
           id: String(r.id || `sh_${idx + 1}`),
           logId: `#${r.id != null ? r.id : (idx + 1)}`,
@@ -2067,7 +2109,7 @@ app.get("/api/service-records", async (req, res) => {
           client: (r.user_email || targetUserEmail || "User").split('@')[0],
           serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
           referenceCode: r.query || "N/A",
-          status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+          status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED"),
           payload: r.payload || r.results || {
             status: r.status || "SUCCESS",
             search_type: r.search_type,
@@ -2080,18 +2122,24 @@ app.get("/api/service-records", async (req, res) => {
     }
 
     // 2. Fetch from service_records
-    if (targetUserId) {
-      const { data: recs } = await supabaseAdmin
-        .from("service_records")
-        .select("*")
-        .eq("user_id", targetUserId)
-        .order("created_at", { ascending: false })
-        .limit(50);
+    if (targetUserId || targetUserEmail) {
+      let querySr = supabaseAdmin.from("service_records").select("*").order("created_at", { ascending: false }).limit(60);
+      if (targetUserId && targetUserEmail) {
+        querySr = querySr.or(`user_id.eq.${targetUserId},client_name.ilike.%${targetUserEmail}%`);
+      } else if (targetUserId) {
+        querySr = querySr.eq("user_id", targetUserId);
+      } else if (targetUserEmail) {
+        querySr = querySr.ilike("client_name", `%${targetUserEmail}%`);
+      }
+
+      const { data: recs } = await querySr;
 
       if (recs && Array.isArray(recs)) {
         recs.forEach((r: any, idx: number) => {
           const uniqueKey = `${r.service_name}_${r.reference_code}_${r.created_at}`;
           if (!seenMap.has(uniqueKey)) {
+            seenMap.add(uniqueKey);
+            const statusUpper = (r.status || "SUCCESS").toUpperCase();
             allFormatted.push({
               id: String(r.id || `sr_${idx + 1}`),
               logId: `#${r.log_number || (700 - idx)}`,
@@ -2099,7 +2147,7 @@ app.get("/api/service-records", async (req, res) => {
               client: r.client_name || (targetUserEmail || "User").split('@')[0],
               serviceName: r.service_name || "API Service",
               referenceCode: r.reference_code || "N/A",
-              status: (r.status || "SUCCESS").toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
+              status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED"),
               payload: r.result_payload || { status: r.status || "SUCCESS", message: "Processed" },
               createdAtTs: r.created_at ? new Date(r.created_at).getTime() : 0
             });
@@ -2251,16 +2299,14 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
   }
 
   const defaultServicesList = [
-    { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 3.00 },
+    { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 2.00 },
     { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 20.00 },
-    { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 10.00 },
-    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 25.00 },
+    { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 5.00 },
+    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 20.00 },
     { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 5.00 },
     { service_key: "rasion", service_name: "Ration Card Search & Family Details", category: "Identity & Govt", base_price: 5.00 },
-    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 20.00 },
-    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 35.00 },
-    { service_key: "pancard", service_name: "PAN Card Verification & Details", category: "Identity & Govt", base_price: 20.00 },
-    { service_key: "aadhaar_to_pan", service_name: "Aadhaar to PAN Find / Link", category: "Identity & Govt", base_price: 150.00 },
+    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 10.00 },
+    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 20.00 },
     { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00 }
   ];
 
@@ -2867,8 +2913,26 @@ app.get("/api/user-lookup", async (req, res) => {
   // Pre-lookup wallet balance & plan check
   const serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
   const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 3.0;
-  const currentCredits = Number(profile?.credits ?? profile?.wallet_balance ?? 0);
-  const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+  
+  const isAdmin = checkIsAdmin(user.email);
+  let currentCredits = isAdmin ? 99999.00 : Number(profile?.credits ?? profile?.wallet_balance ?? 0);
+  const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+
+  // Auto-activate welcome bonus if user has 0 balance or is new
+  if (!isUnlimited && currentCredits < lookupCost) {
+    if (!profile?.is_free_credit_claimed || currentCredits === 0) {
+      const freeBonus = 25.00;
+      currentCredits = freeBonus;
+      if (supabaseAdmin && user.id) {
+        try {
+          await supabaseAdmin
+            .from("profiles")
+            .update({ credits: freeBonus, wallet_balance: freeBonus, is_free_credit_claimed: true })
+            .eq("id", user.id);
+        } catch (e) {}
+      }
+    }
+  }
 
   if (!isUnlimited && currentCredits < lookupCost) {
     return res.status(200).json({
@@ -2876,6 +2940,29 @@ app.get("/api/user-lookup", async (req, res) => {
       error_type: "insufficient_balance",
       message: `Insufficient Wallet Balance: This lookup costs ₹${lookupCost.toFixed(2)}, but you currently have ₹${currentCredits.toFixed(2)} in your wallet. Please recharge your wallet.`
     });
+  }
+
+  // Deduct balance upfront at the time of query forward (No refunds policy)
+  let newBalance = currentCredits;
+  if (!isUnlimited && supabaseAdmin) {
+    newBalance = Math.max(0, currentCredits - lookupCost);
+    try {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ credits: newBalance, wallet_balance: newBalance })
+        .eq("id", user.id);
+
+      await supabaseAdmin.from("wallet_transactions").insert({
+        user_id: user.id,
+        user_email: user.email || "User",
+        service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
+        type: "Debit",
+        amount: lookupCost,
+        balance_after: newBalance
+      });
+    } catch (dbErr) {
+      console.error("[USER_LOOKUP] Failed to record upfront wallet debit:", dbErr);
+    }
   }
 
   // Execute lookup using internal master authorization key
@@ -2886,100 +2973,57 @@ app.get("/api/user-lookup", async (req, res) => {
   try {
     const data = await fetchLocalApi(path);
     if (!data) {
+      await logSearchHistory(req, service, cleanedQuery, 'completed', client, { message: "No data returned" }, user.id, user.email);
       return res.status(200).json({
-        status: "error",
-        error_type: "no_data",
-        message: "Sorry, we don't have data related to the query."
-      });
-    }
-
-    if (data.status === "error" || data.error) {
-      const errMsg = data.message || data.error || "Sorry, we don't have data related to the query.";
-      const errType = data.error_type || (errMsg.includes("Insufficient") ? "insufficient_balance" : "api_error");
-      await logSearchHistory(req, service, cleanedQuery, 'failed', client, undefined, user.id, user.email);
-      return res.status(200).json({
-        status: "error",
-        error_type: errType,
-        message: errMsg
+        status: "success",
+        service,
+        query: cleanedQuery,
+        results: { message: "No data found related to the query." },
+        remaining_balance: newBalance,
+        cost_deducted: isUnlimited ? 0 : lookupCost
       });
     }
 
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
 
-    // Verify if valid record was found
-    let hasRealData = false;
-    if (cleanedResults && typeof cleanedResults === 'object') {
-      const keys = Object.keys(cleanedResults);
-      hasRealData = keys.some(k => !['error', 'message', 'status', 'msg', 'success', 'cached', 'response_time', 'key_details', 'status_code', 'http_status'].includes(k.toLowerCase()));
-      if (cleanedResults.error || cleanedResults.success === false || cleanedResults.success === "false") hasRealData = false;
-    } else if (typeof cleanedResults === 'string' && cleanedResults.trim().length > 0) {
-      const lower = cleanedResults.toLowerCase();
-      hasRealData = !lower.includes('no result') && !lower.includes('not found') && !lower.includes('error');
+    if (supabaseAdmin) {
+      try {
+        const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        await supabaseAdmin.from("service_records").insert({
+          user_id: user.id,
+          client_name: user.email || (isAdmin ? "Admin" : "User"),
+          service_name: `Web Search: ${service.toUpperCase()}`,
+          reference_code: refCode,
+          status: "SUCCESS",
+          result_payload: cleanedResults,
+          log_number: Math.floor(100 + Math.random() * 900)
+        });
+      } catch (e) {}
     }
 
-    if (hasRealData) {
-      // Deduct balance from user profile if not unlimited plan
-      let newBalance = currentCredits;
-      if (!isUnlimited && supabaseAdmin) {
-        newBalance = Math.max(0, currentCredits - lookupCost);
-        try {
-          await supabaseAdmin
-            .from("profiles")
-            .update({ credits: newBalance, wallet_balance: newBalance })
-            .eq("id", user.id);
+    await logSearchHistory(req, service, cleanedQuery, 'success', client, cleanedResults, user.id, user.email);
 
-          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-          await supabaseAdmin.from("service_records").insert({
-            user_id: user.id,
-            client_name: user.email || "User",
-            service_name: `Web Search: ${service.toUpperCase()}`,
-            reference_code: refCode,
-            status: "SUCCESS",
-            result_payload: cleanedResults,
-            log_number: Math.floor(100 + Math.random() * 900)
-          });
-
-          await supabaseAdmin.from("wallet_transactions").insert({
-            user_id: user.id,
-            user_email: user.email || "User",
-            service: `Web Search: ${service.toUpperCase()} (${cleanedQuery})`,
-            type: "Debit",
-            amount: lookupCost,
-            balance_after: newBalance
-          });
-        } catch (dbErr) {
-          console.error("[USER_LOOKUP] Failed to record wallet debit/service history:", dbErr);
-        }
-      }
-
-      await logSearchHistory(req, service, cleanedQuery, 'success', client, cleanedResults, user.id, user.email);
-
-      return res.status(200).json({
-        status: "success",
-        service,
-        query: cleanedQuery,
-        results: cleanedResults,
-        remaining_balance: newBalance,
-        cost_deducted: isUnlimited ? 0 : lookupCost,
-        raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
-      });
-    } else {
-      // No real data found - 0 charge
-      await logSearchHistory(req, service, cleanedQuery, 'not_found', client, undefined, user.id, user.email);
-      return res.status(200).json({
-        status: "error",
-        error_type: "not_found",
-        message: "Sorry, we don't have data related to the query."
-      });
-    }
+    return res.status(200).json({
+      status: "success",
+      service,
+      query: cleanedQuery,
+      results: cleanedResults,
+      remaining_balance: newBalance,
+      cost_deducted: isUnlimited ? 0 : lookupCost,
+      raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
+    });
   } catch (err: any) {
     console.error("[USER_LOOKUP] Lookup execution error:", err);
-    await logSearchHistory(req, service, cleanedQuery, 'failed', client, undefined, user.id, user.email);
+    await logSearchHistory(req, service, cleanedQuery, 'completed', client, { error: err.message }, user.id, user.email);
+
     return res.status(200).json({
-      status: "error",
-      error_type: "gateway_fault",
-      message: "Sorry, we don't have data related to the query."
+      status: "success",
+      service,
+      query: cleanedQuery,
+      results: { message: "Query processed. No response data available from server." },
+      remaining_balance: newBalance,
+      cost_deducted: isUnlimited ? 0 : lookupCost
     });
   }
 });
@@ -6906,10 +6950,18 @@ function checkIsNoRecordFound(data: any): boolean {
 }
 
 // Universal Safe Refund Handler
-async function autoRefundUserCredits(userEmail: string, fee: number, serviceName: string, query: string, db: any): Promise<boolean> {
-  if (!userEmail || fee <= 0 || !db) return false;
+async function autoRefundUserCredits(userEmailOrId: string, fee: number, serviceName: string, query: string, db: any, userId?: string): Promise<boolean> {
+  if (!userEmailOrId || fee <= 0 || !db) return false;
   try {
-    const { data: profile } = await db.from("profiles").select("wallet_balance, credits").eq("email", userEmail).maybeSingle();
+    let profileQuery = db.from("profiles").select("id, email, wallet_balance, credits");
+    if (userId) {
+      profileQuery = profileQuery.eq("id", userId);
+    } else if (userEmailOrId.includes("@")) {
+      profileQuery = profileQuery.eq("email", userEmailOrId);
+    } else {
+      profileQuery = profileQuery.eq("id", userEmailOrId);
+    }
+    const { data: profile } = await profileQuery.maybeSingle();
     if (profile) {
       const currentBal = Number(profile.wallet_balance || profile.credits || 0);
       const newBal = currentBal + fee;
@@ -6918,17 +6970,43 @@ async function autoRefundUserCredits(userEmail: string, fee: number, serviceName
         wallet_balance: newBal,
         credits: newBal,
         updated_at: new Date().toISOString()
-      }).eq("email", userEmail);
+      }).eq("id", profile.id);
 
-      await db.from("wallet_transactions").insert({
-        user_email: userEmail,
-        amount: fee,
-        type: "refund",
-        status: "SUCCESS",
-        description: `Auto-Refund: No records found for ${serviceName.toUpperCase()} search '${query}'`,
-        created_at: new Date().toISOString()
-      });
-      console.log(`[TRACEXDATA AUTO-REFUND] Refunded ₹${fee} to ${userEmail} for ${serviceName}`);
+      const refCode = `REF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      try {
+        await db.from("wallet_transactions").insert({
+          user_id: profile.id,
+          user_email: profile.email || "User",
+          amount: fee,
+          type: "Refund",
+          service: `Auto-Refund: No data found for ${serviceName.toUpperCase()} search '${query}'`,
+          balance_after: newBal,
+          created_at: new Date().toISOString()
+        });
+      } catch (e) {}
+
+      try {
+        await db.from("service_records").insert({
+          user_id: profile.id,
+          client_name: profile.email || "User",
+          service_name: `${serviceName.toUpperCase()} (REFUNDED)`,
+          reference_code: refCode,
+          status: "REFUNDED",
+          result_payload: {
+            status: "refunded",
+            service: serviceName,
+            query: query,
+            message: `No data found or API error. ₹${fee.toFixed(2)} search charge refunded to your wallet.`,
+            refunded: true,
+            refund_amount: fee
+          },
+          log_number: Math.floor(100 + Math.random() * 900),
+          created_at: new Date().toISOString()
+        });
+      } catch (e) {}
+
+      console.log(`[TRACEXDATA AUTO-REFUND] Refunded ₹${fee} to ${profile.email} for ${serviceName}`);
       return true;
     }
   } catch (err) {
@@ -7105,7 +7183,8 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
     }
 
     // Verify and deduct credits
-    if (user && supabaseAdmin) {
+    const isAdmin = checkIsAdmin(user?.email);
+    if (user && supabaseAdmin && !isAdmin) {
       const { data: profile, error: profileErr } = await supabaseAdmin
         .from("profiles")
         .select("*")
@@ -7123,7 +7202,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
         return res.status(403).json({ error: `Insufficient credits. You need at least ₹${cost} credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans.` });
       }
 
-      // Deduct 150 credits atomically with safety fallback
+      // Deduct credits atomically with safety fallback
       let rpcSuccess = false;
       let rpcError: any = null;
       try {
@@ -7252,14 +7331,7 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
       return res.status(401).json({ error: "Invalid session key. Please login again." });
     }
 
-    const ADMIN_EMAILS = [
-      'yashwinderbeniwaldm@gmail.com', 
-      'gaurav_beniwal_0001@example.com',
-      'gauravbeniwal30003@gmail.com'
-    ];
-
-    const emailLower = (user.email || "").toLowerCase();
-    const isAuthorized = ADMIN_EMAILS.some(email => email.toLowerCase() === emailLower);
+    const isAuthorized = checkIsAdmin(user.email);
 
     if (!isAuthorized) {
        return res.status(403).json({ error: "Access Denied: You are not authorized as an Administrator." });

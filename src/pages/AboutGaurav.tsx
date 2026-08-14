@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Shield, Code, Cpu, Award, MapPin, ArrowLeft, Terminal, Mail, Network, Server, Key } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
+import HeaderNavbar from '../components/HeaderNavbar';
 
 export default function AboutGaurav() {
   const skills = [
@@ -33,18 +34,11 @@ export default function AboutGaurav() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900">
+    <div className="relative min-h-screen bg-slate-50/50 text-slate-800 selection:bg-sky-500/20 selection:text-sky-900 pb-20">
       <LiquidBackground />
+      <HeaderNavbar title="TRACEXDATA" subtitle="LEAD ARCHITECT" />
       
-      <div className="relative z-10 max-w-4xl mx-auto px-6 py-24">
-        <Link 
-          to="/" 
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-sky-600 transition-colors mb-12 group"
-        >
-          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          <span className="text-sm font-extrabold uppercase tracking-widest">Back to Home</span>
-        </Link>
-
+      <div className="relative z-10 max-w-4xl mx-auto px-6 py-6 space-y-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}

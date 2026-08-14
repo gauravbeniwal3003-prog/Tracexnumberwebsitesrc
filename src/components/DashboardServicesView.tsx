@@ -187,16 +187,8 @@ export function DashboardServicesView({
         if (found) return found;
       }
     }
-    
-    if (location.pathname === '/panfind' || initialService === 'aadhaar_to_pan') {
-      for (const cat of CATEGORIES) {
-        const found = cat.subservices.find(s => s.id === 'aadhaar-to-pan');
-        if (found) return found;
-      }
-    }
-    
     return null;
-  }, [params.subserviceId, location.pathname, initialService]);
+  }, [params.subserviceId]);
 
   const selectedCategory = useMemo(() => {
     if (selectedSubService) {
@@ -209,16 +201,16 @@ export function DashboardServicesView({
     if (location.pathname === '/identity' || initialService === 'adhr') {
       return CATEGORIES.find(c => c.id === 'aadhaar') || null;
     }
-    if (location.pathname === '/pancard' || initialService === 'pancard') {
-      return CATEGORIES.find(c => c.id === 'pan') || null;
-    }
-    if (location.pathname === '/vehicle' || initialService === 'vehicle') {
+    if (location.pathname === '/vehicle' || initialService === 'vehicle' || initialService === 'veh_owner_num') {
       return CATEGORIES.find(c => c.id === 'vehicle') || null;
     }
     if (location.pathname === '/bank' || initialService === 'bnk') {
       return CATEGORIES.find(c => c.id === 'banking') || null;
     }
-    if (location.pathname === '/telegram' || location.pathname === '/email' || initialService === 'telegram' || initialService === 'email') {
+    if (location.pathname === '/email' || initialService === 'email') {
+      return CATEGORIES.find(c => c.id === 'email') || null;
+    }
+    if (location.pathname === '/telegram' || initialService === 'telegram') {
       return CATEGORIES.find(c => c.id === 'telegram') || null;
     }
     return null;
@@ -261,7 +253,7 @@ export function DashboardServicesView({
   // LEVEL 3: TERMINAL FORM VIEW (Screenshot 1)
   if (selectedSubService) {
     return (
-      <div className="w-full relative min-h-[80vh] flex flex-col items-center justify-start py-6 px-3 sm:px-4">
+      <div className="w-full relative min-h-[80vh] flex flex-col items-center justify-start py-4 pb-28 px-3 sm:px-4">
         {/* Dotted Grid Background */}
         <div 
           className="absolute inset-0 pointer-events-none rounded-3xl opacity-60"
@@ -270,18 +262,6 @@ export function DashboardServicesView({
             backgroundSize: '16px 16px'
           }}
         />
-
-        {/* Top Header Controls for Terminal View (Screenshot 1) */}
-        <div className="w-full max-w-xl flex items-center justify-start mb-6 relative z-10">
-          <button
-            type="button"
-            onClick={() => navigate('/dashboard')}
-            className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200/90 text-slate-800 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-600" />
-            <span>Dashboard</span>
-          </button>
-        </div>
 
         {/* Centered Terminal Container (Screenshot 1) */}
         <div className="w-full max-w-md relative z-10 flex flex-col items-center">
@@ -359,17 +339,26 @@ export function DashboardServicesView({
     );
 
     return (
-      <div className="w-full space-y-4">
-        {/* Top Search Input Bar (Screenshot 3) */}
-        <div className="relative w-full">
-          <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search services... (e.g. Aadhaar, PAN)"
-            className="w-full pl-12 pr-4 py-3.5 bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
-          />
+      <div className="w-full space-y-4 pb-28">
+        {/* Top Back & Search Bar Row */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBackToCategories}
+            className="px-3.5 py-3 rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200/90 text-slate-700 hover:text-blue-600 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0 group"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500 group-hover:text-blue-600 group-hover:-translate-x-0.5 transition-transform" />
+            <span>Dashboard</span>
+          </button>
+          <div className="relative flex-1">
+            <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search services... (e.g. Aadhaar, PAN)"
+              className="w-full pl-12 pr-4 py-3.5 bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+            />
+          </div>
         </div>
 
         {/* Category Header Card (Screenshot 3) */}
@@ -388,10 +377,11 @@ export function DashboardServicesView({
 
           <button
             onClick={handleBackToCategories}
-            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer shadow-2xs active:scale-95"
+            className="px-3 py-2 rounded-xl bg-slate-100/90 hover:bg-slate-200 text-slate-700 hover:text-blue-600 font-extrabold text-xs transition-colors cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1.5 group"
             title="Back to Categories"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-slate-500 group-hover:text-blue-600 group-hover:-translate-x-0.5 transition-transform" />
+            <span>All Services</span>
           </button>
         </div>
 
@@ -430,7 +420,7 @@ export function DashboardServicesView({
   );
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-6 pb-28">
       {/* Top Search Input Bar (Screenshot 2) */}
       <div className="relative w-full">
         <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
