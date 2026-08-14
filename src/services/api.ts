@@ -157,6 +157,86 @@ export const scrubBranding = (obj: any): any => {
   return obj;
 };
 
+const DIRECT_PROVIDERS: Record<string, string[]> = {
+  phone: [
+    "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    "https://seekhlebhai.in/api/v1/search?api_key=5219fdfc4155a0139b4bfa2540b6ff8d&search={query}"
+  ],
+  telegram: [
+    "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+    "https://tgapi.exploitsindia.site/tg-osint.php?exploits={query}"
+  ],
+  adhr: [
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
+  ],
+  aadhaar: [
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
+  ],
+  bnk: [
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
+  ],
+  ifsc: [
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
+  ],
+  vehicle: [
+    "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/vehicle.php?exploits={query}"
+  ],
+  veh_owner_num: [
+    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
+  ],
+  veh_numm: [
+    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
+  ],
+  email: [
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=email",
+    "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}"
+  ]
+};
+
+async function queryDirectProvider(service: string, query: string): Promise<any> {
+  const normKey = (service || '').trim().toLowerCase();
+  const endpoints = DIRECT_PROVIDERS[normKey] || DIRECT_PROVIDERS.phone || [];
+  
+  for (const template of endpoints) {
+    const targetUrl = template.replace('{query}', encodeURIComponent(query));
+    try {
+      const resp = await fetch(targetUrl);
+      if (resp.ok) {
+        const text = await resp.text();
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch {
+          if (text && text.trim().length > 0) return { raw_text: text };
+        }
+      }
+    } catch {
+      // CORS or network error, fallback to proxy
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const pResp = await fetch(proxyUrl);
+        if (pResp.ok) {
+          const pText = await pResp.text();
+          try {
+            const parsed = JSON.parse(pText);
+            if (parsed && typeof parsed === 'object') return parsed;
+          } catch {
+            if (pText && pText.trim().length > 0) return { raw_text: pText };
+          }
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
 /**
  * Universal Core Lookup Dispatcher
  * Directly queries the backend proxy with user authentication and returns clean JSON results.
@@ -210,8 +290,7 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
         return {
           status: false,
           results: {},
-          error: `No records found for '${cleanQ}'. Search fee refunded.`,
-          refunded: true
+          error: `Sorry, we don't have data related to the query.`
         };
       }
       data = { status: "success", results: { raw_text: rawText } };
@@ -227,23 +306,36 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       };
     }
 
-    // Handled backend error with possible refund
-    const errorMsg = data?.message || data?.error || `No records found for '${cleanQ}'.`;
+    const errorMsg = data?.message || data?.error || `Sorry, we don't have data related to the query.`;
     return {
       status: false,
       results: {},
       error: errorMsg,
-      refunded: Boolean(data?.refunded),
-      refund_amount: data?.refund_amount,
       remaining_balance: data?.remaining_balance
     };
 
   } catch (err: any) {
-    console.error(`[UniversalLookup] Error querying ${service}:`, err);
+    console.warn(`[UniversalLookup] Backend proxy unreachable for ${service}, initiating hardcoded fallback:`, err);
+    
+    // Direct client fallback
+    try {
+      const directData = await queryDirectProvider(service, cleanQ);
+      if (directData) {
+        const cleanResults = scrubBranding(directData.results || directData.data || directData);
+        return {
+          status: true,
+          results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
+          raw_results: typeof cleanResults === 'string' ? cleanResults : undefined
+        };
+      }
+    } catch (directErr) {
+      console.error("[UniversalLookup] Direct provider fallback error:", directErr);
+    }
+
     return {
       status: false,
       results: {},
-      error: "Unable to connect to the Render Intelligence engine. Please check your internet connection and try again."
+      error: "Sorry, we don't have data related to the query."
     };
   }
 };
