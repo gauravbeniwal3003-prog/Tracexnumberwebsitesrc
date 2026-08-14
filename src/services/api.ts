@@ -484,10 +484,11 @@ const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     return obj
-      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "")
       .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
+      .replace(/[━─═║╔╗╚╝├┤┬┴┼]{3,}/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -502,7 +503,7 @@ const scrubBranding = (obj: any): any => {
         'branding', 'api_info', 'powered_by', 'buy_api', 
         'owner_telegram', 'developer', 'developer_name', 'provider', 
         'provider_info', 'api_buy_link', 'website_link', 'buy', 
-        'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to'
+        'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to', 'vectraen', 'osintcallerbot'
       ].includes(lowerKey)) {
         continue;
       }
@@ -515,7 +516,7 @@ const scrubBranding = (obj: any): any => {
 
 export const parsePlainTextLookup = (text: string, type: 'aadhar' | 'pan' | 'bank' | 'rasion'): any => {
   const result: any = {};
-  const cleanText = text.replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "").trim();
+  const cleanText = text.replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "").trim();
 
   const lines = cleanText.split('\n');
   let lastKey: string | null = null;

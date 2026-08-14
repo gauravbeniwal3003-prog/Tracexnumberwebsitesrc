@@ -111,7 +111,7 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
-const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "YOUR_SECURE_RANDOM_INTERNAL_MASTER_KEY";
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
@@ -766,6 +766,118 @@ async function logSearchHistory(
   }
 }
 
+// Comprehensive Provider Response Field Normalizer & Resilient Unpacker
+function normalizeProviderRecord(rawItem: any, type: string, queryStr: string = ''): Record<string, any> {
+  if (!rawItem) return {};
+  
+  // Handle string input
+  if (typeof rawItem === 'string') {
+    const scrubbed = scrubAllBranding(rawItem).trim();
+    if (!scrubbed) return {};
+    return { details: scrubbed };
+  }
+
+  if (typeof rawItem !== 'object') return {};
+
+  // Unwrap nested structures like data, result, records, details, info
+  let item = rawItem;
+  if (item.data && typeof item.data === 'object' && !Array.isArray(item.data)) item = item.data;
+  else if (item.results && typeof item.results === 'object' && !Array.isArray(item.results)) item = item.results;
+  else if (item.result && typeof item.result === 'object' && !Array.isArray(item.result)) item = item.result;
+  else if (item.details && typeof item.details === 'object' && !Array.isArray(item.details)) item = item.details;
+  else if (item.info && typeof item.info === 'object' && !Array.isArray(item.info)) item = item.info;
+
+  const normalized: Record<string, any> = {};
+  const itemKeys = Object.keys(item);
+
+  const getValueByKeywords = (...keywords: string[]): any => {
+    for (const kw of keywords) {
+      for (const k of itemKeys) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanKw = kw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanK === cleanKw) {
+          const val = item[k];
+          if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).toLowerCase() !== 'null') {
+            return val;
+          }
+        }
+      }
+    }
+    for (const kw of keywords) {
+      for (const k of itemKeys) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanKw = kw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanK.includes(cleanKw) && !cleanK.includes('father') && !cleanK.includes('husband')) {
+          const val = item[k];
+          if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).toLowerCase() !== 'null') {
+            return val;
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Extract core standard fields regardless of provider naming conventions
+  const foundName = getValueByKeywords('name', 'full_name', 'fullname', 'owner_name', 'ownerName', 'customer_name', 'user_name', 'applicant_name', 'registered_owner', 'r_owner', 'owner', 'holder_name', 'name_dob');
+  if (foundName) normalized.name = String(foundName).trim().toUpperCase();
+
+  const foundMobile = getValueByKeywords('mobile', 'phone', 'mobile_no', 'phone_no', 'contact', 'cell', 'mobile_number', 'phone_number', 'contact_no', 'num', 'number');
+  if (foundMobile) normalized.mobile = String(foundMobile).trim();
+  else if (type === 'phone' && queryStr) normalized.mobile = queryStr;
+
+  const foundAltMobile = getValueByKeywords('alt_mobile', 'alt_phone', 'alt_number', 'alternate_mobile', 'secondary_phone', 'alt_contact', 'alt_num');
+  if (foundAltMobile) normalized.alt_mobile = String(foundAltMobile).trim();
+
+  const foundFather = getValueByKeywords('father_name', 'fatherName', 'father_husband_name', 'f_name', 'f_father_name', 'husband_name', 'father');
+  if (foundFather) normalized.father_name = String(foundFather).trim().toUpperCase();
+
+  const foundAadhaar = getValueByKeywords('aadhar_number', 'aadhaar_no', 'aadhar_no', 'uid', 'uid_number', 'aadhaar_number', 'aadhar', 'id_number');
+  if (foundAadhaar) normalized.aadhar_number = String(foundAadhaar).trim();
+
+  const foundPan = getValueByKeywords('pan_number', 'pan_no', 'pan', 'pancard', 'pan_card');
+  if (foundPan) normalized.pan_number = String(foundPan).trim().toUpperCase();
+
+  const foundAddress = getValueByKeywords('address', 'location', 'c_address', 'p_address', 'permanent_address', 'present_address', 'addr', 'full_address');
+  if (foundAddress) normalized.address = String(foundAddress).trim();
+
+  const foundOperator = getValueByKeywords('operator', 'carrier', 'network', 'telecom_operator', 'provider');
+  if (foundOperator) normalized.operator = String(foundOperator).trim().toUpperCase();
+
+  const foundCircle = getValueByKeywords('state_circle', 'circle', 'state', 'telecom_circle', 'region');
+  if (foundCircle) normalized.state_circle = String(foundCircle).trim().toUpperCase();
+
+  const foundVehicle = getValueByKeywords('vehicle_number', 'rc_number', 'reg_no', 'registration_no', 'vehicle_no', 'vahan_no', 'rc', 'registration_number');
+  if (foundVehicle) normalized.vehicle_number = String(foundVehicle).trim().toUpperCase();
+
+  const foundEmail = getValueByKeywords('email', 'mail', 'email_id', 'email_address');
+  if (foundEmail) normalized.email = String(foundEmail).trim().toLowerCase();
+
+  const foundTelegram = getValueByKeywords('telegram_id', 'username', 'tg_id', 'chat_id', 'tg_user', 'telegram_username');
+  if (foundTelegram) normalized.telegram_id = String(foundTelegram).trim();
+
+  // Transfer all remaining dynamic provider keys safely
+  for (const k of itemKeys) {
+    const lowerK = k.toLowerCase();
+    if ([
+      'branding', 'api_info', 'powered_by', 'buy_api', 
+      'owner_telegram', 'developer', 'developer_name', 'provider', 
+      'provider_info', 'api_buy_link', 'website_link', 'buy', 
+      'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to'
+    ].includes(lowerK)) continue;
+
+    if (normalized[k] === undefined && item[k] !== undefined && item[k] !== null) {
+      let val = item[k];
+      if (typeof val === 'string') {
+        val = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?digiseva|@?osintcaller)/gi, "").trim();
+      }
+      normalized[k] = val;
+    }
+  }
+
+  return scrubAllBranding(normalized);
+}
+
 // Unified response Formatter to keep premium branding consistent across all query types
 function formatUnifiedSaaSResponse({
   type,
@@ -784,41 +896,26 @@ function formatUnifiedSaaSResponse({
 }) {
   const cleanedData: any[] = [];
 
-  records.forEach((item, idx) => {
-    if (!item || typeof item !== 'object') return;
+  records.forEach((rawItem, idx) => {
+    if (!rawItem) return;
+
+    // Resilient normalization across provider response mutations
+    const item = normalizeProviderRecord(rawItem, type, query);
+    if (!item || Object.keys(item).length === 0) return;
 
     const filteredItem: any = { ...item, result_no: idx + 1 };
     
     if (type === 'phone') {
-      filteredItem.name = (item.name || item.full_name || "N/A").toString().toUpperCase();
-      filteredItem.mobile = item.mobile || item.number || query || "N/A";
-      filteredItem.alt_mobile = item.alt_mobile || item.alt_number || "N/A";
-      filteredItem.operator = (item.operator || item.carrier || "N/A").toString().toUpperCase();
-      filteredItem.circle = (item.state_circle || item.circle || item.state || "N/A").toString().toUpperCase();
-      filteredItem.address = item.address || item.location || "N/A";
+      filteredItem.name = filteredItem.name || "N/A";
+      filteredItem.mobile = filteredItem.mobile || query || "N/A";
+      filteredItem.alt_mobile = filteredItem.alt_mobile || "N/A";
+      filteredItem.operator = filteredItem.operator || "N/A";
+      filteredItem.circle = filteredItem.state_circle || filteredItem.circle || "N/A";
+      filteredItem.address = filteredItem.address || "N/A";
     } else if (type === 'telegram') {
-      Object.entries(item).forEach(([key, val]) => {
-        if (key === 'result_no') return;
-        let cleanedVal = val;
-        if (typeof val === 'string') {
-          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
-        }
-        filteredItem[key] = cleanedVal;
-      });
       if (!filteredItem.telegram_id && !filteredItem.username) {
         filteredItem.telegram_id = query;
       }
-    } else {
-      // Dynamic mapping for Aadhar, Bank (IFSC), and Ration Card lookups
-      Object.entries(item).forEach(([key, val]) => {
-        if (key === 'result_no') return;
-        const normalizedKey = key.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "info");
-        let cleanedVal = val;
-        if (typeof val === 'string') {
-          cleanedVal = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim().toUpperCase();
-        }
-        filteredItem[normalizedKey] = cleanedVal;
-      });
     }
 
     // Clean N/A values and format keys elegantly
@@ -853,7 +950,7 @@ function formatUnifiedSaaSResponse({
       requests_used: requestsUsed
     },
     results_found: cleanedData.length,
-    results: resultsObj,
+    results: cleanedData.length > 0 ? resultsObj : { error: "Sorry, we don't have data related to the query." },
     data: cleanedData
   };
   return resObj;
@@ -3474,23 +3571,20 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       let isError = false;
-      if (isNegativeResponse(text)) {
-        isError = true;
-      } else if (isJson && parsedData && typeof parsedData === 'object') {
+      if (isJson && parsedData && typeof parsedData === 'object') {
         const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
         if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-          const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-          if (!hasDirectFields) {
-            isError = true;
-          }
+          isError = true;
         } else if (parsedData.error && typeof parsedData.error === 'string' && parsedData.error.trim().length > 0) {
           const errLower = parsedData.error.trim().toLowerCase();
           if (errLower !== "null" && errLower !== "false" && errLower !== "none" && errLower !== "0" && !errLower.includes("success")) {
-            const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-            if (!hasDirectFields) {
-              isError = true;
-            }
+            isError = true;
           }
+        }
+      } else {
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+          isError = true;
         }
       }
 
@@ -4759,15 +4853,15 @@ app.get("/api/identity", async (req, res) => {
     }
 
     let isError = false;
-    if (isNegativeResponse(text)) {
-      isError = true;
-    } else if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-        if (!hasDirectFields) {
-          isError = true;
-        }
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
       }
     }
 
@@ -4896,15 +4990,15 @@ app.get("/api/bank", async (req, res) => {
     }
 
     let isError = false;
-    if (isNegativeResponse(text)) {
-      isError = true;
-    } else if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-        if (!hasDirectFields) {
-          isError = true;
-        }
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
       }
     }
 
@@ -5033,15 +5127,15 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     let isError = false;
-    if (isNegativeResponse(text)) {
-      isError = true;
-    } else if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-        if (!hasDirectFields) {
-          isError = true;
-        }
+        isError = true;
+      }
+    } else {
+      const lowerText = cleanedText.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
       }
     }
 
@@ -5221,15 +5315,15 @@ app.get("/api/vehicle", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isNegativeResponse(text)) {
-      isError = true;
-    } else if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-        if (!hasDirectFields) {
-          isError = true;
-        }
+        isError = true;
+      }
+    } else {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
       }
     }
 
@@ -5407,15 +5501,15 @@ app.get("/api/veh-owner-num", async (req, res) => {
 
     // Smart Error Detection: Check if response actually represents a failure
     let isError = false;
-    if (isNegativeResponse(text)) {
-      isError = true;
-    } else if (isJson && parsedData && typeof parsedData === 'object') {
+    if (isJson && parsedData && typeof parsedData === 'object') {
       const statusStr = String(parsedData.status || parsedData.success || "").toLowerCase();
       if (statusStr === "error" || statusStr === "fail" || statusStr === "failed" || statusStr === "false" || statusStr === "404") {
-        const hasDirectFields = !!(parsedData.name || parsedData.mobile || parsedData.phone || parsedData.aadhar || parsedData.pan || parsedData.ifsc || parsedData.email || parsedData.vehicle_number || parsedData.owner_name || parsedData.results || parsedData.data || parsedData.records);
-        if (!hasDirectFields) {
-          isError = true;
-        }
+        isError = true;
+      }
+    } else {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes("no result found") || lowerText.includes("no records found") || lowerText.includes("no data found") || !text.trim()) {
+        isError = true;
       }
     }
 
@@ -5828,17 +5922,18 @@ app.get("/api/panfind", async (req, res) => {
 const CONFIG_FILE_PATH = path.join(__dirname, "data", "provider_config.json");
 
 const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
-  phone: "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
-  aadhaar: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
-  adhr: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+  aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+  adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
   pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
   ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
   bnk: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-  vehicle: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
-  veh_owner_num: "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+  vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+  veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+  veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-  telegram: "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
+  telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
   family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 };
 
@@ -5892,22 +5987,33 @@ async function loadProviderConfigsFromDatabase() {
       }
     }
 
-    // Ensure telegram config is stored in DB. If missing, seed it to database table api_provider_configs
-    const targetTelegramUrl = "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}";
-    if (!dbConfigs.telegram || dbConfigs.telegram !== targetTelegramUrl) {
-      console.log(`[TRACEXDATA] Seeding telegram provider API to database: ${targetTelegramUrl}`);
-      const { error: upsertErr } = await supabaseAdmin
-        .from("api_provider_configs")
-        .upsert({
-          service_key: "telegram",
-          provider_url: targetTelegramUrl,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "service_key" });
-      
-      if (!upsertErr) {
-        dbConfigs.telegram = targetTelegramUrl;
-      } else {
-        console.warn("[TRACEXDATA] Error upserting telegram config to DB:", upsertErr.message);
+    // Ensure our new primary endpoints are updated in DB
+    const targetConfigs: Record<string, string> = {
+      phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+      aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+      adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+      vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+      veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+      veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+      telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
+    };
+
+    for (const [key, targetUrl] of Object.entries(targetConfigs)) {
+      if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss")) {
+        console.log(`[TRACEXDATA] Syncing ${key} provider API to database: ${targetUrl}`);
+        const { error: upsertErr } = await supabaseAdmin
+          .from("api_provider_configs")
+          .upsert({
+            service_key: key,
+            provider_url: targetUrl,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "service_key" });
+        
+        if (!upsertErr) {
+          dbConfigs[key] = targetUrl;
+        } else {
+          console.warn(`[TRACEXDATA] Error upserting ${key} config to DB:`, upsertErr.message);
+        }
       }
     }
 
@@ -6006,10 +6112,11 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller|@?osintcaller|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "")
       .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
+      .replace(/[━─═║╔╗╚╝├┤┬┴┼]{3,}/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -6024,7 +6131,7 @@ function scrubAllBranding(obj: any): any {
         "branding", "api_info", "powered_by", "buy_api", 
         "owner_telegram", "developer", "developer_name", "provider", 
         "provider_info", "api_buy_link", "website_link", "buy", 
-        "digiseva", "techvishalboss", "osintcaller", "userxinfo", "credits_to"
+        "digiseva", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot"
       ].includes(lowerKey)) {
         continue;
       }
@@ -6035,92 +6142,65 @@ function scrubAllBranding(obj: any): any {
   return obj;
 }
 
-function isNegativeResponse(text: string): boolean {
-  if (!text || typeof text !== 'string') return true;
-  const trimmed = text.trim();
-  if (!trimmed || trimmed === "[]" || trimmed === "{}" || trimmed === "null") return true;
-  
-  const lower = trimmed.toLowerCase();
-  
-  // Exact matches for known empty responses
-  const exactNegatives = [
-    "no result found",
-    "no records found",
-    "no data found",
-    "record not found",
-    "not found",
-    "no data",
-    "no record",
-    "no results",
-    "error",
-    "failed",
-    "invalid",
-    "invalid query",
-    "invalid number",
-    "null",
-    "[]",
-    "{}",
-  ];
-  if (exactNegatives.includes(lower)) return true;
-  
-  // If the text is short (e.g. less than 150 chars) and contains negative phrases, it's likely negative
-  if (trimmed.length < 150) {
-    const negativeSubstrings = [
-      "no records found",
-      "no result found",
-      "no data found",
-      "record not found",
-      "not found",
-      "no data",
-      "no results",
-      "invalid parameter",
-      "data not found"
-    ];
-    // Check if it contains any negative phrase and doesn't contain any positive field indicating real data
-    const hasNegative = negativeSubstrings.some(phrase => lower.includes(phrase));
-    const hasPositiveIndicator = lower.includes("name") || lower.includes("mobile") || lower.includes("phone") || lower.includes("aadhar") || lower.includes("pan") || lower.includes("address") || lower.includes("ifsc") || lower.includes("gender") || lower.includes("district");
-    if (hasNegative && !hasPositiveIndicator) {
-      return true;
-    }
-  }
-  
-  return false;
-}
-
 function parseRawTextToRecords(text: string, queryVal: string = ''): Record<string, any> {
   const cleanText = scrubAllBranding(text).trim();
   if (!cleanText) return {};
 
+  const lower = cleanText.toLowerCase();
+  if (
+    lower.includes("not found") ||
+    lower.includes("no record") ||
+    lower.includes("no data") ||
+    lower.includes("api down") ||
+    lower.includes("not lick detabse") ||
+    lower.includes("no response (http 404)") ||
+    lower.includes("send another chat id")
+  ) {
+    if (!lower.includes("name:") && !lower.includes("mobile:") && !lower.includes("user id:") && !lower.includes("reg number") && !lower.includes("chassis") && !lower.includes("aadhaar:")) {
+      return {};
+    }
+  }
+
   const recordsMap: Record<string, any> = {};
   let recIdx = 1;
 
-  const blocks = cleanText.split(/📌\s*Additional\s*Result:|---+|===+/gi);
+  const blocks = cleanText.split(/📌\s*Additional\s*Result:|---+|===+|[━─═]{4,}/gi);
 
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
     const rec: Record<string, any> = {};
 
     for (const line of lines) {
-      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
+      const cleanLine = line
+        .replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[\u2500-\u257F]|[├│└┌─━═║╔╗╚╝]/g, '')
+        .replace(/\*/g, '')
+        .trim();
+      if (!cleanLine) continue;
+
       const colonIdx = cleanLine.indexOf(':');
       if (colonIdx !== -1) {
         const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
         const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
-        if (!valRaw || ['none', 'null', 'n/a', '0', ''].includes(valRaw.toLowerCase())) continue;
+        if (!valRaw || ['none', 'null', 'n/a', 'na', '0', ''].includes(valRaw.toLowerCase())) continue;
+
+        if (keyRaw.includes('lookup_result') || keyRaw.includes('buy_api') || keyRaw.includes('support')) continue;
 
         let key = keyRaw;
         if (keyRaw.includes('father') || keyRaw.includes('husband')) key = 'father_name';
-        else if (keyRaw.includes('alt') && (keyRaw.includes('mobile') || keyRaw.includes('phone'))) key = 'alt_mobile';
+        else if (keyRaw.includes('alt') && (keyRaw.includes('mobile') || keyRaw.includes('phone') || keyRaw.includes('number'))) key = 'alt_mobile';
         else if (keyRaw.includes('mobile') || keyRaw.includes('phone') || keyRaw.includes('contact')) key = 'mobile';
         else if (keyRaw.includes('aadhaar') || keyRaw.includes('aadhar') || keyRaw.includes('uid')) key = 'aadhar_number';
         else if (keyRaw.includes('pancard') || keyRaw.includes('pan')) key = 'pan_number';
         else if (keyRaw.includes('ifsc')) key = 'ifsc';
         else if (keyRaw.includes('bank') || keyRaw.includes('branch')) key = 'branch';
         else if (keyRaw.includes('email') || keyRaw.includes('mail')) key = 'email';
-        else if (keyRaw.includes('telegram') || keyRaw.includes('tg')) key = 'telegram_id';
-        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
-        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('state')) key = 'state_circle';
-        else if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
+        else if (keyRaw.includes('telegram') || keyRaw.includes('tg') || keyRaw.includes('user_id')) key = 'telegram_id';
+        else if (keyRaw.includes('reg_number') || keyRaw.includes('registration_no') || keyRaw.includes('reg_no') || keyRaw.includes('vahan_no') || (keyRaw === 'vehicle' && !rec.vehicle_number)) key = 'vehicle_number';
+        else if (keyRaw.includes('present_address') || keyRaw.includes('permanent_addr') || keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
+        else if (keyRaw.includes('pincode') || keyRaw.includes('pin_code')) key = 'pincode';
+        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('carrier') || keyRaw.includes('state')) key = 'state_circle';
+        else if (keyRaw.includes('name') && !keyRaw.includes('father') && !keyRaw.includes('rto') && !keyRaw.includes('insurance')) key = 'name';
+        else if (keyRaw.includes('country')) key = 'country';
 
         rec[key] = valRaw;
       } else if (cleanLine.includes('|')) {
@@ -6136,10 +6216,15 @@ function parseRawTextToRecords(text: string, queryVal: string = ''): Record<stri
     }
 
     if (Object.keys(rec).length > 0) {
+      const nonNAValues = Object.values(rec).filter(v => v && !['n/a', 'na', 'none', 'null', ''].includes(String(v).trim().toLowerCase()));
+      if (nonNAValues.length === 0) continue;
+
       if (!rec.name) {
         if (rec.father_name) rec.name = "Verified Individual";
         else if (rec.mobile) rec.name = `Mobile: ${rec.mobile}`;
         else if (rec.telegram_id) rec.name = `Telegram: ${rec.telegram_id}`;
+        else if (rec.vehicle_number) rec.name = `Vehicle: ${rec.vehicle_number}`;
+        else if (rec.model) rec.name = `${rec.manufacturer || ''} ${rec.model}`.trim();
         else rec.name = "VERIFIED RECORD";
       }
       recordsMap[`Result ${recIdx++}`] = rec;
@@ -6178,8 +6263,6 @@ function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'g
     }
   }
 
-  // Removed error filtering so UI can see exact API JSON response
-
   // Key canonicalization map
   const mapKey = (rawKey: string): string => {
     const k = rawKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -6191,7 +6274,7 @@ function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'g
     if (k.includes('ifsc')) return 'ifsc';
     if (k.includes('branch') || k.includes('bank')) return 'branch';
     if (k.includes('email') || k.includes('mail')) return 'email';
-    if (k.includes('telegram') || k.includes('tg_user')) return 'telegram_id';
+    if (k.includes('telegram') || k.includes('tg_user') || k.includes('user_id')) return 'telegram_id';
     if (k.includes('vehicle') || k.includes('reg_no') || k.includes('rc_num')) return 'vehicle_number';
     if (k.includes('address') || k.includes('location')) return 'address';
     if (k.includes('circle') || k.includes('operator') || k.includes('state')) return 'state_circle';
@@ -6208,7 +6291,7 @@ function universalParseAndFormatResponse(rawInput: any, serviceType: string = 'g
     for (const [rk, rv] of Object.entries(rec)) {
       if (rv === null || rv === undefined) continue;
       const valStr = scrubAllBranding(String(rv)).trim();
-      if (!valStr || valStr.toUpperCase() === "NONE" || valStr.toUpperCase() === "NULL" || valStr.toUpperCase() === "N/A" || valStr === "0") continue;
+      if (!valStr || valStr.toUpperCase() === "NONE" || valStr.toUpperCase() === "NULL" || valStr.toUpperCase() === "N/A" || valStr.toUpperCase() === "NA" || valStr === "0") continue;
 
       const normKey = mapKey(rk);
       cleaned[normKey] = valStr;

@@ -5181,18 +5181,19 @@ async def get_realtime_pricing_api(request: Request):
 # --- DEDICATED PROVIDER CONFIGS API ---
 
 DEFAULT_PROVIDER_CONFIGS = {
-  "phone": "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
-  "aadhaar": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
-  "adhr": "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+  "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+  "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+  "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   "aadhaar_to_pan": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
   "pancard": "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
   "ifsc": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
   "bnk": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-  "vehicle": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
-  "veh_owner_num": "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+  "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+  "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+  "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-  "telegram": "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
-  "family": "https://exploitsindia.site/anish-private-api/family.php?exploits={query}"
+  "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+  "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 }
 
 PROVIDER_CONFIGS = dict(DEFAULT_PROVIDER_CONFIGS)
@@ -5223,19 +5224,28 @@ async def load_provider_configs_from_database():
                 if sk and pu:
                     db_configs[sk.strip()] = pu.strip()
 
-        # Ensure telegram config is stored in DB. If missing or mismatched, seed it to database table api_provider_configs
-        target_telegram_url = "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}"
-        if db_configs.get("telegram") != target_telegram_url:
-            print(f"[TRACEXDATA] Seeding telegram provider API to database: {target_telegram_url}")
-            try:
-                db.table("api_provider_configs").upsert({
-                    "service_key": "telegram",
-                    "provider_url": target_telegram_url,
-                    "updated_at": datetime.utcnow().isoformat() + "Z"
-                }, on_conflict="service_key").execute()
-                db_configs["telegram"] = target_telegram_url
-            except Exception as upsert_err:
-                print(f"[TRACEXDATA] Error upserting telegram config to DB: {upsert_err}")
+        target_configs = {
+            "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+            "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+            "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+            "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+            "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+            "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+            "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
+        }
+
+        for k, target_url in target_configs.items():
+            if not db_configs.get(k) or db_configs.get(k) != target_url or "anish-private-api" in db_configs.get(k, "") or "uersxinfo" in db_configs.get(k, "") or "techvishalboss" in db_configs.get(k, ""):
+                print(f"[TRACEXDATA] Seeding {k} provider API to database: {target_url}")
+                try:
+                    db.table("api_provider_configs").upsert({
+                        "service_key": k,
+                        "provider_url": target_url,
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    }, on_conflict="service_key").execute()
+                    db_configs[k] = target_url
+                except Exception as upsert_err:
+                    print(f"[TRACEXDATA] Error upserting {k} config to DB: {upsert_err}")
 
         # Update global PROVIDER_CONFIGS with all database configurations
         PROVIDER_CONFIGS.update(db_configs)

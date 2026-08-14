@@ -63,15 +63,15 @@ export default function AdminDashboard() {
 
   // Dynamic Provider API Mappings State
   const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({
-    phone: "https://exploitsindia.site/anish-private-api/number.php?exploits={query}",
-    aadhaar: "https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}",
+    phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
     aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
     pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
     ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-    vehicle: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}",
-    veh_owner_num: "http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}",
+    vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+    veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    telegram: "http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}",
+    telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
     family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
   });
   const [isSavingProviders, setIsSavingProviders] = useState(false);
