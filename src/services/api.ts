@@ -9,10 +9,13 @@ export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_n
 
 export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
-    return import.meta.env.VITE_RENDER_BACKEND_URL;
+    const customUrl = import.meta.env.VITE_RENDER_BACKEND_URL.trim();
+    if (customUrl && !customUrl.includes("onrender.com")) {
+      return customUrl.replace(/\/$/, "");
+    }
   }
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin;
+    return window.location.origin.replace(/\/$/, "");
   }
   return '';
 };
@@ -159,171 +162,79 @@ export const scrubBranding = (obj: any): any => {
 
 const DIRECT_PROVIDERS: Record<string, string[]> = {
   phone: [
-    "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    "https://seekhlebhai.in/api/v1/search?api_key=5219fdfc4155a0139b4bfa2540b6ff8d&search={query}"
   ],
   telegram: [
-    "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+    "https://tgapi.exploitsindia.site/tg-osint.php?exploits={query}"
   ],
   adhr: [
-    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
   ],
   aadhaar: [
-    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
   ],
   bnk: [
-    "https://ifsc.razorpay.com/{query}"
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
   ],
   ifsc: [
-    "https://ifsc.razorpay.com/{query}"
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
   ],
   vehicle: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/vehicle.php?exploits={query}"
   ],
   veh_owner_num: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
   ],
   veh_numm: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}"
+    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
   ],
   email: [
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=email",
     "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}"
   ]
 };
 
-function parseClientTelegram(text: string, originalQuery: string): any {
-  const clean = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
-  let usernameMatch = clean.match(/(?:Username|User|Lookup Result for|Handle):\s*@?([^\s\n\r<]+)/i);
-  let idMatch = clean.match(/(?:Telegram ID|User ID|User_ID|Telegram_ID|Account ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-  let phoneMatch = clean.match(/(?:Phone Number|Mobile Number|Mobile Phone|Mobile|Phone|Number|Num):\s*(?:<code>)?\+?(\d[\d\s\-]{6,15}\d|\d{10})(?:<\/code>)?/i);
-  let countryMatch = clean.match(/(?:Country|Region|Location):\s*([^\n\r<]+)/i);
-  let nameMatch = clean.match(/(?:Name|Full Name):\s*([^\n\r<]+)/i);
-
-  const tgid = idMatch ? idMatch[1].trim() : "N/A";
-  const mobile = phoneMatch ? phoneMatch[1].replace(/[^\d+]/g, '').trim() : "N/A";
-
-  if (tgid === "N/A" && mobile === "N/A") return null;
-
-  return {
-    username: (usernameMatch ? usernameMatch[1].trim() : originalQuery).replace(/^@/, ''),
-    telegram_id: tgid,
-    user_id: tgid,
-    mobile: mobile,
-    mobile_number: mobile,
-    number: mobile,
-    phone: mobile,
-    ...(nameMatch ? { name: nameMatch[1].trim() } : {}),
-    ...(countryMatch ? { country: countryMatch[1].trim() } : {}),
-    platform: "Telegram Lookup"
-  };
-}
-
-function parseClientPhone(text: string): any {
-  const rawBlocks = text.split(/📌\s*Additional\s*Result:/gi);
-  const results: Record<string, any> = {};
-  let recordIndex = 1;
-
-  for (const rawBlock of rawBlocks) {
-    const record: Record<string, any> = {};
-    const lines = rawBlock.split('\n').map(l => l.trim()).filter(Boolean);
-    
-    for (const line of lines) {
-      const cleanLine = line.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').replace(/\*/g, '').trim();
-      const colonIdx = cleanLine.indexOf(':');
-      if (colonIdx !== -1) {
-        const keyRaw = cleanLine.substring(0, colonIdx).trim().toLowerCase();
-        const valRaw = cleanLine.substring(colonIdx + 1).trim().replace(/<\/?code>/g, '');
-        
-        if (!valRaw || ['none', 'null', 'n/a', ''].includes(valRaw.toLowerCase())) continue;
-
-        let key = '';
-        if (keyRaw.includes('name') && !keyRaw.includes('father')) key = 'name';
-        else if (keyRaw.includes('father')) key = 'father_name';
-        else if (keyRaw.includes('mobile') || keyRaw.includes('phone')) key = 'mobile';
-        else if (keyRaw.includes('address') || keyRaw.includes('location')) key = 'address';
-        else if (keyRaw.includes('alternate') || keyRaw.includes('alt_mobile')) key = 'alt_mobile';
-        else if (keyRaw.includes('circle') || keyRaw.includes('operator') || keyRaw.includes('state')) key = 'state_circle';
-        else if (keyRaw.includes('aadhar') || keyRaw.includes('identity')) key = 'aadhar_number';
-        
-        if (key) record[key] = valRaw;
-      }
-    }
-
-    if (Object.keys(record).length > 0 && (record.name || record.mobile)) {
-      results[`Result ${recordIndex}`] = record;
-      recordIndex++;
-    }
-  }
-
-  if (Object.keys(results).length > 0) return results;
-  return null;
-}
-
-function parseClientVehicle(text: string): any {
-  const clean = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
-  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
-  const result: Record<string, any> = {};
-
-  for (const line of lines) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx !== -1) {
-      const k = line.substring(0, colonIdx).replace(/[^a-zA-Z0-9_\s]/g, '').trim();
-      const v = line.substring(colonIdx + 1).trim();
-      if (k && v && !['none', 'null', 'n/a', ''].includes(v.toLowerCase())) {
-        result[k] = v;
-      }
-    }
-  }
-
-  if (Object.keys(result).length > 0) return result;
-  return null;
-}
-
 async function queryDirectProvider(service: string, query: string): Promise<any> {
   const normKey = (service || '').trim().toLowerCase();
-  const cleanQ = query.replace(/^@/, '').trim();
   const endpoints = DIRECT_PROVIDERS[normKey] || DIRECT_PROVIDERS.phone || [];
   
   for (const template of endpoints) {
-    const targetUrl = template.replace('{query}', encodeURIComponent(cleanQ));
+    const targetUrl = template.replace('{query}', encodeURIComponent(query));
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      const resp = await fetch(targetUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
+      const resp = await fetch(targetUrl);
       if (resp.ok) {
         const text = await resp.text();
-        const cleanText = scrubBranding(text);
-
-        if (!cleanText.trim() || cleanText.toLowerCase().includes("no result") || cleanText.toLowerCase().includes("no data found") || cleanText.includes("❌")) {
-          continue;
-        }
-
         try {
           const parsed = JSON.parse(text);
-          if (parsed && typeof parsed === 'object') {
-            const dataObj = parsed.results || parsed.data || parsed;
-            return scrubBranding(dataObj);
-          }
-        } catch {}
-
-        if (normKey === 'telegram') {
-          const tg = parseClientTelegram(cleanText, cleanQ);
-          if (tg) return tg;
-        } else if (normKey === 'phone') {
-          const ph = parseClientPhone(cleanText);
-          if (ph) return ph;
-        } else if (normKey === 'vehicle' || normKey === 'veh_owner_num') {
-          const vh = parseClientVehicle(cleanText);
-          if (vh) return vh;
-        }
-
-        if (cleanText && cleanText.trim().length > 0) {
-          return { raw_text: cleanText };
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch {
+          if (text && text.trim().length > 0) return { raw_text: text };
         }
       }
     } catch {
-      // Ignore network failures and continue
+      // CORS or network error, fallback to proxy
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const pResp = await fetch(proxyUrl);
+        if (pResp.ok) {
+          const pText = await pResp.text();
+          try {
+            const parsed = JSON.parse(pText);
+            if (parsed && typeof parsed === 'object') return parsed;
+          } catch {
+            if (pText && pText.trim().length > 0) return { raw_text: pText };
+          }
+        }
+      } catch {}
     }
   }
   return null;
@@ -358,16 +269,11 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
     const response = await fetch(url, {
       method: 'GET',
       headers,
-      mode: 'cors',
-      signal: controller.signal
+      mode: 'cors'
     });
-    clearTimeout(timeoutId);
 
     if (response.status === 401 || response.status === 403) {
       return {
@@ -382,6 +288,7 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     try {
       data = JSON.parse(rawText);
     } catch {
+      // If plain text was returned
       if (rawText.toLowerCase().includes('no data') || rawText.toLowerCase().includes('no record')) {
         return {
           status: false,
@@ -411,7 +318,7 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     };
 
   } catch (err: any) {
-    console.warn(`[UniversalLookup] Backend proxy request for ${service} timed out or failed, initiating fast direct fallback:`, err);
+    console.warn(`[UniversalLookup] Backend proxy unreachable for ${service}, initiating hardcoded fallback:`, err);
     
     // Direct client fallback
     try {

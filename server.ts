@@ -2813,141 +2813,6 @@ app.all("/api/support-lookup", async (req, res) => {
   }
 });
 
-// Fast in-memory parsers for provider raw responses
-function parseTelegramText(text: string, originalQuery: string): any {
-  const clean = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
-  let usernameMatch = clean.match(/(?:Username|User|Lookup Result for|Handle):\s*@?([^\s\n\r<]+)/i);
-  let idMatch = clean.match(/(?:Telegram ID|User ID|User_ID|Telegram_ID|Account ID|ID):\s*(?:<code>)?(\d+)(?:<\/code>)?/i);
-  let phoneMatch = clean.match(/(?:Phone Number|Mobile Number|Mobile Phone|Mobile|Phone|Number|Num):\s*(?:<code>)?\+?(\d[\d\s\-]{6,15}\d|\d{10})(?:<\/code>)?/i);
-  let countryMatch = clean.match(/(?:Country|Region|Location):\s*([^\n\r<]+)/i);
-  let nameMatch = clean.match(/(?:Name|Full Name):\s*([^\n\r<]+)/i);
-
-  const tgid = idMatch ? idMatch[1].trim() : "N/A";
-  const mobile = phoneMatch ? phoneMatch[1].replace(/[^\d+]/g, '').trim() : "N/A";
-
-  if (tgid === "N/A" && mobile === "N/A") return null;
-
-  return {
-    username: (usernameMatch ? usernameMatch[1].trim() : originalQuery).replace(/^@/, ''),
-    telegram_id: tgid,
-    user_id: tgid,
-    mobile: mobile,
-    mobile_number: mobile,
-    number: mobile,
-    phone: mobile,
-    ...(nameMatch ? { name: nameMatch[1].trim() } : {}),
-    ...(countryMatch ? { country: countryMatch[1].trim() } : {}),
-    platform: "Telegram Lookup"
-  };
-}
-
-function parseVehicleText(text: string, originalQuery: string): any {
-  const clean = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|[*_`#]/g, ' ');
-  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
-  const result: Record<string, any> = {};
-
-  for (const line of lines) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx !== -1) {
-      const k = line.substring(0, colonIdx).replace(/[^a-zA-Z0-9_\s]/g, '').trim();
-      const v = line.substring(colonIdx + 1).trim();
-      if (k && v && !['none', 'null', 'n/a', ''].includes(v.toLowerCase())) {
-        result[k] = v;
-      }
-    }
-  }
-
-  if (Object.keys(result).length > 0) return result;
-  return null;
-}
-
-// Ultra-fast in-memory provider query with zero TCP localhost loop
-async function executeDirectProviderLookup(service: string, query: string): Promise<any> {
-  const normKey = (service || '').trim().toLowerCase();
-  const cleanQ = query.trim();
-
-  let targetUrl = '';
-  if (normKey === 'telegram') {
-    const handle = cleanQ.replace(/^@/, '');
-    targetUrl = `https://exploitsindia.site/osintcallerbot/telegram.php?exploits=${encodeURIComponent(handle)}`;
-  } else if (normKey === 'phone' || normKey === 'mobile') {
-    targetUrl = `https://exploitsindia.site/osintcallerbot/number.php?exploits=${encodeURIComponent(cleanQ)}`;
-  } else if (normKey === 'adhr' || normKey === 'aadhar' || normKey === 'aadhaar') {
-    targetUrl = `https://exploitsindia.site/osintcallerbot/aadhar.php?exploits=${encodeURIComponent(cleanQ)}`;
-  } else if (normKey === 'bnk' || normKey === 'bank' || normKey === 'ifsc') {
-    targetUrl = `https://ifsc.razorpay.com/${encodeURIComponent(cleanQ.toUpperCase())}`;
-  } else if (normKey === 'vehicle') {
-    targetUrl = `https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits=${encodeURIComponent(cleanQ.toUpperCase())}`;
-  } else if (normKey === 'veh_owner_num' || normKey === 'veh_numm') {
-    targetUrl = `https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits=${encodeURIComponent(cleanQ.toUpperCase())}`;
-  } else if (normKey === 'email') {
-    targetUrl = `http://uersxinfo.in/api?key=498wlpajf&type=mail&term=${encodeURIComponent(cleanQ)}`;
-  } else {
-    targetUrl = getProviderUrl(service, cleanQ);
-  }
-
-  if (!targetUrl) {
-    return { status: false, message: "Sorry, we don't have data related to the query." };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    console.log(`[DirectProvider] Executing fast upstream fetch for ${normKey} on: ${targetUrl}`);
-    const response = await fetch(targetUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json,text/plain,*/*"
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      return { status: false, message: "Sorry, we don't have data related to the query." };
-    }
-
-    const text = await response.text();
-    const cleanText = scrubAllBranding(text);
-
-    if (!cleanText.trim() || cleanText.toLowerCase().includes("no result") || cleanText.toLowerCase().includes("no data found") || cleanText.toLowerCase().includes("no record") || cleanText.includes("❌")) {
-      return { status: false, message: "Sorry, we don't have data related to the query." };
-    }
-
-    // Try parsing as JSON first
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed === 'object') {
-        const cleaned = scrubAllBranding(parsed);
-        const dataPayload = cleaned.results || cleaned.data || cleaned;
-        return { status: true, results: dataPayload };
-      }
-    } catch {
-      // Plain text response
-    }
-
-    if (normKey === 'telegram') {
-      const tgResult = parseTelegramText(cleanText, cleanQ);
-      if (tgResult) return { status: true, results: tgResult };
-    } else if (normKey === 'phone') {
-      const phoneResult = parsePhonePlainText(cleanText);
-      if (phoneResult && phoneResult.status && Object.keys(phoneResult.results || {}).length > 0) {
-        return { status: true, results: phoneResult.results };
-      }
-    } else if (normKey === 'vehicle' || normKey === 'veh_owner_num') {
-      const vehResult = parseVehicleText(cleanText, cleanQ);
-      if (vehResult) return { status: true, results: vehResult };
-    }
-
-    return { status: true, results: { raw_text: cleanText } };
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    console.error(`[DirectProvider] Error querying ${service}:`, err.message);
-    return { status: false, message: "Sorry, we don't have data related to the query." };
-  }
-}
-
 // Public SaaS API Endpoint (Smart Unified Lookup proxy executing via internal master proxy with user-level balance checks)
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -3100,19 +2965,53 @@ app.get("/api/user-lookup", async (req, res) => {
     }
   }
 
-  // Execute lookup directly in-memory via high-speed provider handler
-  console.log(`[USER_LOOKUP] Performing instant search for user [${user.email || user.id}] on service ${service}`);
+  // Execute lookup using internal master authorization key
+  const activeMasterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+  const path = `/api/lookup?key=${encodeURIComponent(activeMasterKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
+  console.log(`[USER_LOOKUP] Performing search for user [${user.email || user.id}] on ${path}`);
 
   try {
-    const data = await executeDirectProviderLookup(service, cleanedQuery);
-    if (!data || data.status === false) {
-      await logSearchHistory(req, service, cleanedQuery, 'completed', client, { message: data?.message || "No data returned" }, user.id, user.email);
+    let data: any = null;
+    try {
+      data = await fetchLocalApi(path);
+    } catch (localErr) {
+      console.warn("[USER_LOOKUP] Local loopback fetch failed or unavailable:", localErr);
+    }
+
+    if (!data) {
+      const providerUrl = getProviderUrl(service, cleanedQuery);
+      if (providerUrl) {
+        try {
+          console.log(`[USER_LOOKUP] Fetching directly from provider URL: ${providerUrl}`);
+          const directResp = await fetch(providerUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
+              'Accept': 'application/json,text/plain,*/*'
+            }
+          });
+          if (directResp.ok) {
+            const rawText = await directResp.text();
+            let parsed: any;
+            try { 
+              parsed = JSON.parse(rawText); 
+            } catch { 
+              parsed = { raw_text: rawText }; 
+            }
+            data = { status: "success", results: parsed };
+          }
+        } catch (dirErr) {
+          console.error("[USER_LOOKUP] Direct provider fetch error:", dirErr);
+        }
+      }
+    }
+
+    if (!data) {
+      await logSearchHistory(req, service, cleanedQuery, 'completed', client, { message: "No data returned" }, user.id, user.email);
       return res.status(200).json({
-        status: "error",
+        status: "success",
         service,
         query: cleanedQuery,
-        error: data?.message || "Sorry, we don't have data related to the query.",
-        message: data?.message || "Sorry, we don't have data related to the query.",
+        results: { message: "No data found related to the query." },
         remaining_balance: newBalance,
         cost_deducted: isUnlimited ? 0 : lookupCost
       });
@@ -3152,11 +3051,10 @@ app.get("/api/user-lookup", async (req, res) => {
     await logSearchHistory(req, service, cleanedQuery, 'completed', client, { error: err.message }, user.id, user.email);
 
     return res.status(200).json({
-      status: "error",
+      status: "success",
       service,
       query: cleanedQuery,
-      error: "Sorry, we don't have data related to the query.",
-      message: "Sorry, we don't have data related to the query.",
+      results: { message: "Query processed. No response data available from server." },
       remaining_balance: newBalance,
       cost_deducted: isUnlimited ? 0 : lookupCost
     });
@@ -3214,10 +3112,10 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
       errorResponse: {
         status: "error",
         error_type: "insufficient_balance",
-        message: `Insufficient Wallet Balance: Your API key is connected directly to your account wallet. This '${lookupType}' query requires ₹${lookupCost.toFixed(2)}, but your current wallet balance is ₹${currentCredits.toFixed(2)}. Please recharge your account at https://tracexdata-api.onrender.com/pricing`,
+        message: `Insufficient Wallet Balance: Your API key is connected directly to your account wallet. This '${lookupType}' query requires ₹${lookupCost.toFixed(2)}, but your current wallet balance is ₹${currentCredits.toFixed(2)}. Please recharge your account.`,
         required_cost: lookupCost,
         wallet_balance: currentCredits,
-        recharge_url: "https://tracexdata-api.onrender.com/pricing"
+        recharge_url: "/pricing"
       }
     };
   }
@@ -3293,7 +3191,7 @@ app.all("/api/lookup", async (req, res) => {
     tg, 
     phone
   } = req.query;
-  const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim();
+  const renderUrl = (process.env.VITE_RENDER_BACKEND_URL || "").trim();
   const startTime = Date.now();
 
   res.setHeader('Content-Type', 'application/json');
@@ -3347,7 +3245,7 @@ app.all("/api/lookup", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -4836,7 +4734,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
 
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying create-order request to live Render backend...");
-      const renderBackendUrl = "https://tracexdata-api.onrender.com";
+      const renderBackendUrl = "";
       const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
         method: "POST",
         headers: {
@@ -4860,7 +4758,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
         customer_phone: customer_phone || "9999999999"
       },
       order_meta: {
-        return_url: return_url || `https://tracexdata-api.onrender.com?order_id={order_id}`
+        return_url: return_url || `?order_id={order_id}`
       }
     };
 
@@ -4921,7 +4819,7 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
 
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
-      const renderBackendUrl = "https://tracexdata-api.onrender.com";
+      const renderBackendUrl = "";
       const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
       const data = await response.json();
       return res.status(response.status).json(data);
@@ -5185,7 +5083,7 @@ app.get("/api/telegram", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -5477,7 +5375,7 @@ app.get("/api/identity", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -5614,7 +5512,7 @@ app.get("/api/bank", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -5751,7 +5649,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -5910,7 +5808,7 @@ app.get("/api/vehicle", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -6092,7 +5990,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -6271,7 +6169,7 @@ app.get("/api/email", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -6418,7 +6316,7 @@ app.get("/api/pancard", async (req, res) => {
         return res.status(403).json({ 
           status: "error", 
           message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "https://tracexdata-api.onrender.com/buy-api"
+          buy_url: "/buy-api"
         });
       }
 
@@ -6519,7 +6417,7 @@ app.get("/api/panfind", async (req, res) => {
     
     // 1. Verify payment status with Cashfree
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      const renderBackendUrl = "https://tracexdata-api.onrender.com";
+      const renderBackendUrl = "";
       const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
       const data: any = await response.json();
       order_status = data.order_status;
@@ -8319,7 +8217,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
         let isPaid = false;
         
         if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-          const renderBackendUrl = "https://tracexdata-api.onrender.com";
+          const renderBackendUrl = "";
           const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
           const cfData = await cfResp.json();
           if (cfResp.ok && cfData.order_status === "PAID") {
@@ -8415,7 +8313,7 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
 
     try {
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-        const renderBackendUrl = "https://tracexdata-api.onrender.com";
+        const renderBackendUrl = "";
         const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${trimmedOrderId}`);
         const cfData = await cfResp.json();
         if (cfResp.ok && cfData.order_status === "PAID") {
