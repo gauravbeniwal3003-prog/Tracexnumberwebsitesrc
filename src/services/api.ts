@@ -449,7 +449,7 @@ export const fetchLookupWithRetry = async (number: string): Promise<any> => {
       let data = parsed;
 
       if (data?.status === "error" || (typeof data?.message === 'string' && data.message.toLowerCase().includes('serverdown'))) {
-        throw new Error(`Backend Engine Error: ${data?.message || 'ServerDown'}`);
+        throw new Error(data?.message || 'ServerDown');
       }
 
       const isValid = validateLookupResponse(data);

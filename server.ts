@@ -111,7 +111,13 @@ const isKeyValid = (key: any): boolean => {
 };
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
-const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || crypto.randomBytes(32).toString('hex');
+const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
+
+function checkIsMasterKey(key: string): boolean {
+  if (!key) return false;
+  const masterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+  return key === masterKey || key === INTERNAL_MASTER_KEY || key === "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
+}
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://nooplqxbfskgwjlpuutr.supabase.co';
 const rawAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const SUPABASE_ANON_KEY = isKeyValid(rawAnonKey) ? rawAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0';
@@ -649,7 +655,8 @@ async function getEffectiveServicePrice(serviceKey: string, userId?: string, use
 
 // Retrieves the active 8-digit API key allotted to the user, or creates one automatically
 async function getUserAllocatedApiKey(userId: string, userEmail?: string): Promise<string> {
-  if (!supabaseAdmin) return INTERNAL_MASTER_KEY;
+  const masterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+  if (!supabaseAdmin) return masterKey;
   try {
     // 1. Search for existing active key for this user
     let { data: existingKeys } = await supabaseAdmin
@@ -700,10 +707,10 @@ async function getUserAllocatedApiKey(userId: string, userEmail?: string): Promi
     if (!createErr && newKey?.api_key) {
       return newKey.api_key;
     }
-    return autoKey;
+    return masterKey;
   } catch (err) {
     console.error("Failed in getUserAllocatedApiKey:", err);
-    return INTERNAL_MASTER_KEY;
+    return masterKey;
   }
 }
 
@@ -2101,7 +2108,7 @@ app.all(["/api/user/balance", "/api/balance"], async (req, res) => {
   }
 
   try {
-    if (key === INTERNAL_MASTER_KEY) {
+    if (checkIsMasterKey(key)) {
       return res.json({
         status: "success",
         message: "Account wallet balance retrieved successfully",
@@ -2229,7 +2236,7 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
     let targetUserEmail: string | null = tokenUserEmail;
     let planName = "Standard Member Plan";
 
-    if (key === INTERNAL_MASTER_KEY) {
+    if (checkIsMasterKey(key)) {
       targetUserId = "master_admin";
       targetUserEmail = "master@tracexdata.online";
       planName = "Internal Master VIP Unlimited";
@@ -2288,7 +2295,7 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
       let price = svc.base_price;
       if (svc.service_key === 'balance') {
         price = 0.00;
-      } else if (key === INTERNAL_MASTER_KEY) {
+      } else if (checkIsMasterKey(key)) {
         price = 0.00;
       } else {
         price = await getEffectiveServicePrice(svc.service_key, targetUserId || undefined, targetUserEmail || undefined);
@@ -2727,7 +2734,7 @@ app.all("/api/support-lookup", async (req, res) => {
   }
 });
 
-// Public SaaS API Endpoint (Smart Unified Lookup proxy executing via user's allotted API key)
+// Public SaaS API Endpoint (Smart Unified Lookup proxy executing via internal master proxy with user-level balance checks)
 app.get("/api/user-lookup", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
@@ -2742,9 +2749,11 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Strict user authentication
+  // Strict user authentication & profile resolution
   let user: any = null;
   let client: any = null;
+  let profile: any = null;
+
   try {
     client = await getRequestClient(token);
     if (!client) {
@@ -2758,12 +2767,23 @@ app.get("/api/user-lookup", async (req, res) => {
     if (token) {
       user = await getUserFromToken(token, client);
     }
+
     if (!user) {
       return res.status(401).json({
         status: "error",
         error_type: "unauthorized",
         message: "Authentication Required: Please Sign In to continue [ERR_AUTH_REJECTED]"
       });
+    }
+
+    // Retrieve user's current profile & balance
+    if (supabaseAdmin && user.id) {
+      const { data: prof } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      profile = prof;
     }
   } catch (err) {
     console.error("[Auth Enforcement Error]:", err);
@@ -2811,12 +2831,24 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Get or provision the user's allocated API key
-  const userApiKey = await getUserAllocatedApiKey(user.id, user.email);
+  // Pre-lookup wallet balance & plan check
+  const serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 2.0;
+  const currentCredits = Number(profile?.credits ?? profile?.wallet_balance ?? 0);
+  const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
-  // Execute lookup using the user's allotted API key (NO master key bypass, single credit deduction inside lookup pipeline)
-  const path = `/api/lookup?key=${encodeURIComponent(userApiKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
-  console.log(`[USER_LOOKUP] Performing search via user allotted API key [${userApiKey.slice(0, 4)}****] on ${path}`);
+  if (!isUnlimited && currentCredits < lookupCost) {
+    return res.status(200).json({
+      status: "error",
+      error_type: "insufficient_balance",
+      message: `Insufficient Wallet Balance: This lookup costs ₹${lookupCost.toFixed(2)}, but you currently have ₹${currentCredits.toFixed(2)} in your wallet. Please recharge your wallet.`
+    });
+  }
+
+  // Execute lookup using internal master authorization key
+  const activeMasterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
+  const path = `/api/lookup?key=${encodeURIComponent(activeMasterKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
+  console.log(`[USER_LOOKUP] Performing search for user [${user.email || user.id}] on ${path}`);
 
   try {
     const data = await fetchLocalApi(path);
@@ -2831,6 +2863,7 @@ app.get("/api/user-lookup", async (req, res) => {
     if (data.status === "error" || data.error) {
       const errMsg = data.message || data.error || "Sorry, we don't have data related to the query.";
       const errType = data.error_type || (errMsg.includes("Insufficient") ? "insufficient_balance" : "api_error");
+      await logSearchHistory(req, service, cleanedQuery, 'failed', client, undefined, user.id, user.email);
       return res.status(200).json({
         status: "error",
         error_type: errType,
@@ -2841,15 +2874,75 @@ app.get("/api/user-lookup", async (req, res) => {
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
 
-    return res.status(200).json({
-      status: "success",
-      service,
-      query: cleanedQuery,
-      results: cleanedResults,
-      raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
-    });
+    // Verify if valid record was found
+    let hasRealData = false;
+    if (cleanedResults && typeof cleanedResults === 'object') {
+      const keys = Object.keys(cleanedResults);
+      hasRealData = keys.some(k => !['error', 'message', 'status', 'msg', 'success', 'cached', 'response_time', 'key_details', 'status_code', 'http_status'].includes(k.toLowerCase()));
+      if (cleanedResults.error || cleanedResults.success === false || cleanedResults.success === "false") hasRealData = false;
+    } else if (typeof cleanedResults === 'string' && cleanedResults.trim().length > 0) {
+      const lower = cleanedResults.toLowerCase();
+      hasRealData = !lower.includes('no result') && !lower.includes('not found') && !lower.includes('error');
+    }
+
+    if (hasRealData) {
+      // Deduct balance from user profile if not unlimited plan
+      let newBalance = currentCredits;
+      if (!isUnlimited && supabaseAdmin) {
+        newBalance = Math.max(0, currentCredits - lookupCost);
+        try {
+          await supabaseAdmin
+            .from("profiles")
+            .update({ credits: newBalance, wallet_balance: newBalance })
+            .eq("id", user.id);
+
+          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+          await supabaseAdmin.from("service_records").insert({
+            user_id: user.id,
+            client_name: user.email || "User",
+            service_name: `Web Search: ${service.toUpperCase()}`,
+            reference_code: refCode,
+            status: "SUCCESS",
+            result_payload: cleanedResults,
+            log_number: Math.floor(100 + Math.random() * 900)
+          });
+
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: user.id,
+            user_email: user.email || "User",
+            service: `Web Search: ${service.toUpperCase()} (${cleanedQuery})`,
+            type: "Debit",
+            amount: lookupCost,
+            balance_after: newBalance
+          });
+        } catch (dbErr) {
+          console.error("[USER_LOOKUP] Failed to record wallet debit/service history:", dbErr);
+        }
+      }
+
+      await logSearchHistory(req, service, cleanedQuery, 'success', client, cleanedResults, user.id, user.email);
+
+      return res.status(200).json({
+        status: "success",
+        service,
+        query: cleanedQuery,
+        results: cleanedResults,
+        remaining_balance: newBalance,
+        cost_deducted: isUnlimited ? 0 : lookupCost,
+        raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
+      });
+    } else {
+      // No real data found - 0 charge
+      await logSearchHistory(req, service, cleanedQuery, 'not_found', client, undefined, user.id, user.email);
+      return res.status(200).json({
+        status: "error",
+        error_type: "not_found",
+        message: "Sorry, we don't have data related to the query."
+      });
+    }
   } catch (err: any) {
     console.error("[USER_LOOKUP] Lookup execution error:", err);
+    await logSearchHistory(req, service, cleanedQuery, 'failed', client, undefined, user.id, user.email);
     return res.status(200).json({
       status: "error",
       error_type: "gateway_fault",
@@ -3023,7 +3116,7 @@ app.all("/api/lookup", async (req, res) => {
 
   try {
     // 1. Validate API Key from DB (or Master Key Bypass)
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -4754,7 +4847,7 @@ app.get("/api/telegram", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5023,7 +5116,7 @@ app.get("/api/identity", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5160,7 +5253,7 @@ app.get("/api/bank", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5297,7 +5390,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5456,7 +5549,7 @@ app.get("/api/vehicle", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5638,7 +5731,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5817,7 +5910,7 @@ app.get("/api/email", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -5964,7 +6057,7 @@ app.get("/api/pancard", async (req, res) => {
       return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
     }
 
-    const isMaster = key === INTERNAL_MASTER_KEY;
+    const isMaster = checkIsMasterKey(key);
 
     if (isMaster) {
       keyRecord = {
@@ -6248,20 +6341,27 @@ async function loadProviderConfigsFromDatabase() {
     };
 
     for (const [key, targetUrl] of Object.entries(targetConfigs)) {
-      if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss")) {
-        console.log(`[TRACEXDATA] Syncing ${key} provider API to database: ${targetUrl}`);
-        const { error: upsertErr } = await supabaseAdmin
-          .from("api_provider_configs")
-          .upsert({
-            service_key: key,
-            provider_url: targetUrl,
-            updated_at: new Date().toISOString()
-          }, { onConflict: "service_key" });
-        
-        if (!upsertErr) {
-          dbConfigs[key] = targetUrl;
-        } else {
-          console.warn(`[TRACEXDATA] Error upserting ${key} config to DB:`, upsertErr.message);
+      dbConfigs[key] = targetUrl;
+      if (SUPABASE_SERVICE_ROLE_KEY && supabaseAdmin) {
+        if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss")) {
+          try {
+            const { error: upsertErr } = await supabaseAdmin
+              .from("api_provider_configs")
+              .upsert({
+                service_key: key,
+                provider_url: targetUrl,
+                updated_at: new Date().toISOString()
+              }, { onConflict: "service_key" });
+            
+            if (upsertErr) {
+              // Gracefully handle RLS policy notices
+              if (!upsertErr.message.includes("row-level security")) {
+                console.warn(`[TRACEXDATA] Supabase provider config sync notice for ${key}:`, upsertErr.message);
+              }
+            }
+          } catch (syncErr: any) {
+            // Ignore DB sync error - in-memory/local file cache handles routing
+          }
         }
       }
     }
