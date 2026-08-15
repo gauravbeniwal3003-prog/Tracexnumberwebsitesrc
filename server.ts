@@ -3214,6 +3214,10 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   const dbProf = await getUnifiedUserProfile(targetId, targetEmail);
   if (dbProf) {
     userProfile = dbProf;
+    if (checkIsAdmin(userProfile.email)) {
+      userProfile.credits = 99999.00;
+      userProfile.unlimited_expiry = "2099-12-31T23:59:59.000Z";
+    }
   }
 
   if (!userProfile) {
