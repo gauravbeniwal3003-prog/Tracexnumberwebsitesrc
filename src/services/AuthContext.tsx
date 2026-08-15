@@ -248,7 +248,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const processImplicitFlow = async () => {
+      // Handle implicit grant flow in URL hash
+      if (window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const hashAccessToken = hashParams.get('access_token');
+        if (hashAccessToken) {
+          console.log("[OAUTH_FLOW] Access token detected in URL hash, setting session manually...");
+          try {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: hashAccessToken,
+              refresh_token: hashParams.get('refresh_token') || ""
+            });
+            if (data?.user) {
+              console.log("[OAUTH_FLOW] Implicit session set succeeded!");
+              setUser(data.user);
+              fetchProfile(data.user.id).catch(() => {});
+              
+              // Clean up hash parameters
+              try {
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+              } catch (e) {}
+
+              const path = window.location.pathname;
+              if (path === '/' || path === '/login' || path === '/signup' || path === '/register') {
+                window.location.href = '/dashboard';
+              }
+            }
+          } catch (err) {
+            console.warn("[OAUTH_FLOW_WARN] Failed to set session from URL hash:", err);
+          }
+        }
+      }
+    };
+
     processCodeFlow();
+    processImplicitFlow();
 
     // Restore mobile auth session if exists
     try {
