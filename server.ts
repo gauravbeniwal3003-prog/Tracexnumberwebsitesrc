@@ -358,7 +358,7 @@ app.use((req, res, next) => {
     req.headers.authorization = "Bearer local_tok_9999999999_fallback";
   } else {
     const token = authHeader.replace("Bearer ", "").trim();
-    const isLocalOrMob = token.startsWith("mob_tok_") || token.startsWith("local_tok_");
+    const isLocalOrMob = token.startsWith("mob_tok_") || token.startsWith("local_tok_") || token.startsWith("oauth_tok_");
     const isJwt = token.includes(".") && token.split(".").length === 3;
     if (!isLocalOrMob && !isJwt) {
       req.headers.authorization = "Bearer local_tok_9999999999_fallback";
