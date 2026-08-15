@@ -455,29 +455,22 @@ def get_user_from_token(request: Request) -> Optional[Any]:
             
         decoded_bytes = base64.b64decode(payload)
         data = json.loads(decoded_bytes.decode('utf-8', errors='ignore'))
-        if "sub" in data:
-            user_meta = data.get("user_metadata")
-            if not isinstance(user_meta, dict):
-                user_meta = {}
-            full_name = user_meta.get("full_name") or user_meta.get("name") or data.get("email", "User").split("@")[0]
-            
-            return UserMock({
-                "id": data["sub"],
-                "email": data.get("email", ""),
-                "phone": data.get("phone", ""),
-                "full_name": full_name
-            })
+        
+        user_id = data.get("sub") or data.get("id") or data.get("uid") or "00000000-0000-0000-0000-000000000000"
+        user_meta = data.get("user_metadata")
+        if not isinstance(user_meta, dict):
+            user_meta = {}
+        full_name = user_meta.get("full_name") or user_meta.get("name") or data.get("email", "User").split("@")[0]
+        
+        return UserMock({
+            "id": user_id,
+            "email": data.get("email", ""),
+            "phone": data.get("phone", ""),
+            "full_name": full_name
+        })
     except Exception as jwt_err:
-        pass
-        
-    try:
-        user_response = db.auth.get_user(token)
-        if user_response and hasattr(user_response, 'user') and user_response.user:
-            return user_response.user
-    except Exception as e:
-        pass
-        
-    return get_fallback()
+        print(f"[JWT_LOCAL_DECODE_ERR] {jwt_err}")
+        return get_fallback()
 
 def get_user_id(user) -> str:
     if hasattr(user, "id"):

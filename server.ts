@@ -311,26 +311,11 @@ const getUserFromToken = async (token: string, client?: any) => {
     }
   } catch (jwtErr) {
     console.error("[getUserFromToken] JWT local parse error:", jwtErr);
+    return await getFallbackUser();
   }
   
-  try {
-    const { data: userData, error } = 
-          await supabaseAdmin.auth.getUser(token);
-    if (!error && userData?.user) {
-      return userData.user;
-    }
-    // Fallback to client if admin client fails
-    const targetClient = client || await getRequestClient(token);
-    const { data: fallbackData, error: fallbackError } = await targetClient.auth.getUser(token);
-    if (!fallbackError && fallbackData?.user) {
-      return fallbackData.user;
-    }
-    console.warn("getUserFromToken failed to fetch user for token. Admin error:", error, "Fallback error:", fallbackError);
-    return await getFallbackUser();
-  } catch (err) {
-    console.error("getUserFromToken caught error:", err);
-    return await getFallbackUser();
-  }
+  // If it was a JWT, we should never call the network get_user API to prevent session ID errors
+  return await getFallbackUser();
 };
 
 // Cashfree Configuration
@@ -1503,8 +1488,8 @@ app.post("/api/profile/update", async (req, res) => {
       const mockUpdated = {
         id: user.id,
         email: user.email,
-        full_name: updateData.full_name || user.user_metadata?.full_name || "User",
-        avatar_url: updateData.avatar_url || user.user_metadata?.avatar_url || null,
+        full_name: updateData.full_name || (user.user_metadata as any)?.full_name || "User",
+        avatar_url: updateData.avatar_url || (user.user_metadata as any)?.avatar_url || null,
         credits: 10,
       };
       return res.json(mockUpdated);
