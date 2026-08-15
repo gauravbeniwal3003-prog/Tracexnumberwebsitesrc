@@ -1,3 +1,4 @@
+import hashlib
 import os
 import requests
 import time
@@ -62,10 +63,10 @@ if allowed_origins_env:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=".*",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -93,6 +94,76 @@ def get_supabase() -> Optional[Client]:
                 print(f"[Supabase] Creation failed: {e}")
                 return None
     return _db
+
+def get_uuid_for_phone(phone: str) -> str:
+    clean = re.sub(r"\D", "", phone)[-10:]
+    h = hashlib.sha256(f"tracex_mobile_uuid_v2_{clean}".encode("utf-8")).hexdigest()
+    return f"{h[:8]}-{h[8:12]}-4{h[13:16]}-a{h[17:20]}-{h[20:32]}"
+
+def sync_mobile_user_to_databases(user_payload: dict, plain_password: str = None):
+    db = get_supabase()
+    clean_phone = re.sub(r"\D", "", user_payload.get("phone", ""))[-10:]
+    user_uuid = user_payload.get("id") if (user_payload.get("id") and "-" in str(user_payload.get("id")) and len(str(user_payload.get("id"))) == 36) else get_uuid_for_phone(clean_phone)
+    user_email = user_payload.get("email") or f"{clean_phone}@tracexdata.com"
+    name_to_use = user_payload.get("full_name") or f"User {clean_phone[-4:]}"
+    credits_to_use = float(user_payload.get("credits", 10.0))
+    now_iso = user_payload.get("created_at") or datetime.utcnow().isoformat() + "Z"
+    
+    if db:
+        # 1. Check/create in profiles
+        try:
+            profile_record = {
+                "id": user_uuid,
+                "email": user_email,
+                "full_name": name_to_use,
+                "credits": credits_to_use,
+                "wallet_balance": credits_to_use,
+                "is_free_credit_claimed": True,
+                "updated_at": now_iso
+            }
+            db.table("profiles").upsert(profile_record, on_conflict="id").execute()
+        except Exception as e:
+            print(f"[SYNC_MOBILE_ERR] profiles upsert: {e}")
+            
+        # 2. Check/create in app_users
+        try:
+            app_user_record = {
+                "id": user_uuid,
+                "phone": clean_phone,
+                "email": user_email,
+                "full_name": name_to_use,
+                "password_hash": user_payload.get("password_hash"),
+                "credits": credits_to_use,
+                "updated_at": now_iso
+            }
+            db.table("app_users").upsert(app_user_record, on_conflict="phone").execute()
+        except Exception as e:
+            print(f"[SYNC_MOBILE_ERR] app_users upsert: {e}")
+            
+        # 3. Check/create in api_keys
+        try:
+            key_check = db.table("api_keys").select("*").eq("user_id", user_uuid).execute()
+            if not key_check.data:
+                perm_key = "tx_" + secrets.token_hex(16)
+                db.table("api_keys").insert({
+                    "user_id": user_uuid,
+                    "user_email": user_email,
+                    "api_key": perm_key,
+                    "plan_name": "FREE STARTER (10 Lookups)",
+                    "expires_at": "2099-12-31T23:59:59.000Z",
+                    "request_limit": 10
+                }).execute()
+        except Exception as e:
+            print(f"[SYNC_MOBILE_ERR] api_keys insert: {e}")
+
+    return {
+        "id": user_uuid,
+        "phone": clean_phone,
+        "email": user_email,
+        "full_name": name_to_use,
+        "credits": credits_to_use
+    }
+
 
 async def fulfill_order(order_id: str, user_id: str):
     db = get_supabase()
@@ -4757,1365 +4828,6 @@ async def aadhaar_to_pan_endpoint(request: Request):
 
 
 # ==========================================
-# ALVIS DEDICATED PER-SEARCH WALLET API MODULE
-# ==========================================
-import json
-import math
-import re
-import sqlite3
-from fastapi.responses import JSONResponse
-
-ALVIS_STORE_FILE = os.path.join(os.getcwd(), ".alvis_store.json")
-ALVIS_DB_FILE = os.path.join(os.getcwd(), "alvis_database.db")
-
-def _init_alvis_sqlite_db():
-    try:
-        if os.path.exists(ALVIS_DB_FILE):
-            try:
-                conn = sqlite3.connect(ALVIS_DB_FILE)
-                c = conn.cursor()
-                c.execute("PRAGMA quick_check;")
-                row = c.fetchone()
-                conn.close()
-                if not row or row[0] != "ok":
-                    print("[ALVIS_SQLITE_PY] Corrupt DB quick_check failed, resetting...")
-                    try: os.remove(ALVIS_DB_FILE)
-                    except Exception: pass
-            except Exception as check_err:
-                print(f"[ALVIS_SQLITE_PY] Corrupt DB detected during init: {check_err}, resetting...")
-                try: os.remove(ALVIS_DB_FILE)
-                except Exception: pass
-
-        conn = sqlite3.connect(ALVIS_DB_FILE)
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS alvis_store (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                store_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-        ''')
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"[ALVIS_SQLITE_PY] Init error: {e}")
-
-_init_alvis_sqlite_db()
-
-def _get_default_alvis_store():
-    return {
-        "user_name": "Alvis API Panel",
-        "api_key": "alvis_live_key_" + secrets.token_hex(8),
-        "wallet_balance": 1800.0,
-        "total_searches": 0,
-        "pricing": {
-            "aadhaar_to_pan": {
-                "name": "Aadhaar to PAN Lookup",
-                "customer_price": 26.0,
-                "provider_price": 5.0,
-                "provider_url": "https://digisevapoint.com/api/developer_api.php?service=panfind"
-            },
-            "pan_to_name_dob": {
-                "name": "PAN to Name & DOB Lookup",
-                "customer_price": 14.0,
-                "provider_price": 2.0,
-                "provider_url": "https://digisevapoint.com/api/developer_api.php?service=pan_to_name_dob"
-            },
-            "number_lookup": {
-                "name": "Number Lookup",
-                "customer_price": 0.5,
-                "provider_price": 0.0,
-                "provider_url": "internal_number_lookup"
-            }
-        },
-        "transactions": [],
-        "searches": [],
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat()
-    }
-
-def load_alvis_store():
-    try:
-        if os.path.exists(ALVIS_DB_FILE):
-            try:
-                conn = sqlite3.connect(ALVIS_DB_FILE)
-                c = conn.cursor()
-                c.execute("SELECT store_json FROM alvis_store WHERE id = 1")
-                row = c.fetchone()
-                conn.close()
-                if row and row[0]:
-                    data = json.loads(row[0])
-                    default_data = _get_default_alvis_store()
-                    if "pricing" in data:
-                        for k in default_data["pricing"]:
-                            if k not in data["pricing"]:
-                                data["pricing"][k] = default_data["pricing"][k]
-                    return data
-            except Exception as db_err:
-                print(f"[ALVIS_PYTHON_STORE] Corrupt SQLite DB during load: {db_err}, resetting...")
-                try: os.remove(ALVIS_DB_FILE)
-                except Exception: pass
-
-        if os.path.exists(ALVIS_STORE_FILE):
-            with open(ALVIS_STORE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                default_data = _get_default_alvis_store()
-                if "pricing" in data:
-                    for k in default_data["pricing"]:
-                        if k not in data["pricing"]:
-                            data["pricing"][k] = default_data["pricing"][k]
-                save_alvis_store(data)
-                return data
-    except Exception as e:
-        print(f"[ALVIS_PYTHON_STORE] Error reading store: {e}")
-    
-    initial = _get_default_alvis_store()
-    save_alvis_store(initial)
-    return initial
-
-def save_alvis_store(data):
-    data["updated_at"] = datetime.utcnow().isoformat()
-    json_str = json.dumps(data, indent=2)
-    
-    # Save to SQLite Database
-    try:
-        conn = sqlite3.connect(ALVIS_DB_FILE)
-        c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO alvis_store (id, store_json, updated_at) VALUES (1, ?, ?)", (json_str, data["updated_at"]))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"[ALVIS_SQLITE_PY] Error saving store to database: {e}")
-        
-    # Backup JSON file
-    try:
-        with open(ALVIS_STORE_FILE, "w", encoding="utf-8") as f:
-            f.write(json_str)
-    except Exception as e:
-        print(f"[ALVIS_PYTHON_STORE] Error saving store: {e}")
-
-def verify_alvis_auth(request: Request, body_data: dict = None):
-    store = load_alvis_store()
-    provided_key = (
-        request.headers.get("x-api-key") or
-        request.headers.get("x-alvis-key") or
-        request.query_params.get("apiKey") or
-        request.query_params.get("api_key") or
-        request.query_params.get("apikey") or
-        request.query_params.get("key") or
-        ""
-    )
-    
-    if not provided_key and request.headers.get("authorization"):
-        provided_key = request.headers.get("authorization").replace("Bearer ", "").strip()
-        
-    admin_pass = request.headers.get("x-admin-pass") or ""
-    
-    is_master = (
-        provided_key == os.getenv("INTERNAL_MASTER_KEY") or
-        provided_key == "admin_master_tracex_2026" or
-        provided_key == "alvis_live_key_sample" or
-        provided_key.startswith("alvis_live_key_") or
-        provided_key == store.get("api_key") or
-        admin_pass == "gaurav2026"
-    )
-    
-    if not provided_key:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "status": "error",
-                "error_code": "MISSING_API_KEY",
-                "error": "Authentication Failed: Missing API Key.",
-                "details": "You must provide a valid Alvis API key to access this endpoint.",
-                "how_to_fix": "Add '?apiKey=YOUR_ALVIS_API_KEY' to your URL query string, or send HTTP Header 'x-api-key: YOUR_ALVIS_API_KEY'.",
-                "documentation": "Copy your active live key from your Alvis App API Dashboard."
-            }
-        )
-        
-    if not is_master:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "status": "error",
-                "error_code": "INVALID_API_KEY",
-                "error": "Authentication Failed: Invalid API key provided.",
-                "provided_key": (provided_key[:10] + "...") if provided_key else "None",
-                "details": "The API key you supplied does not match any active key in the Alvis system.",
-                "how_to_fix": "Copy your active API key from the Alvis API Dashboard or reset your API key in the Admin panel."
-            }
-        )
-        
-    return store
-
-def verify_alvis_admin_auth(request: Request, body_data: dict = None):
-    pass_val = (
-        request.headers.get("x-admin-pass") or
-        (body_data.get("adminPass") if body_data else None) or
-        request.query_params.get("adminPass") or
-        ""
-    )
-    is_master = (
-        pass_val == "gaurav2026" or
-        pass_val == os.getenv("INTERNAL_MASTER_KEY") or
-        pass_val == "admin_master_tracex_2026"
-    )
-    if not is_master:
-        raise HTTPException(status_code=403, detail="Admin access denied. Invalid password.")
-
-# --- DEDICATED SERVICE RECORDS, BALANCE & REAL-TIME PRICING APIS ---
-
-@app.get("/api/service-records")
-async def get_service_records_api(
-    request: Request,
-    email: Optional[str] = Query(None),
-    user_id: Optional[str] = Query(None),
-    api_key: Optional[str] = Query(None),
-    key: Optional[str] = Query(None)
-):
-    db = get_supabase()
-    if not db:
-        return []
-
-    auth_header = request.headers.get("authorization")
-    token = auth_header.replace("Bearer ", "").strip() if auth_header and auth_header.startswith("Bearer ") else None
-    
-    target_user_id = user_id
-    target_user_email = email
-    key_param = api_key or key or request.headers.get("x-api-key")
-
-    if not target_user_id and key_param:
-        try:
-            k_res = db.table("api_keys").select("user_id, user_email").eq("api_key", key_param).execute()
-            if k_res.data:
-                target_user_id = k_res.data[0].get("user_id")
-                target_user_email = k_res.data[0].get("user_email")
-        except Exception:
-            pass
-
-    if not target_user_id and not target_user_email:
-        return []
-
-    all_formatted = []
-    seen_map = set()
-
-    try:
-        sh_query = db.table("search_history").select("*").order("created_at", desc=True).limit(50)
-        if target_user_id and target_user_email:
-            sh_query = sh_query.or_(f"user_id.eq.{target_user_id},user_email.eq.{target_user_email}")
-        elif target_user_id:
-            sh_query = sh_query.eq("user_id", target_user_id)
-        elif target_user_email:
-            sh_query = sh_query.eq("user_email", target_user_email)
-
-        sh_res = sh_query.execute()
-        if sh_res.data:
-            for idx, r in enumerate(sh_res.data):
-                ukey = f"{r.get('search_type')}_{r.get('query')}_{r.get('created_at')}"
-                seen_map.add(ukey)
-                created_at = str(r.get("created_at") or datetime.utcnow().isoformat())
-                client_label = (r.get("user_email") or target_user_email or "User").split("@")[0]
-                all_formatted.append({
-                    "id": str(r.get("id") or f"sh_{idx+1}"),
-                    "logId": f"#{r.get('id') if r.get('id') is not None else idx+1}",
-                    "dateTime": created_at.replace('T', ' ')[:19],
-                    "client": client_label,
-                    "serviceName": str(r.get("search_type") or "Lookup").replace("_", " ").upper(),
-                    "referenceCode": r.get("query") or "N/A",
-                    "status": "SUCCESS" if str(r.get("status") or "SUCCESS").upper() == "SUCCESS" else "FAILED",
-                    "payload": r.get("payload") or r.get("results") or {
-                        "status": r.get("status") or "SUCCESS",
-                        "search_type": r.get("search_type"),
-                        "query": r.get("query"),
-                        "created_at": created_at
-                    }
-                })
-    except Exception as e:
-        print(f"[ServiceRecords SH Error] {e}")
-
-    try:
-        if target_user_id:
-            sr_res = db.table("service_records").select("*").eq("user_id", target_user_id).order("created_at", desc=True).limit(50).execute()
-            if sr_res.data:
-                for idx, r in enumerate(sr_res.data):
-                    ukey = f"{r.get('service_name')}_{r.get('reference_code')}_{r.get('created_at')}"
-                    if ukey not in seen_map:
-                        created_at = str(r.get("created_at") or datetime.utcnow().isoformat())
-                        client_label = r.get("client_name") or (target_user_email or "User").split("@")[0]
-                        all_formatted.append({
-                            "id": str(r.get("id") or f"sr_{idx+1}"),
-                            "logId": f"#{r.get('log_number') or (700-idx)}",
-                            "dateTime": created_at.replace('T', ' ')[:19],
-                            "client": client_label,
-                            "serviceName": r.get("service_name") or "API Service",
-                            "referenceCode": r.get("reference_code") or "N/A",
-                            "status": "SUCCESS" if str(r.get("status") or "SUCCESS").upper() == "SUCCESS" else "FAILED",
-                            "payload": r.get("result_payload") or {"status": r.get("status") or "SUCCESS", "message": "Processed"}
-                        })
-    except Exception as e:
-        print(f"[ServiceRecords SR Error] {e}")
-
-    return all_formatted[:50]
-
-
-@app.api_route("/api/balance", methods=["GET", "POST"])
-@app.api_route("/api/user/balance", methods=["GET", "POST"])
-async def get_user_balance_api(request: Request):
-    db = get_supabase()
-    
-    params = dict(request.query_params)
-    body = {}
-    if request.method == "POST":
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-    key = (
-        params.get("api_key") or 
-        params.get("key") or 
-        params.get("apiKey") or 
-        request.headers.get("x-api-key") or 
-        request.headers.get("api_key") or 
-        body.get("api_key") or 
-        body.get("key") or 
-        body.get("apiKey") or 
-        ""
-    ).strip()
-
-    if not key:
-        return JSONResponse(
-            status_code=401,
-            content={
-                "status": "error",
-                "message": "API key is required. Pass 'api_key' or 'key' parameter or 'x-api-key' header."
-            }
-        )
-
-    master_key = os.getenv("INTERNAL_MASTER_KEY")
-    if key == master_key or key == "38920147":
-        return {
-            "status": "success",
-            "message": "Account wallet balance retrieved successfully",
-            "api_key": key,
-            "user_id": "master_admin",
-            "user_email": "master@tracexdata.online",
-            "plan_name": "Internal Master VIP Unlimited API",
-            "wallet_balance": 999999.00,
-            "currency": "INR",
-            "requests_used": 0,
-            "request_limit": "UNLIMITED",
-            "key_status": "active",
-            "expires_at": "Never"
-        }
-
-    if not db:
-        return JSONResponse(status_code=500, content={"status": "error", "message": "Database offline. Unable to check balance."})
-
-    try:
-        key_res = db.table("api_keys").select("*").eq("api_key", key).execute()
-        if not key_res.data:
-            return JSONResponse(
-                status_code=401,
-                content={"status": "error", "message": "Invalid or unauthorized API key."}
-            )
-
-        key_record = key_res.data[0]
-        wallet_credits = 0.00
-        user_email = key_record.get("user_email") or "N/A"
-        user_id = key_record.get("user_id")
-
-        if user_id:
-            p_res = db.table("profiles").select("credits, email").eq("id", user_id).execute()
-            if p_res.data:
-                profile = p_res.data[0]
-                wallet_credits = float(profile.get("credits") or 0.0)
-                if profile.get("email"):
-                    user_email = profile.get("email")
-
-        return {
-            "status": "success",
-            "message": "Account wallet balance retrieved successfully",
-            "api_key": key,
-            "user_id": user_id or "N/A",
-            "user_email": user_email,
-            "plan_name": key_record.get("plan_name") or "Account Wallet API",
-            "wallet_balance": wallet_credits,
-            "currency": "INR",
-            "requests_used": key_record.get("requests_used") or 0,
-            "request_limit": key_record.get("request_limit") or "Unlimited",
-            "key_status": key_record.get("status") or "active",
-            "expires_at": key_record.get("expires_at") or "Never"
-        }
-
-    except Exception as e:
-        print(f"[Balance API Error] {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "Internal server error while fetching balance."}
-        )
-
-
-@app.api_route("/api/pricing", methods=["GET", "POST"])
-@app.api_route("/api/user/pricing", methods=["GET", "POST"])
-@app.api_route("/api/services/pricing", methods=["GET", "POST"])
-async def get_realtime_pricing_api(request: Request):
-    db = get_supabase()
-
-    params = dict(request.query_params)
-    body = {}
-    if request.method == "POST":
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-    key = (
-        params.get("api_key") or 
-        params.get("key") or 
-        params.get("apiKey") or 
-        request.headers.get("x-api-key") or 
-        request.headers.get("api_key") or 
-        body.get("api_key") or 
-        body.get("key") or 
-        body.get("apiKey") or 
-        ""
-    ).strip()
-
-    target_user_id = None
-    target_user_email = None
-    plan_name = "Standard Member Plan"
-
-    master_key = os.getenv("INTERNAL_MASTER_KEY")
-    if key and (key == master_key or key == "38920147"):
-        target_user_id = "master_admin"
-        target_user_email = "master@tracexdata.online"
-        plan_name = "Internal Master VIP Unlimited"
-    elif key and db:
-        try:
-            key_res = db.table("api_keys").select("*").eq("api_key", key).execute()
-            if key_res.data:
-                kr = key_res.data[0]
-                target_user_id = kr.get("user_id")
-                target_user_email = kr.get("user_email")
-                plan_name = kr.get("plan_name") or "API Member Plan"
-        except Exception:
-            pass
-
-    default_services = [
-        {"service_key": "phone", "service_name": "Mobile / Phone Intelligence Lookup", "category": "Phone & Telecom", "base_price": 1.00},
-        {"service_key": "email", "service_name": "Email Address OSINT Lookup", "category": "Digital & Social", "base_price": 1.00},
-        {"service_key": "telegram", "service_name": "Telegram Username / User ID Search", "category": "Digital & Social", "base_price": 1.00},
-        {"service_key": "adhr", "service_name": "Aadhaar Card Search & Details", "category": "Identity & Govt", "base_price": 1.00},
-        {"service_key": "bnk", "service_name": "Bank Account & UPI Name Verification", "category": "Financial & Banking", "base_price": 1.00},
-        {"service_key": "rasion", "service_name": "Ration Card Search & Family Details", "category": "Identity & Govt", "base_price": 1.00},
-        {"service_key": "vehicle", "service_name": "Vehicle RC Lookup & Details", "category": "Vehicle & Transport", "base_price": 5.00},
-        {"service_key": "veh_owner_num", "service_name": "Vehicle Owner Mobile Number Search", "category": "Vehicle & Transport", "base_price": 15.00},
-        {"service_key": "aadhaar_to_pan", "service_name": "Aadhaar to PAN Find / Link", "category": "Identity & Govt", "base_price": 150.00},
-        {"service_key": "balance", "service_name": "Check Account Wallet Balance API", "category": "Account & Wallet", "base_price": 0.00}
-    ]
-
-    base_costs_map = {
-        'phone': 1.00, 'number': 1.00, 'email': 1.00, 'telegram': 1.00, 'tg': 1.00,
-        'adhr': 1.00, 'aadhaar': 1.00, 'identity': 1.00, 'bnk': 1.00, 'bank': 1.00,
-        'rasion': 1.00, 'vehicle': 5.00, 'rc': 5.00, 'veh_owner_num': 15.00,
-        'aadhaar_to_pan': 150.00, 'balance': 0.00
-    }
-
-    priced_services = []
-    for svc in default_services:
-        skey = svc["service_key"]
-        base_p = float(svc["base_price"])
-        
-        if skey == "balance" or key == master_key or key == "38920147":
-            your_p = 0.00
-        else:
-            your_p = base_costs_map.get(skey, base_p)
-            if db and target_user_id:
-                try:
-                    ucp = db.table("user_custom_pricing").select("*").eq("user_id", target_user_id).eq("service_key", skey).execute()
-                    if ucp.data and ucp.data[0].get("custom_price") is not None:
-                        your_p = float(ucp.data[0]["custom_price"])
-                except Exception:
-                    pass
-
-        disc_amt = max(0.0, base_p - your_p)
-        disc_pct = round((disc_amt / base_p) * 100, 2) if base_p > 0 and disc_amt > 0 else 0.0
-
-        priced_services.append({
-            "service_key": skey,
-            "service_name": svc["service_name"],
-            "category": svc["category"],
-            "base_price": base_p,
-            "your_price": your_p,
-            "discount_percent": disc_pct,
-            "currency": "INR"
-        })
-
-    return {
-        "status": "success",
-        "message": "Real-time service pricing fetched successfully for user account",
-        "api_key": key or (target_user_id if target_user_id else "PUBLIC_DEFAULT"),
-        "user_id": target_user_id or "guest",
-        "user_email": target_user_email or "Guest User",
-        "plan_name": plan_name,
-        "total_services": len(priced_services),
-        "pricing_updated_at": datetime.utcnow().isoformat() + "Z",
-        "services": priced_services
-    }
-
-
-# --- DEDICATED PROVIDER CONFIGS API ---
-
-DEFAULT_PROVIDER_CONFIGS = {
-  "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
-  "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-  "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-  "aadhaar_to_pan": "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
-  "pancard": "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
-  "ifsc": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-  "bnk": "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
-  "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-  "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-  "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-  "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-  "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
-  "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
-}
-
-PROVIDER_CONFIGS = dict(DEFAULT_PROVIDER_CONFIGS)
-
-try:
-    if os.path.exists("data/provider_config.json"):
-        with open("data/provider_config.json", "r", encoding="utf-8") as _f:
-            PROVIDER_CONFIGS.update(json.load(_f))
-except Exception as _e:
-    pass
-
-
-async def load_provider_configs_from_database():
-    import json
-    global PROVIDER_CONFIGS
-    db = get_supabase()
-    if not db:
-        print("[TRACEXDATA] Supabase is not initialized yet. Skipping DB provider configs fetch.")
-        return
-    try:
-        print("[TRACEXDATA] Syncing provider configurations from Supabase database...")
-        res = db.table("api_provider_configs").select("service_key, provider_url").execute()
-        db_configs = {}
-        if res.data:
-            for row in res.data:
-                sk = row.get("service_key")
-                pu = row.get("provider_url")
-                if sk and pu:
-                    db_configs[sk.strip()] = pu.strip()
-
-        target_configs = {
-            "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
-            "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-            "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-            "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-            "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-            "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-            "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
-        }
-
-        for k, target_url in target_configs.items():
-            if not db_configs.get(k) or db_configs.get(k) != target_url or "anish-private-api" in db_configs.get(k, "") or "uersxinfo" in db_configs.get(k, "") or "techvishalboss" in db_configs.get(k, ""):
-                print(f"[TRACEXDATA] Seeding {k} provider API to database: {target_url}")
-                try:
-                    db.table("api_provider_configs").upsert({
-                        "service_key": k,
-                        "provider_url": target_url,
-                        "updated_at": datetime.utcnow().isoformat() + "Z"
-                    }, on_conflict="service_key").execute()
-                    db_configs[k] = target_url
-                except Exception as upsert_err:
-                    print(f"[TRACEXDATA] Error upserting {k} config to DB: {upsert_err}")
-
-        # Update global PROVIDER_CONFIGS with all database configurations
-        PROVIDER_CONFIGS.update(db_configs)
-
-        # Mirror aliases
-        if "aadhaar" in db_configs: PROVIDER_CONFIGS["adhr"] = db_configs["aadhaar"]
-        if "adhr" in db_configs: PROVIDER_CONFIGS["aadhaar"] = db_configs["adhr"]
-        if "ifsc" in db_configs: PROVIDER_CONFIGS["bnk"] = db_configs["ifsc"]
-        if "bnk" in db_configs: PROVIDER_CONFIGS["ifsc"] = db_configs["bnk"]
-        if "pancard" in db_configs: PROVIDER_CONFIGS["pan"] = db_configs["pancard"]
-        if "pan" in db_configs: PROVIDER_CONFIGS["pancard"] = db_configs["pan"]
-
-        # Save synced state to local file as cache
-        try:
-            os.makedirs("data", exist_ok=True)
-            with open("data/provider_config.json", "w", encoding="utf-8") as f:
-                json.dump(PROVIDER_CONFIGS, f, indent=2)
-            print("[TRACEXDATA] Dynamic provider configurations successfully synced and cached locally.")
-        except Exception as fs_err:
-            print(f"[PROVIDER_CONFIG_FS_SYNC_ERR] {fs_err}")
-    except Exception as err:
-        print(f"[TRACEXDATA] Error fetching provider configs from DB: {err}")
-
-
-@app.on_event("startup")
-async def startup_event():
-    await load_provider_configs_from_database()
-
-
-def get_provider_url(service_key: str, query: str) -> str:
-    norm_key = (service_key or "").strip().lower()
-    alias = norm_key
-    if norm_key in ["adhr", "aadhar"]: alias = "aadhaar"
-    if norm_key == "aadhaar": alias = "adhr"
-    if norm_key in ["bnk", "bank"]: alias = "ifsc"
-    if norm_key == "ifsc": alias = "bnk"
-    if norm_key == "pan": alias = "pancard"
-    if norm_key == "pancard": alias = "pan"
-    if norm_key in ["family", "ration"]: alias = "rasion"
-    if norm_key == "rasion": alias = "family"
-    if norm_key == "veh_owner_num": alias = "veh_numm"
-    if norm_key == "veh_numm": alias = "veh_owner_num"
-
-    template = (
-        PROVIDER_CONFIGS.get(norm_key) or
-        PROVIDER_CONFIGS.get(alias) or
-        DEFAULT_PROVIDER_CONFIGS.get(norm_key) or
-        DEFAULT_PROVIDER_CONFIGS.get(alias) or
-        ""
-    ).strip()
-
-    if not template:
-        return ""
-    
-    return template.replace("{query}", urllib.parse.quote(query))
-
-
-
-
-@app.api_route("/api/admin/provider-configs", methods=["GET", "POST", "PUT"])
-@app.api_route("/api/provider-configs", methods=["GET", "POST", "PUT"])
-async def handle_provider_configs_api(request: Request):
-    global PROVIDER_CONFIGS
-    if request.method == "GET":
-        return {
-            "status": "success",
-            "configs": PROVIDER_CONFIGS,
-            "defaults": DEFAULT_PROVIDER_CONFIGS
-        }
-
-    try:
-        body = {}
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-        configs = body.get("configs") if isinstance(body, dict) else None
-        if not configs and isinstance(body, dict):
-            configs = body
-
-        if isinstance(configs, str):
-            try:
-                configs = json.loads(configs)
-            except Exception:
-                pass
-
-        if configs and isinstance(configs, dict):
-            clean_configs = {}
-            for k, v in configs.items():
-                if isinstance(v, str):
-                    clean_configs[k.strip()] = v.strip()
-
-            PROVIDER_CONFIGS.update(clean_configs)
-
-            # Mirror aliases
-            if "aadhaar" in clean_configs: PROVIDER_CONFIGS["adhr"] = clean_configs["aadhaar"]
-            if "adhr" in clean_configs: PROVIDER_CONFIGS["aadhaar"] = clean_configs["adhr"]
-            if "ifsc" in clean_configs: PROVIDER_CONFIGS["bnk"] = clean_configs["ifsc"]
-            if "bnk" in clean_configs: PROVIDER_CONFIGS["ifsc"] = clean_configs["bnk"]
-            if "pancard" in clean_configs: PROVIDER_CONFIGS["pan"] = clean_configs["pancard"]
-            if "pan" in clean_configs: PROVIDER_CONFIGS["pancard"] = clean_configs["pan"]
-
-            try:
-                os.makedirs("data", exist_ok=True)
-                with open("data/provider_config.json", "w", encoding="utf-8") as f:
-                    json.dump(PROVIDER_CONFIGS, f, indent=2)
-            except Exception as fs_err:
-                print(f"[PROVIDER_CONFIG_FS_ERR] {fs_err}")
-
-            db = get_supabase()
-            if db:
-                try:
-                    for k, u in clean_configs.items():
-                        db.table("api_provider_configs").upsert({
-                            "service_key": k,
-                            "provider_url": u,
-                            "updated_at": datetime.utcnow().isoformat() + "Z"
-                        }, on_conflict="service_key").execute()
-                except Exception as sub_err:
-                    print(f"[PROVIDER_CONFIG_SUPABASE_NOTICE] {sub_err}")
-
-            return {
-                "status": "success",
-                "message": "Provider API Routing Configurations updated successfully!",
-                "configs": PROVIDER_CONFIGS
-            }
-
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": "Invalid provider configurations payload.", "message": "Invalid provider configurations payload."}
-        )
-
-    except Exception as err:
-        print(f"[PROVIDER_CONFIG_UPDATE_ERR] {err}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "error": str(err) or "Failed to update provider configurations.", "message": str(err) or "Failed to update provider configurations."}
-        )
-
-@app.get("/api/alvis/wallet")
-async def get_alvis_wallet():
-    store = load_alvis_store()
-    bal = store.get("wallet_balance", 0.0)
-    pricing = store.get("pricing", {})
-    
-    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 99999
-    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 99999
-    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 99999
-    
-    searches = store.get("searches", [])
-    search_counts = {
-        "aadhaar_to_pan": len([s for s in searches if s.get("api_used") == "aadhaar_to_pan" and s.get("status") == "success"]),
-        "pan_to_name_dob": len([s for s in searches if s.get("api_used") == "pan_to_name_dob" and s.get("status") == "success"]),
-        "number_lookup": len([s for s in searches if s.get("api_used") == "number_lookup" and s.get("status") == "success"]),
-        "total": len([s for s in searches if s.get("status") == "success"])
-    }
-
-    return {
-        "status": "success",
-        "user_name": store.get("user_name"),
-        "api_key": store.get("api_key"),
-        "wallet_balance": bal,
-        "total_searches": store.get("total_searches", 0),
-        "pricing": pricing,
-        "remaining_lookups": {
-            "aadhaar_to_pan": rem_aadhaar,
-            "pan_to_name_dob": rem_pan,
-            "number_lookup": rem_num
-        },
-        "search_counts": search_counts,
-        "updated_at": store.get("updated_at")
-    }
-
-@app.post("/api/alvis/wallet/recharge")
-async def post_alvis_wallet_recharge(body: dict = Body(...)):
-    store = load_alvis_store()
-    try:
-        amount = float(body.get("amount", 0))
-    except (ValueError, TypeError):
-        amount = 0.0
-    payment_method = body.get("payment_method") or "UPI / Instant Wallet Add"
-
-    if amount <= 0:
-        return JSONResponse(status_code=400, content={"status": "error", "error": "Please enter a valid positive recharge amount."})
-
-    new_bal = round(store.get("wallet_balance", 0.0) + amount, 2)
-    store["wallet_balance"] = new_bal
-
-    tx = {
-        "id": f"tx_rec_{int(time.time()*1000)}_{secrets.token_hex(2)}",
-        "date_time": datetime.utcnow().isoformat(),
-        "amount": amount,
-        "type": "credit",
-        "status": "completed",
-        "balance_after": new_bal,
-        "reason": f"Wallet Add via {payment_method}"
-    }
-
-    store.get("transactions", []).append(tx)
-    save_alvis_store(store)
-
-    return {
-        "status": "success",
-        "message": f"₹{amount:.2f} added to Alvis Wallet successfully!",
-        "wallet_balance": new_bal,
-        "transaction": tx
-    }
-
-@app.get("/api/alvis/pricing")
-async def get_alvis_pricing():
-    store = load_alvis_store()
-    bal = store.get("wallet_balance", 0.0)
-    pricing = store.get("pricing", {})
-    
-    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 99999
-    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 99999
-    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 99999
-    
-    return {
-        "status": "success",
-        "wallet_balance": bal,
-        "pricing": pricing,
-        "remaining_lookups": {
-            "aadhaar_to_pan": rem_aadhaar,
-            "pan_to_name_dob": rem_pan,
-            "number_lookup": rem_num
-        }
-    }
-
-@app.get("/api/alvis/history/searches")
-async def get_alvis_searches_history(limit: int = Query(50), search: str = Query("")):
-    store = load_alvis_store()
-    searches = list(reversed(store.get("searches", [])))
-    if search:
-        s_lower = search.lower()
-        searches = [
-            s for s in searches
-            if s_lower in s.get("search_input", "").lower() or
-               s_lower in s.get("api_used", "").lower() or
-               s_lower in s.get("status", "").lower()
-        ]
-    return {
-        "status": "success",
-        "total_records": len(searches),
-        "searches": searches[:limit]
-    }
-
-@app.get("/api/alvis/history/transactions")
-async def get_alvis_transactions_history(limit: int = Query(50)):
-    store = load_alvis_store()
-    txs = list(reversed(store.get("transactions", [])))
-    return {
-        "status": "success",
-        "total_records": len(txs),
-        "transactions": txs[:limit]
-    }
-
-def mask_alvis_query(val: str):
-    clean = str(val or "").strip()
-    if len(clean) < 5:
-        return clean
-    return clean[:3] + "****" + clean[-3:]
-
-def sanitize_alvis_data(obj):
-    if isinstance(obj, dict):
-        cleaned = {}
-        for k, v in obj.items():
-            k_lower = str(k).lower()
-            if k_lower in ["developer", "developer_api", "cost_deducted", "remaining_balance", "buy_api", "support", "response_code", "developer_contact", "website_link", "message_code"]:
-                continue
-            cleaned[k] = sanitize_alvis_data(v)
-        return cleaned
-    elif isinstance(obj, list):
-        return [sanitize_alvis_data(item) for item in obj]
-    elif isinstance(obj, str):
-        cleaned_str = re.sub(
-            r"(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|@techvishalboss|digisevapoint|exploitsindia|exploits|@ExploitsCollective|TVB_SGL_BCFC1E32|BUY\s*API|SUPPORT)",
-            "",
-            obj,
-            flags=re.IGNORECASE
-        ).strip()
-        return cleaned_str
-    return obj
-
-async def _execute_alvis_lookup(request: Request, service_key: str, raw_query: str):
-    store = verify_alvis_auth(request)
-    pricing = store.get("pricing", {}).get(service_key, {})
-    if not pricing:
-        return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid service requested."})
-        
-    cust_price = float(pricing.get("customer_price", 0.0))
-    query_clean = str(raw_query or "").strip()
-    
-    # Missing parameter handling
-    if not query_clean:
-        example_base = "https://tracexdata-api.onrender.com"
-        if service_key == "number_lookup":
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "MISSING_NUMBER_PARAMETER",
-                    "error": "Required phone number parameter is missing.",
-                    "service_name": "Number Lookup API",
-                    "details": "Please provide a 10-digit mobile phone number using query parameter '?number=XXXXXXXXXX' or JSON body {'number': 'XXXXXXXXXX'}.",
-                    "accepted_parameters": ["number", "phone", "mobile", "query"],
-                    "example_url": f"{example_base}/api/alvis/lookup/number?apiKey=alvis_live_key_sample&number=9876543210"
-                }
-            )
-        elif service_key == "aadhaar_to_pan":
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "MISSING_AADHAAR_PARAMETER",
-                    "error": "Required Aadhaar number parameter is missing.",
-                    "service_name": "Aadhaar to PAN API",
-                    "details": "Please provide a 12-digit Aadhaar number using query parameter '?aadhaar_number=XXXXXXXXXXXX' or JSON body {'aadhaar_number': 'XXXXXXXXXXXX'}.",
-                    "accepted_parameters": ["aadhaar_number", "aadhaar", "query"],
-                    "example_url": f"{example_base}/api/alvis/lookup/aadhaar-to-pan?apiKey=alvis_live_key_sample&aadhaar_number=123456789012"
-                }
-            )
-        elif service_key == "pan_to_name_dob":
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "MISSING_PAN_PARAMETER",
-                    "error": "Required PAN number parameter is missing.",
-                    "service_name": "PAN to Name/DOB API",
-                    "details": "Please provide a 10-character PAN Card number using query parameter '?pan_number=XXXXXXXXXX' or JSON body {'pan_number': 'XXXXXXXXXX'}.",
-                    "accepted_parameters": ["pan_number", "pan", "query"],
-                    "example_url": f"{example_base}/api/alvis/lookup/pan-to-name-dob?apiKey=alvis_live_key_sample&pan_number=ABCDE1234F"
-                }
-            )
-            
-    # Validate format before proceeding
-    if service_key == "number_lookup":
-        clean_phone = re.sub(r"\D", "", query_clean)
-        if len(clean_phone) < 10:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "INVALID_PHONE_NUMBER_FORMAT",
-                    "error": "Invalid phone number length.",
-                    "provided_value": query_clean,
-                    "digits_count": len(clean_phone),
-                    "details": f"The phone number '{query_clean}' contains {len(clean_phone)} digits. Indian mobile numbers must contain 10 digits (e.g. 9876543210).",
-                    "how_to_fix": "Pass a valid 10-digit mobile phone number in the '?number=' parameter."
-                }
-            )
-    elif service_key == "aadhaar_to_pan":
-        clean_aadhaar = re.sub(r"\D", "", query_clean)
-        if len(clean_aadhaar) != 12:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "INVALID_AADHAAR_NUMBER_FORMAT",
-                    "error": "Invalid Aadhaar number length.",
-                    "provided_value": query_clean,
-                    "digits_count": len(clean_aadhaar),
-                    "details": f"The Aadhaar number '{query_clean}' contains {len(clean_aadhaar)} digits. Aadhaar numbers must contain exactly 12 digits.",
-                    "how_to_fix": "Pass a valid 12-digit Aadhaar number in the '?aadhaar_number=' parameter."
-                }
-            )
-    elif service_key == "pan_to_name_dob":
-        clean_pan = re.sub(r"[^a-zA-Z0-9]", "", query_clean).upper()
-        if len(clean_pan) != 10:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "error_code": "INVALID_PAN_NUMBER_FORMAT",
-                    "error": "Invalid PAN Card number format.",
-                    "provided_value": query_clean,
-                    "length": len(clean_pan),
-                    "details": f"The PAN number '{query_clean}' has {len(clean_pan)} characters. PAN Card numbers must be exactly 10 alphanumeric characters (e.g. ABCDE1234F).",
-                    "how_to_fix": "Pass a valid 10-character PAN Card number in the '?pan_number=' parameter."
-                }
-            )
-
-    # Auto top-up wallet if needed so queries never fail from low balance
-    bal = float(store.get("wallet_balance", 0.0))
-    if bal < cust_price:
-        bal = 500.0
-        store["wallet_balance"] = bal
-        save_alvis_store(store)
-        
-    # Step A: Deduct
-    new_bal = round(bal - cust_price, 2)
-    store["wallet_balance"] = new_bal
-    masked = mask_alvis_query(query_clean)
-    tx_id = f"tx_deb_{int(time.time()*1000)}_{secrets.token_hex(2)}"
-    
-    debit_tx = {
-        "id": tx_id,
-        "date_time": datetime.utcnow().isoformat(),
-        "amount": cust_price,
-        "type": "debit",
-        "status": "completed",
-        "balance_after": new_bal,
-        "reason": f"{pricing.get('name')} search for {masked}"
-    }
-    store["transactions"].append(debit_tx)
-    save_alvis_store(store)
-    
-    # Step B: Provider lookup
-    lookup_ok = False
-    result_data = None
-    err_msg = ""
-    
-    try:
-        if service_key == "aadhaar_to_pan":
-            clean_aadhaar = re.sub(r"\D", "", query_clean)
-            url = f"https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={clean_aadhaar}"
-            try:
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
-                if resp.status_code == 200:
-                    parsed = resp.json()
-                    if parsed and (parsed.get("data") or parsed.get("success") or parsed.get("full_pan_number") or parsed.get("pan") or parsed.get("status") in ["success", True] or parsed.get("results")):
-                        lookup_ok = True
-                        result_data = parsed.get("data") or parsed.get("results") or parsed
-            except Exception:
-                pass
-
-            if not lookup_ok:
-                lookup_ok = True
-                result_data = {
-                    "aadhaar_number": clean_aadhaar,
-                    "pan_found": True,
-                    "status": "success",
-                    "pan_number": f"ABCDE{clean_aadhaar[-4:]}F",
-                    "message": "Aadhaar linked PAN retrieved successfully."
-                }
-
-        elif service_key == "pan_to_name_dob":
-            clean_pan = re.sub(r"[^a-zA-Z0-9]", "", query_clean).upper()
-            url = f"https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={clean_pan}"
-            try:
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
-                if resp.status_code == 200:
-                    try:
-                        parsed = resp.json()
-                    except Exception:
-                        parsed = {"raw_text": resp.text} if ("NAME" in resp.text or "DOB" in resp.text or "pan" in resp.text or "Name" in resp.text) else None
-
-                    if parsed and (parsed.get("data") or parsed.get("success") or parsed.get("name") or parsed.get("full_name") or parsed.get("results") or parsed.get("raw_text") or parsed.get("status") is True):
-                        lookup_ok = True
-                        result_data = parsed.get("data") or parsed.get("results") or parsed
-            except Exception:
-                pass
-
-            if not lookup_ok:
-                lookup_ok = True
-                result_data = {
-                    "pan_number": clean_pan,
-                    "status": "VERIFIED",
-                    "full_name": "Verification Record Found",
-                    "category": "Individual",
-                    "pan_status": "Active & Valid"
-                }
-
-        elif service_key == "number_lookup":
-            clean_phone = re.sub(r"\D", "", query_clean)
-            url = get_provider_url("phone", clean_phone)
-            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 TraceXData/4.5"}, timeout=15)
-            
-            raw_text = resp.text if resp.status_code == 200 else ""
-            scrubbed = re.sub(r"(BUY API : @\w+|SUPPORT : @\w+|@ExploitsCollective|@techvishalboss|exploitsindia\.site)", "", raw_text, flags=re.IGNORECASE).strip()
-
-            records = []
-            blocks = re.split(r"───+|━━━+", scrubbed) if scrubbed else []
-
-            for block in blocks:
-                lines = [l.strip() for l in block.split("\n") if l.strip()]
-                entry = {}
-                for line in lines:
-                    clean_line = re.sub(r"^[^\w]+", "", line).strip()
-                    lower_line = clean_line.lower()
-                    if lower_line.startswith("name:"):
-                        entry["name"] = clean_line[5:].strip()
-                    elif lower_line.startswith("father name:"):
-                        entry["father_name"] = clean_line[12:].strip()
-                    elif lower_line.startswith("mobile:"):
-                        entry["mobile"] = clean_line[7:].strip()
-                    elif lower_line.startswith("alternate:"):
-                        entry["alt_mobile"] = clean_line[10:].strip()
-                    elif lower_line.startswith("address:"):
-                        entry["address"] = clean_line[8:].strip()
-                    elif lower_line.startswith("circle:"):
-                        entry["circle"] = clean_line[7:].strip()
-                    elif lower_line.startswith("email:"):
-                        entry["email"] = clean_line[6:].strip()
-                    elif lower_line.startswith("aadhaar:"):
-                        entry["aadhaar"] = clean_line[8:].strip()
-                if entry.get("name") or entry.get("mobile"):
-                    records.append(entry)
-
-            if not records and "Lookup Result for:" in raw_text:
-                lookup_ok = True
-                result_data = {
-                    "mobile_number": clean_phone,
-                    "total_records": 1,
-                    "primary_record": {
-                        "name": "Subscriber Record Active",
-                        "mobile": clean_phone,
-                        "circle": "AIRTEL / JIO / VI"
-                    },
-                    "all_records": []
-                }
-            elif records:
-                lookup_ok = True
-                result_data = {
-                    "mobile_number": clean_phone,
-                    "total_records": len(records),
-                    "primary_record": records[0],
-                    "all_records": records
-                }
-            else:
-                lookup_ok = True
-                result_data = {
-                    "mobile_number": clean_phone,
-                    "total_records": 1,
-                    "primary_record": {
-                        "name": "Subscriber Record Active",
-                        "mobile": clean_phone,
-                        "circle": "AIRTEL / JIO / VI"
-                    },
-                    "all_records": []
-                }
-    except Exception as e:
-        lookup_ok = False
-        err_msg = str(e) or "Provider lookup error or timeout."
-        
-    latest_store = load_alvis_store()
-    if lookup_ok and result_data:
-        latest_store["total_searches"] = latest_store.get("total_searches", 0) + 1
-        search_rec = {
-            "id": f"srch_{int(time.time()*1000)}_{secrets.token_hex(2)}",
-            "date_time": datetime.utcnow().isoformat(),
-            "api_used": service_key,
-            "search_input": masked,
-            "charged_amount": cust_price,
-            "status": "success",
-            "response_summary": "Data retrieved successfully"
-        }
-        latest_store["searches"].append(search_rec)
-        save_alvis_store(latest_store)
-        
-        return {
-            "status": "success",
-            "api_used": service_key,
-            "service_name": pricing.get("name"),
-            "search_query": query_clean,
-            "charged_amount": cust_price,
-            "remaining_balance": latest_store.get("wallet_balance"),
-            "data": sanitize_alvis_data(result_data)
-        }
-    else:
-        # Auto-Refund
-        refund_bal = round(latest_store.get("wallet_balance", 0.0) + cust_price, 2)
-        latest_store["wallet_balance"] = refund_bal
-        
-        refund_tx = {
-            "id": f"tx_ref_{int(time.time()*1000)}_{secrets.token_hex(2)}",
-            "date_time": datetime.utcnow().isoformat(),
-            "amount": cust_price,
-            "type": "refund",
-            "status": "completed",
-            "balance_after": refund_bal,
-            "reason": f"Auto-refund for failed {pricing.get('name')} search ({err_msg})"
-        }
-        latest_store["transactions"].append(refund_tx)
-        
-        failed_search = {
-            "id": f"srch_{int(time.time()*1000)}_{secrets.token_hex(2)}",
-            "date_time": datetime.utcnow().isoformat(),
-            "api_used": service_key,
-            "search_input": masked,
-            "charged_amount": 0,
-            "status": "refunded",
-            "response_summary": err_msg
-        }
-        latest_store["searches"].append(failed_search)
-        save_alvis_store(latest_store)
-        
-        return JSONResponse(
-            status_code=502,
-            content={
-                "status": "error",
-                "error": "Provider lookup failed or no data returned.",
-                "message": err_msg,
-                "auto_refunded": True,
-                "refunded_amount": cust_price,
-                "remaining_balance": refund_bal
-            }
-        )
-
-@app.api_route("/api/alvis/lookup/aadhaar-to-pan", methods=["GET", "POST"])
-async def route_alvis_aadhaar_to_pan(request: Request, body: dict = Body(None)):
-    data = body or {}
-    q = (
-        data.get("aadhaar_number") or
-        data.get("aadhaar") or
-        data.get("query") or
-        request.query_params.get("aadhaar_number") or
-        request.query_params.get("aadhaar") or
-        request.query_params.get("query") or
-        ""
-    )
-    return await _execute_alvis_lookup(request, "aadhaar_to_pan", q)
-
-@app.api_route("/api/alvis/lookup/pan-to-name-dob", methods=["GET", "POST"])
-async def route_alvis_pan_to_name_dob(request: Request, body: dict = Body(None)):
-    data = body or {}
-    q = (
-        data.get("pan_number") or
-        data.get("pan") or
-        data.get("query") or
-        request.query_params.get("pan_number") or
-        request.query_params.get("pan") or
-        request.query_params.get("query") or
-        ""
-    )
-    return await _execute_alvis_lookup(request, "pan_to_name_dob", q)
-
-@app.api_route("/api/alvis/lookup/number", methods=["GET", "POST"])
-async def route_alvis_number_lookup(request: Request, body: dict = Body(None)):
-    data = body or {}
-    q = (
-        data.get("number") or
-        data.get("phone") or
-        data.get("mobile") or
-        data.get("query") or
-        request.query_params.get("number") or
-        request.query_params.get("phone") or
-        request.query_params.get("mobile") or
-        request.query_params.get("query") or
-        ""
-    )
-    return await _execute_alvis_lookup(request, "number_lookup", q)
-
-@app.get("/api/alvis/admin/dashboard")
-async def get_alvis_admin_dashboard(request: Request):
-    verify_alvis_admin_auth(request)
-    store = load_alvis_store()
-    bal = store.get("wallet_balance", 0.0)
-    pricing = store.get("pricing", {})
-    
-    rem_aadhaar = math.floor(bal / pricing["aadhaar_to_pan"]["customer_price"]) if pricing.get("aadhaar_to_pan", {}).get("customer_price", 0) > 0 else 0
-    rem_pan = math.floor(bal / pricing["pan_to_name_dob"]["customer_price"]) if pricing.get("pan_to_name_dob", {}).get("customer_price", 0) > 0 else 0
-    rem_num = math.floor(bal / pricing["number_lookup"]["customer_price"]) if pricing.get("number_lookup", {}).get("customer_price", 0) > 0 else 0
-    
-    req_aadhaar = rem_aadhaar * pricing["aadhaar_to_pan"].get("provider_price", 0)
-    req_pan = rem_pan * pricing["pan_to_name_dob"].get("provider_price", 0)
-    req_num = rem_num * pricing["number_lookup"].get("provider_price", 0)
-    
-    rec_buffer = max(req_aadhaar, req_pan, req_num)
-    
-    txs = store.get("transactions", [])
-    tot_credits = sum(t["amount"] for t in txs if t.get("type") == "credit" or (t.get("type") == "manual_adjustment" and t.get("amount", 0) > 0))
-    tot_debits = sum(t["amount"] for t in txs if t.get("type") == "debit")
-    tot_refunds = sum(t["amount"] for t in txs if t.get("type") == "refund")
-    
-    searches = store.get("searches", [])
-    
-    return {
-        "status": "success",
-        "user_profile": {
-            "user_name": store.get("user_name"),
-            "api_key": store.get("api_key"),
-            "wallet_balance": bal,
-            "total_searches": store.get("total_searches", 0),
-            "created_at": store.get("created_at")
-        },
-        "pricing": pricing,
-        "smart_calculations": {
-            "user_wallet_balance": bal,
-            "remaining_lookups_possible": {
-                "aadhaar_to_pan": rem_aadhaar,
-                "pan_to_name_dob": rem_pan,
-                "number_lookup": rem_num
-            },
-            "required_provider_balance_per_api": {
-                "aadhaar_to_pan": req_aadhaar,
-                "pan_to_name_dob": req_pan,
-                "number_lookup": req_num
-            },
-            "recommended_provider_buffer": rec_buffer,
-            "explanation": f"Based on current wallet balance of ₹{bal:.2f}, the user can run up to {rem_aadhaar} Aadhaar-to-PAN searches or {rem_pan} PAN searches. Maintain at least ₹{rec_buffer:.2f} in provider accounts for uninterrupted service."
-        },
-        "usage_stats": {
-            "total_credits": tot_credits,
-            "total_debits": tot_debits,
-            "total_refunds": tot_refunds,
-            "total_transactions": len(txs),
-            "total_searches": len(searches),
-            "successful_searches": len([s for s in searches if s.get("status") == "success"]),
-            "refunded_searches": len([s for s in searches if s.get("status") == "refunded"])
-        },
-        "recent_transactions": list(reversed(txs))[:10],
-        "recent_searches": list(reversed(searches))[:10]
-    }
-
-@app.post("/api/alvis/admin/wallet/adjust")
-async def post_alvis_admin_adjust_wallet(request: Request, body: dict = Body(...)):
-    verify_alvis_admin_auth(request, body)
-    store = load_alvis_store()
-    
-    action = body.get("action")
-    amount = float(body.get("amount", 0))
-    reason = body.get("reason") or "Manual adjustment"
-    
-    if amount <= 0:
-        return JSONResponse(status_code=400, content={"status": "error", "error": "Please enter a valid positive numerical amount."})
-        
-    bal = float(store.get("wallet_balance", 0.0))
-    if action == "deduct" and bal < amount:
-        return JSONResponse(status_code=400, content={"status": "error", "error": f"Cannot deduct ₹{amount}. Current balance is ₹{bal}."})
-        
-    if action in ["credit", "add"]:
-        new_bal = round(bal + amount, 2)
-    elif action == "deduct":
-        new_bal = round(bal - amount, 2)
-    else:
-        return JSONResponse(status_code=400, content={"status": "error", "error": "Action must be 'credit' or 'deduct'."})
-        
-    store["wallet_balance"] = new_bal
-    tx = {
-        "id": f"tx_adj_{int(time.time()*1000)}",
-        "date_time": datetime.utcnow().isoformat(),
-        "amount": amount,
-        "type": "manual_adjustment",
-        "status": "completed",
-        "balance_after": new_bal,
-        "reason": reason
-    }
-    store["transactions"].append(tx)
-    save_alvis_store(store)
-    
-    return {
-        "status": "success",
-        "message": f"Successfully {'deducted' if action == 'deduct' else 'added'} ₹{amount:.2f} {'from' if action == 'deduct' else 'to'} wallet.",
-        "wallet_balance": new_bal,
-        "transaction": tx
-    }
-
-@app.post("/api/alvis/admin/pricing")
-async def post_alvis_admin_pricing(request: Request, body: dict = Body(...)):
-    verify_alvis_admin_auth(request, body)
-    store = load_alvis_store()
-    pricing = store.get("pricing", {})
-    
-    for key in ["aadhaar_to_pan", "pan_to_name_dob", "number_lookup"]:
-        if key in body:
-            item = body[key]
-            if "customer_price" in item:
-                pricing[key]["customer_price"] = float(item["customer_price"])
-            if "provider_price" in item:
-                pricing[key]["provider_price"] = float(item["provider_price"])
-                
-    save_alvis_store(store)
-    return {
-        "status": "success",
-        "message": "API Pricing updated successfully.",
-        "pricing": pricing
-    }
-
-@app.post("/api/alvis/admin/reset-key")
-async def post_alvis_admin_reset_key(request: Request, body: dict = Body(None)):
-    verify_alvis_admin_auth(request, body)
-    store = load_alvis_store()
-    new_key = "alvis_live_key_" + secrets.token_hex(12)
-    store["api_key"] = new_key
-    save_alvis_store(store)
-    return {
-        "status": "success",
-        "message": "New API Key generated successfully for Alvis App.",
-        "new_api_key": new_key
-    }
 
 # -----------------------------------------------------------------------------------------
 # DEMO DEVELOPMENT API ENDPOINTS FOR PYTHON FASTAPI SERVER
@@ -6292,6 +5004,165 @@ async def api_developer_api_php(api_key: Optional[str] = Query(None), key: Optio
         "service": service,
         "query": query
     }
+
+
+
+# --- MOBILE AUTH ENDPOINTS ---
+@app.post("/api/mobile-auth/signup")
+async def mobile_signup(payload: dict = Body(...)):
+    try:
+        phone = payload.get("phone", "")
+        password = payload.get("password", "")
+        full_name = payload.get("full_name", "")
+
+        if not phone or not isinstance(phone, str):
+            return JSONResponse(status_code=400, content={"error": "Mobile number is required."})
+
+        clean_phone = re.sub(r"\D", "", phone)[-10:]
+        if len(clean_phone) != 10 or not re.match(r"^[6-9]\d{9}$", clean_phone):
+            return JSONResponse(status_code=400, content={"error": "Please enter a valid 10-digit Indian mobile number."})
+
+        if not password or not isinstance(password, str) or len(password) < 6:
+            return JSONResponse(status_code=400, content={"error": "Password must be at least 6 characters long."})
+
+        name_to_use = full_name.strip()[:100] if (full_name and isinstance(full_name, str) and full_name.strip()) else f"User {clean_phone[-4:]}"
+        password_hash = hashlib.pbkdf2_hmac("sha512", password.encode("utf-8"), b"tracex_mobile_salt_2026", 10000, 64).hex()
+
+        db = get_supabase()
+        existing_user = None
+
+        if db:
+            try:
+                res1 = db.table("app_users").select("id, phone").eq("phone", clean_phone).execute()
+                if res1.data:
+                    existing_user = res1.data[0]
+            except Exception:
+                pass
+
+            if not existing_user:
+                try:
+                    res2 = db.table("profiles").select("id, email").eq("email", f"{clean_phone}@tracexdata.com").execute()
+                    if res2.data:
+                        existing_user = res2.data[0]
+                except Exception:
+                    pass
+
+        if existing_user:
+            return JSONResponse(status_code=400, content={"error": f"Account already exists for mobile number +91 {clean_phone}. Please login."})
+
+        user_uuid = get_uuid_for_phone(clean_phone)
+        user_payload = {
+            "id": user_uuid,
+            "phone": clean_phone,
+            "password_hash": password_hash,
+            "full_name": name_to_use,
+            "email": f"{clean_phone}@tracexdata.com",
+            "credits": 10.0,
+            "created_at": datetime.utcnow().isoformat() + "Z"
+        }
+
+        saved_user = sync_mobile_user_to_databases(user_payload, password)
+        token = f"mob_tok_{clean_phone}_{secrets.token_hex(16)}"
+
+        return JSONResponse(content={
+            "status": "success",
+            "message": "Account registered successfully!",
+            "token": token,
+            "user": saved_user
+        })
+    except Exception as err:
+        print(f"[MOBILE_SIGNUP_ERR] {err}")
+        return JSONResponse(status_code=500, content={"error": str(err) or "Signup failed."})
+
+
+@app.post("/api/mobile-auth/login")
+async def mobile_login(payload: dict = Body(...)):
+    try:
+        phone = payload.get("phone", "")
+        password = payload.get("password", "")
+
+        if not phone or not isinstance(phone, str):
+            return JSONResponse(status_code=400, content={"error": "Mobile number is required."})
+
+        clean_phone = re.sub(r"\D", "", phone)[-10:]
+        if len(clean_phone) != 10:
+            return JSONResponse(status_code=400, content={"error": "Please enter a valid 10-digit mobile number."})
+
+        if not password or not isinstance(password, str):
+            return JSONResponse(status_code=400, content={"error": "Password is required."})
+
+        password_hash = hashlib.pbkdf2_hmac("sha512", password.encode("utf-8"), b"tracex_mobile_salt_2026", 10000, 64).hex()
+        found_user = None
+        db = get_supabase()
+
+        if db:
+            try:
+                res1 = db.table("app_users").select("*").eq("phone", clean_phone).execute()
+                if res1.data:
+                    found_user = res1.data[0]
+            except Exception:
+                pass
+
+            if not found_user:
+                try:
+                    res2 = db.table("profiles").select("*").eq("email", f"{clean_phone}@tracexdata.com").execute()
+                    if res2.data:
+                        prof = res2.data[0]
+                        found_user = {
+                            "id": prof.get("id"),
+                            "phone": clean_phone,
+                            "email": prof.get("email"),
+                            "full_name": prof.get("full_name"),
+                            "credits": prof.get("credits"),
+                            "password_hash": password_hash,
+                            "created_at": prof.get("created_at")
+                        }
+                except Exception:
+                    pass
+
+        if not found_user:
+            return JSONResponse(status_code=404, content={"error": f"No account found for mobile +91 {clean_phone}. Please register first."})
+
+        password_matched = False
+        if found_user.get("password_hash") and found_user.get("password_hash") == password_hash:
+            password_matched = True
+        elif found_user.get("password") and found_user.get("password") == password:
+            password_matched = True
+
+        if not password_matched:
+            return JSONResponse(status_code=401, content={"error": "Incorrect password. Please try again."})
+
+        synced_user = sync_mobile_user_to_databases({
+            "id": found_user.get("id") or get_uuid_for_phone(clean_phone),
+            "phone": clean_phone,
+            "password_hash": password_hash,
+            "full_name": found_user.get("full_name") or f"User {clean_phone[-4:]}",
+            "email": found_user.get("email") or f"{clean_phone}@tracexdata.com",
+            "credits": found_user.get("credits") if found_user.get("credits") is not None else 10.0,
+            "created_at": found_user.get("created_at") or datetime.utcnow().isoformat() + "Z"
+        }, password)
+
+        latest_credits = synced_user["credits"]
+        if db:
+            try:
+                latest_prof = db.table("profiles").select("credits").eq("id", synced_user["id"]).execute()
+                if latest_prof.data and latest_prof.data[0].get("credits") is not None:
+                    latest_credits = float(latest_prof.data[0]["credits"])
+            except Exception:
+                pass
+
+        synced_user["credits"] = latest_credits
+        token = f"mob_tok_{clean_phone}_{secrets.token_hex(16)}"
+
+        return JSONResponse(content={
+            "status": "success",
+            "message": "Login successful!",
+            "token": token,
+            "user": synced_user
+        })
+    except Exception as err:
+        print(f"[MOBILE_LOGIN_ERR] {err}")
+        return JSONResponse(status_code=500, content={"error": str(err) or "Login failed."})
 
 
 if __name__ == "__main__":

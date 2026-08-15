@@ -35,7 +35,6 @@ import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
 import SupportGauravBeniwalPage from './pages/SupportGauravBeniwalPage.tsx';
-import AlvisAppApi from './pages/AlvisAppApi.tsx';
 import ReferralPage from './pages/ReferralPage.tsx';
 import WalletHistory from './pages/WalletHistory.tsx';
 import ServiceRecords from './pages/ServiceRecords.tsx';
@@ -113,8 +112,6 @@ export default function App() {
         <Route path="/dashboard" element={<Home service="phone" />} />
         <Route path="/category/:categoryId" element={<Home service="phone" />} />
         <Route path="/service/:subserviceId" element={<Home service="phone" />} />
-        <Route path="/alvisappapi" element={<AlvisAppApi />} />
-        <Route path="/Alvisappapi" element={<AlvisAppApi />} />
         <Route path="/telegram" element={<Home service="telegram" />} />
         <Route path="/identity" element={<Home service="adhr" />} />
         <Route path="/bank" element={<Home service="bnk" />} />

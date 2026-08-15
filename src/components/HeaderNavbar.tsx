@@ -309,25 +309,14 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                   </span>
 
                   <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/phone_basic'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Smartphone className="w-4 h-4 text-cyan-600" />
-                      <span>Mobile Number Details</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹3</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/number_lookup'); }}
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/number-lookup'); }}
                     className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5">
                       <Smartphone className="w-4 h-4 text-cyan-600" />
                       <span>Number Lookup</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹2</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹3</span>
                   </button>
 
                   <button

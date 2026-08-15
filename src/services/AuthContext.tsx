@@ -407,7 +407,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: cleanPhone, password })
       });
-      const data = await res.json();
+      let data: any = {};
+      try {
+        const resText = await res.text();
+        data = resText ? JSON.parse(resText) : {};
+      } catch (e) {
+        data = { error: 'Server returned non-JSON error. Please check server logs or database status.' };
+      }
       if (!res.ok || data.status === 'error' || data.error) {
         // Fallback: Check local storage registry if backend server was reloaded or unreachable
         try {
@@ -520,7 +526,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: cleanPhone, password, full_name: fullName })
       });
-      const data = await res.json();
+      let data: any = {};
+      try {
+        const resText = await res.text();
+        data = resText ? JSON.parse(resText) : {};
+      } catch (e) {
+        data = { error: 'Server returned non-JSON error. Please check server logs or database status.' };
+      }
       if (!res.ok || data.status === 'error' || data.error) {
         return { error: { message: data.error || data.message || 'Registration failed' } };
       }

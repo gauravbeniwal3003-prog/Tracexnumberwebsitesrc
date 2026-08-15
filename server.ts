@@ -12,7 +12,6 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import { setupAlvisRoutes } from "./server/alvisModule.ts";
 
 dotenv.config();
 
@@ -330,7 +329,7 @@ app.use(helmet({
 app.use(cors({
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: '*',
   credentials: true
 }));
 
@@ -456,8 +455,6 @@ app.use('/api/admin', sensitiveLimiter);
 // Strict JSON parsing
 app.use(express.json({ limit: '10kb' }));
 
-// Dedicated Alvis App API & Wallet Module
-setupAlvisRoutes(app, supabaseAdmin);
 
 
 // Healthy Check
@@ -620,9 +617,9 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 2.0,            // Number lookup: ₹2.00 per lookup
-  number: 2.0,
-  mobile: 2.0,
+  phone: 3.0,            // Number lookup: ₹2.00 per lookup
+  number: 3.0,
+  mobile: 3.0,
   telegram: 5.0,         // Telegram lookup: ₹5.00 per lookup
   tg: 5.0,
   bnk: 5.0,              // Bank/IFSC lookup: ₹5.00 per lookup
@@ -2498,70 +2495,6 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
       status: "error",
       message: "Internal error retrieving real-time service pricing."
     });
-  }
-});
-
-// GET /api/alvis/history/searches - Fetch Alvis API search logs
-app.get("/api/alvis/history/searches", async (req, res) => {
-  try {
-    if (!supabaseAdmin) {
-      return res.json({ status: "success", searches: [] });
-    }
-    const limit = Number(req.query.limit) || 50;
-    const { data, error } = await supabaseAdmin
-      .from("search_history")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (error || !data) {
-      return res.json({ status: "success", searches: [] });
-    }
-
-    const formatted = data.map((s: any) => ({
-      id: s.id,
-      query: s.query,
-      search_type: s.search_type || "api_call",
-      status: s.status || "success",
-      user_email: s.user_email || "Guest",
-      created_at: s.created_at
-    }));
-
-    return res.json({ status: "success", searches: formatted });
-  } catch (err) {
-    return res.json({ status: "success", searches: [] });
-  }
-});
-
-// GET /api/alvis/history/transactions - Fetch Alvis API transaction logs
-app.get("/api/alvis/history/transactions", async (req, res) => {
-  try {
-    if (!supabaseAdmin) {
-      return res.json({ status: "success", transactions: [] });
-    }
-    const limit = Number(req.query.limit) || 50;
-    const { data, error } = await supabaseAdmin
-      .from("wallet_transactions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (error || !data) {
-      return res.json({ status: "success", transactions: [] });
-    }
-
-    const formatted = data.map((t: any) => ({
-      id: t.id,
-      service_name: t.service_name || t.description || "API Charge",
-      amount: t.amount,
-      type: t.type || "debit",
-      user_email: t.user_email || "User",
-      created_at: t.created_at
-    }));
-
-    return res.json({ status: "success", transactions: formatted });
-  } catch (err) {
-    return res.json({ status: "success", transactions: [] });
   }
 });
 
@@ -4543,48 +4476,6 @@ app.all(["/api/demo_api.php", "/api/demo-lookup"], async (req, res) => {
 });
 
 // -----------------------------------------------------------------------------------------
-// ALVIS PORTAL API ALIAS (/api/alvis/lookup/*)
-// -----------------------------------------------------------------------------------------
-app.all(["/api/alvis/lookup/*", "/api/alvis/lookup"], async (req, res) => {
-  const apiKey = String(
-    req.headers['x-api-key'] ||
-    req.query.apiKey ||
-    req.query.api_key ||
-    req.query.key ||
-    req.body?.apiKey ||
-    req.body?.api_key ||
-    req.body?.key ||
-    ""
-  ).trim();
-
-  let service = String(req.query.service || req.body?.service || "").trim();
-  let queryVal = String(
-    req.query.query ||
-    req.query.aadhaar ||
-    req.query.pan ||
-    req.query.number ||
-    req.body?.query ||
-    req.body?.aadhaar ||
-    req.body?.pan ||
-    req.body?.number ||
-    ""
-  ).trim();
-
-  const fullPath = req.path;
-  if (fullPath.includes("aadhaar-to-pan") || fullPath.includes("aadhaar_to_pan")) {
-    service = "aadhaar_to_pan";
-  } else if (fullPath.includes("pan-to-name-dob") || fullPath.includes("pan")) {
-    service = "pancard";
-  } else if (fullPath.includes("number") || fullPath.includes("phone")) {
-    service = "phone";
-  }
-
-  req.query.key = apiKey;
-  req.query.service = service || "phone";
-  req.query.query = queryVal;
-
-  return req.app._router.handle(req, res, () => {});
-});
 app.all("/api/developer_api.php", async (req, res) => {
   const apiKey = String(req.query.api_key || req.query.key || req.body?.api_key || req.body?.key || "").trim();
   const isDemoMode = req.query.demo === "true" || apiKey === "DEMO_KEY_TRACEXDATA" || apiKey === "DEMO_KEY" || req.query.demo === "1";
@@ -4850,7 +4741,7 @@ async function fulfillOrder(orderId: string, userId: string) {
 // Cashfree Routes
 
 app.post("/api/cashfree/create-order", async (req, res) => {
-  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind" || req.body?.plan_id === "alvisappapi";
+  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind" ;
   
   let authenticatedUserId = null;
   const authHeader = req.headers.authorization;
@@ -4884,7 +4775,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     if (!amount || typeof amount !== 'number' || amount <= 0 || amount > 100000) {
       return res.status(400).json({ error: "Invalid payment amount" });
     }
-    if (plan_id !== "pgpay_manual" && plan_id !== "panfind" && plan_id !== "alvisappapi") {
+    if (plan_id !== "pgpay_manual" && plan_id !== "panfind" ) {
       if (!user_id || typeof user_id !== 'string') {
         return res.status(400).json({ error: "Invalid user ID" });
       }

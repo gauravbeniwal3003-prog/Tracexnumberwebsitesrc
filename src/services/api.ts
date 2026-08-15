@@ -10,7 +10,7 @@ export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_n
 export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_RENDER_BACKEND_URL) {
     const customUrl = import.meta.env.VITE_RENDER_BACKEND_URL.trim();
-    if (customUrl && !customUrl.includes("onrender.com")) {
+    if (customUrl) {
       return customUrl.replace(/\/$/, "");
     }
   }

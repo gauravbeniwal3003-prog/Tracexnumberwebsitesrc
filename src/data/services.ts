@@ -36,7 +36,7 @@ export const CATEGORIES: Category[] = [
         categoryId: 'phone',
         title: 'Number Lookup',
         subtitle: 'Carrier, Location & Telecom Record Lookup',
-        fee: 2,
+        fee: 3,
         plan: 'Silver',
         inputLabel: 'MOBILE NUMBER',
         inputPlaceholder: 'Enter 10-digit Mobile No (e.g. 9876543210)',
