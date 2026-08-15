@@ -21,7 +21,7 @@ import {
   CreditCard,
   Tag
 } from "lucide-react";
-import { getApiBaseUrl } from "../services/api";
+import {  getApiBaseUrl, getAbsoluteBaseUrl  } from '../services/api';
 import { useAuth } from "../services/AuthContext";
 import HeaderNavbar from "../components/HeaderNavbar";
 import { supabase } from "../services/supabase";

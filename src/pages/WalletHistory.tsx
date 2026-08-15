@@ -4,7 +4,7 @@ import { Wallet, History, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, ArrowLef
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
-import { getApiBaseUrl } from '../services/api';
+import {  getApiBaseUrl, getAbsoluteBaseUrl  } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 import LiquidBackground from '../components/LiquidBackground';
 

@@ -34,7 +34,8 @@ export default function LoginScreen({ isSignUpInitial = false, isModal = false, 
   const navigate = useNavigate();
 
   React.useEffect(() => {
-    if (!authLoading && user && !isModal) {
+    const hasCodeInUrl = window.location.search.includes('code=');
+    if ((hasCodeInUrl || (!authLoading && user)) && !isModal) {
       navigate('/dashboard', { replace: true });
     }
   }, [user, authLoading, isModal, navigate]);

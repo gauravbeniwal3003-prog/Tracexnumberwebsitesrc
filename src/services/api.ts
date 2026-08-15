@@ -14,10 +14,14 @@ export const getApiBaseUrl = (): string => {
       return customUrl.replace(/\/$/, "");
     }
   }
+  return ''; // Return relative path for safer network fetching
+};
+
+export const getAbsoluteBaseUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
     return window.location.origin.replace(/\/$/, "");
   }
-  return '';
+  return 'https://tracexdata.com';
 };
 
 export const getAuthToken = async (): Promise<string> => {

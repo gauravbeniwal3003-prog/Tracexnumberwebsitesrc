@@ -135,7 +135,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                 title="Wallet Balance — Click to Add Balance"
               >
                 <Coins className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="font-mono whitespace-nowrap">₹{profile?.credits || profile?.wallet_balance || 0}.00</span>
+                <span className="font-mono whitespace-nowrap">₹{Number(profile?.credits ?? profile?.wallet_balance ?? 0).toFixed(2)}</span>
               </button>
             ) : (
               <button
@@ -229,7 +229,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                         className="text-[11px] font-black font-mono bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Coins className="w-3 h-3 text-emerald-600" />
-                        <span>₹{profile?.credits || profile?.wallet_balance || 0}.00</span>
+                        <span>₹{Number(profile?.credits ?? profile?.wallet_balance ?? 0).toFixed(2)}</span>
                       </button>
                     </div>
                   </div>

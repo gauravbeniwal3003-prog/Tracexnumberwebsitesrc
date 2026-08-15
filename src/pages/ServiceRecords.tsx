@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ListFilter, Eye, Check, Clock, X, Terminal, Search, RefreshCw, ArrowLeft, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/AuthContext';
-import { getApiBaseUrl, getAuthToken } from '../services/api';
+import {  getApiBaseUrl, getAbsoluteBaseUrl, getAuthToken  } from '../services/api';
 import HeaderNavbar from '../components/HeaderNavbar';
 import FormattedResponseCard from '../components/FormattedResponseCard';
 import LiquidBackground from '../components/LiquidBackground';

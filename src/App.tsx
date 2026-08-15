@@ -213,7 +213,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 }
 
 function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' | 'veh_owner_num' }) {
-  const { user, profile, loading, isDemoMode, exitDemoMode, signOut, refreshProfile } = useAuth();
+  const { user, profile, loading, isDemoMode, exitDemoMode, signOut, refreshProfile, updateProfileCredits } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -639,7 +639,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       if (data?.remaining_balance !== undefined && profile) {
-        setProfile(prev => prev ? { ...prev, credits: data.remaining_balance } : null);
+        updateProfileCredits(data.remaining_balance);
       }
 
       if (!data || data.status === false) {

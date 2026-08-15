@@ -35,7 +35,8 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   React.useEffect(() => {
-    if (!loading && user) {
+    const hasCodeInUrl = window.location.search.includes("code=");
+    if (hasCodeInUrl || (!loading && user)) {
       navigate("/dashboard", { replace: true });
     }
   }, [user, loading, navigate]);

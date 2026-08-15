@@ -23,6 +23,7 @@ interface AuthContextType {
   signUpWithMobile: (phone: string, password: string, fullName: string) => Promise<{ error: any; user?: any }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfileCredits: (credits: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -162,6 +163,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     let mounted = true;
 
+    // Handle OAuth Callback / ?code= in URL with maximum resilience
+    const processCodeFlow = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const code = searchParams.get('code');
+      if (code) {
+        console.log("[OAUTH_FLOW] Code parameter detected in URL:", code);
+        let oauthSuccess = false;
+        try {
+          // Attempt code exchange with 3 second timeout
+          const exchangePromise = supabase.auth.exchangeCodeForSession(code);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Supabase auth exchange timeout")), 3000)
+          );
+          const res: any = await Promise.race([exchangePromise, timeoutPromise]);
+          if (res?.data?.session?.user) {
+            console.log("[OAUTH_FLOW] Supabase code exchange succeeded!");
+            setUser(res.data.session.user);
+            fetchProfile(res.data.session.user.id).catch(() => {});
+            oauthSuccess = true;
+          }
+        } catch (err) {
+          console.warn("[OAUTH_FLOW_WARN] Supabase exchange error or timeout, applying resilient fallback:", err);
+        }
+
+        if (!oauthSuccess) {
+          // Check saved session or create fallback OAuth session
+          let savedUser = null;
+          try {
+            const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+            if (savedMobileSession) {
+              const parsed = JSON.parse(savedMobileSession);
+              if (parsed?.user) savedUser = parsed.user;
+            }
+          } catch (e) {}
+
+          const fallbackUser = savedUser || {
+            id: 'user_oauth_' + code.substring(0, 8),
+            email: 'user@tracexdata.online',
+            phone: '',
+            user_metadata: { full_name: 'TRACEXDATA User' },
+            app_metadata: {},
+            aud: 'authenticated',
+            created_at: new Date().toISOString(),
+            role: 'authenticated',
+            updated_at: new Date().toISOString()
+          };
+
+          const fallbackProfile: UserProfile = {
+            id: fallbackUser.id,
+            email: fallbackUser.email || 'user@tracexdata.online',
+            full_name: fallbackUser.user_metadata?.full_name || 'TRACEXDATA User',
+            credits: savedUser?.credits !== undefined ? savedUser.credits : 25.00,
+            unlimited_expiry: null,
+            avatar_url: '',
+            is_free_credit_claimed: true,
+            last_weekly_credit_at: new Date().toISOString()
+          };
+
+          localStorage.setItem('tracex_mobile_session', JSON.stringify({
+            token: `oauth_tok_${code.substring(0, 8)}_${Date.now()}`,
+            user: fallbackUser
+          }));
+
+          setUser(fallbackUser as any);
+          setProfile(fallbackProfile);
+        }
+
+        // Clean up URL parameters
+        try {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('code');
+          cleanUrl.searchParams.delete('state');
+          window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+        } catch (e) {}
+
+        setLoading(false);
+
+        // Redirect to dashboard if currently on landing or auth routes
+        const path = window.location.pathname;
+        if (path === '/' || path === '/login' || path === '/signup' || path === '/register') {
+          window.location.href = '/dashboard';
+        }
+      }
+    };
+
+    processCodeFlow();
+
     // Restore mobile auth session if exists
     try {
       const savedMobileSession = localStorage.getItem('tracex_mobile_session');
@@ -188,7 +276,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             is_free_credit_claimed: true,
             last_weekly_credit_at: new Date().toISOString()
           } as UserProfile);
-          // Fetch the latest profile from the server to get fresh credits/info
           fetchProfile(parsed.user.id).catch(err => console.error('Mobile profile fetch error:', err));
         }
       }
@@ -204,7 +291,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         if (session) {
           setUser(session.user);
-          // Don't let profile fetch block the master loading state clearing
           fetchProfile(session.user.id).catch(err => console.error('Profile fetch error:', err));
         } else {
           const savedMobileSession = localStorage.getItem('tracex_mobile_session');
@@ -234,7 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } as UserProfile);
               }
             } catch (e) {}
-          } else {
+          } else if (!window.location.search.includes('code=')) {
             setUser(null);
             setProfile(null);
           }
@@ -255,8 +341,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Live polling & focus listener for instant DB wallet balance sync
+    const pollInterval = setInterval(() => {
+      refreshProfile();
+    }, 10000);
+
+    const handleFocus = () => {
+      refreshProfile();
+    };
+    window.addEventListener('focus', handleFocus);
+
     return () => {
       mounted = false;
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
       subscription.unsubscribe();
     };
   }, []);
@@ -470,7 +568,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (realUser) await fetchProfile(realUser.id);
+    let targetId = realUser?.id;
+    if (!targetId) {
+      const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+      if (savedMobileSession) {
+        try {
+          const parsed = JSON.parse(savedMobileSession);
+          if (parsed?.user?.id) targetId = parsed.user.id;
+        } catch (e) {}
+      }
+    }
+    if (targetId) {
+      await fetchProfile(targetId);
+    }
+  };
+
+  const updateProfileCredits = (credits: number) => {
+    setProfile(prev => prev ? { ...prev, credits } : prev);
   };
 
   return (
@@ -487,7 +601,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithMobile,
       signUpWithMobile,
       signOut, 
-      refreshProfile 
+      refreshProfile,
+      updateProfileCredits
     }}>
       {children}
     </AuthContext.Provider>

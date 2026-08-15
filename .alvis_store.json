@@ -1,7 +1,7 @@
 {
   "user_name": "alvisappapi",
   "api_key": "alvis_live_key_77c38c3e9a596cbe",
-  "wallet_balance": 1800.0,
+  "wallet_balance": 1800,
   "total_searches": 15,
   "pricing": {
     "aadhaar_to_pan": {
@@ -30,8 +30,8 @@
       "amount": 1463.5,
       "type": "debit",
       "status": "completed",
-      "balance_after": 1800.0,
-      "reason": "Set Alvis API wallet balance to \u20b91800"
+      "balance_after": 1800,
+      "reason": "Set Alvis API wallet balance to ₹1800"
     },
     {
       "id": "tx_deb_1786029126141_131",
@@ -166,7 +166,7 @@
       "type": "manual_adjustment",
       "status": "completed",
       "balance_after": 2500,
-      "reason": "Set Alvis API wallet balance to \u20b92500"
+      "reason": "Set Alvis API wallet balance to ₹2500"
     }
   ],
   "searches": [
@@ -307,5 +307,5 @@
     }
   ],
   "created_at": "2026-08-06T12:20:49.063Z",
-  "updated_at": "2026-08-06T17:37:06.005Z"
+  "updated_at": "2026-08-15T04:33:32.253Z"
 }

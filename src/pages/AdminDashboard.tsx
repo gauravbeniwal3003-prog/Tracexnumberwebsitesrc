@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
-import { getApiBaseUrl } from '../services/api';
+import {  getApiBaseUrl, getAbsoluteBaseUrl  } from '../services/api';
 import { getApiServices, updateApiServiceConfig, ApiServiceConfig } from '../services/apiServices';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
