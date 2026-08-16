@@ -8088,6 +8088,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       console.warn("Failed to list users from auth admin API:", authErr.message);
     }
     
+    // 1. Fetch profiles table
     const { data: profileData, error: profileError } = await db
       .from("profiles")
       .select("*")
@@ -8098,72 +8099,107 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       return res.status(500).json({ error: profileError.message });
     }
 
-    const mergedProfiles = [];
-    const profileMap = new Map((profileData || []).map(p => [p.id, p]));
+    // 2. Fetch app_users table
+    let appUsersData: any[] = [];
+    try {
+      const { data: auData } = await db.from("app_users").select("*");
+      if (auData) appUsersData = auData;
+    } catch (e) {
+      console.warn("Failed to fetch app_users in admin endpoint:", e);
+    }
 
+    // Build unified map of users
+    const userMap = new Map<string, any>();
+
+    const processUserRecord = (record: any) => {
+      if (!record) return;
+      const key = (record.email || record.id || "").toLowerCase().trim();
+      if (!key) return;
+
+      const existing = userMap.get(key) || {};
+      const exCred = Number(existing.credits || 0);
+      const exWal = Number(existing.wallet_balance || 0);
+      const recCred = Number(record.credits || 0);
+      const recWal = Number(record.wallet_balance || 0);
+
+      const maxBal = Math.max(exCred, exWal, recCred, recWal);
+
+      userMap.set(key, {
+        id: record.id || existing.id,
+        email: record.email || existing.email || "",
+        full_name: record.full_name || existing.full_name || (record.email ? record.email.split("@")[0] : "User"),
+        credits: maxBal,
+        wallet_balance: maxBal,
+        phone: record.phone || existing.phone || "",
+        unlimited_expiry: record.unlimited_expiry || existing.unlimited_expiry || null,
+        user_discount_percent: record.user_discount_percent ?? existing.user_discount_percent ?? 0,
+        referral_code: record.referral_code || existing.referral_code || "",
+        created_at: record.created_at || existing.created_at || new Date().toISOString()
+      });
+    };
+
+    // Merge from profiles table
+    (profileData || []).forEach(processUserRecord);
+
+    // Merge from app_users table
+    (appUsersData || []).forEach(processUserRecord);
+
+    // Merge from Auth admin list
     if (authData && authData.users) {
       for (const authUser of authData.users) {
-        if (profileMap.has(authUser.id)) {
-          mergedProfiles.push(profileMap.get(authUser.id));
-          profileMap.delete(authUser.id);
-        } else {
-          mergedProfiles.push({
+        if (!authUser.email) continue;
+        const key = authUser.email.toLowerCase().trim();
+        if (!userMap.has(key)) {
+          processUserRecord({
             id: authUser.id,
-            email: authUser.email || "",
-            full_name: authUser.user_metadata?.full_name || "",
-            credits: 0,
-            unlimited_expiry: null,
+            email: authUser.email,
+            full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
+            credits: 10.00,
+            wallet_balance: 10.00,
             created_at: authUser.created_at
           });
         }
       }
     }
 
-    for (const p of Array.from(profileMap.values())) {
-      mergedProfiles.push(p);
-    }
-
-    // Merge registered mobile users store if not already present
+    // Merge from mobileUsersStore
     for (const [phone, mUser] of mobileUsersStore.entries()) {
-      if (!mergedProfiles.some(p => p.id === mUser.id || (p.email && p.email === mUser.email))) {
-        mergedProfiles.push({
-          id: mUser.id,
-          email: mUser.email || `${phone}@tracexdata.com`,
-          full_name: mUser.full_name || `User ${phone.slice(-4)}`,
-          phone: phone,
-          credits: mUser.credits !== undefined ? mUser.credits : 10.00,
-          unlimited_expiry: null,
-          created_at: mUser.created_at || new Date().toISOString()
-        });
-      }
+      const emailKey = (mUser.email || `${phone}@tracexdata.com`).toLowerCase().trim();
+      processUserRecord({
+        id: mUser.id,
+        email: emailKey,
+        full_name: mUser.full_name || `User ${phone.slice(-4)}`,
+        phone: phone,
+        credits: mUser.credits !== undefined ? mUser.credits : 10.00,
+        wallet_balance: mUser.credits !== undefined ? mUser.credits : 10.00,
+        created_at: mUser.created_at || new Date().toISOString()
+      });
     }
 
-    mergedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+    const sanitizedProfiles = Array.from(userMap.values());
+    sanitizedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
 
-    // Ensure credits and wallet_balance are 100% synchronized for admin panel view & DB
-    const sanitizedProfiles = mergedProfiles.map(p => {
-      const pCred = Number(p.credits || 0);
-      const pWal = Number(p.wallet_balance || 0);
-      let bal = Math.max(pCred, pWal);
-
-      // If both credits & wallet_balance were 0 for a valid user profile, give standard initial balance 10.00
-      if (bal === 0 && p.email) {
-        bal = 10.00;
-      }
-
-      // Auto-heal database record so Supabase has wallet_balance = credits
+    // Auto-heal database records asynchronously
+    sanitizedProfiles.forEach(p => {
       if (p.id && db) {
-        if (p.wallet_balance !== bal || p.credits !== bal) {
-          db.from("profiles").update({ wallet_balance: bal, credits: bal }).eq("id", p.id).catch(() => {});
-          db.from("app_users").update({ credits: bal }).eq("id", p.id).catch(() => {});
-        }
-      }
+        db.from("profiles").upsert({
+          id: p.id,
+          email: p.email,
+          full_name: p.full_name,
+          credits: p.credits,
+          wallet_balance: p.wallet_balance,
+          unlimited_expiry: p.unlimited_expiry,
+          user_discount_percent: p.user_discount_percent
+        }, { onConflict: "id" }).catch(() => {});
 
-      return {
-        ...p,
-        credits: bal,
-        wallet_balance: bal
-      };
+        db.from("app_users").upsert({
+          id: p.id,
+          email: p.email,
+          full_name: p.full_name,
+          credits: p.credits,
+          phone: p.phone || ""
+        }, { onConflict: "id" }).catch(() => {});
+      }
     });
 
     return res.json({ status: "success", data: sanitizedProfiles });

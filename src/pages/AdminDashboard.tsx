@@ -557,7 +557,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      const targetBal = Number(newUserProfileData.wallet_balance !== undefined && newUserProfileData.wallet_balance !== 0 ? newUserProfileData.wallet_balance : (newUserProfileData.credits || 0));
+      const targetBal = Math.max(Number(newUserProfileData.wallet_balance || 0), Number(newUserProfileData.credits || 0));
 
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
         method: 'POST',
@@ -601,7 +601,7 @@ export default function AdminDashboard() {
     if (!selectedUser) return;
     
     const expiry = selectedUser.unlimited_expiry ? new Date(selectedUser.unlimited_expiry).toISOString() : null;
-    const targetBal = Number(selectedUser.wallet_balance !== undefined ? selectedUser.wallet_balance : (selectedUser.credits || 0));
+    const targetBal = Math.max(Number(selectedUser.wallet_balance || 0), Number(selectedUser.credits || 0));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1260,7 +1260,7 @@ export default function AdminDashboard() {
                           filteredProfiles.map(p => {
                             const hasUnlimited = p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date();
                             const isUserAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === (p.email || '').toLowerCase());
-                            const userBal = Number(p.wallet_balance !== undefined && p.wallet_balance !== null ? p.wallet_balance : (p.credits || 0));
+                            const userBal = Math.max(Number(p.wallet_balance || 0), Number(p.credits || 0));
                             
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1943,7 +1943,7 @@ export default function AdminDashboard() {
                     <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet Balance (₹ INR)</label>
                     <input 
                       type="number" 
-                      value={selectedUser.wallet_balance !== undefined ? selectedUser.wallet_balance : (selectedUser.credits || 0)}
+                      value={selectedUser.wallet_balance !== undefined && selectedUser.wallet_balance !== null ? selectedUser.wallet_balance : Math.max(Number(selectedUser.credits || 0), Number(selectedUser.wallet_balance || 0))}
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         setSelectedUser({...selectedUser, wallet_balance: val, credits: val});
