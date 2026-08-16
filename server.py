@@ -46,6 +46,71 @@ def is_valid_uuid(val):
 # --- PRODUCTION CONFIGURATION ---
 app = FastAPI(title="TraceXData Intelligence PRO")
 
+# --- PROVIDER CONFIGURATION AND HELPER ---
+DEFAULT_PROVIDER_CONFIGS = {
+    "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "aadhaar_to_pan": "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
+    "pancard": "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+    "pan": "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
+    "ifsc": "https://ifsc.razorpay.com/{query}",
+    "bnk": "https://ifsc.razorpay.com/{query}",
+    "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+    "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
+    "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+    "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
+}
+
+PROVIDER_CONFIGS = dict(DEFAULT_PROVIDER_CONFIGS)
+
+# Try loading from local json cache if it exists
+try:
+    import json
+    _resolved_dirname = os.path.dirname(os.path.abspath(__file__))
+    _config_path = os.path.join(_resolved_dirname, "data", "provider_config.json")
+    if os.path.exists(_config_path):
+        with open(_config_path, "r", encoding="utf-8") as _f:
+            _parsed = json.load(_f)
+            if isinstance(_parsed, dict):
+                PROVIDER_CONFIGS.update(_parsed)
+except Exception as _e:
+    print(f"[Python Config Cache Load Error] {_e}")
+
+def get_provider_url(service_key: str, query: str) -> str:
+    import urllib.parse
+    norm_key = (service_key or "").strip().lower()
+    alias = norm_key
+    if norm_key in ["adhr", "aadhar"]: alias = "aadhaar"
+    if norm_key == "aadhaar": alias = "adhr"
+    if norm_key in ["bnk", "bank"]: alias = "ifsc"
+    if norm_key == "ifsc": alias = "bnk"
+    if norm_key == "pan": alias = "pancard"
+    if norm_key == "pancard": alias = "pan"
+    if norm_key in ["family", "ration"]: alias = "rasion"
+    if norm_key == "rasion": alias = "family"
+    if norm_key == "veh_owner_num": alias = "veh_numm"
+    if norm_key == "veh_numm": alias = "veh_owner_num"
+
+    template = (
+        PROVIDER_CONFIGS.get(norm_key) or
+        PROVIDER_CONFIGS.get(alias) or
+        DEFAULT_PROVIDER_CONFIGS.get(norm_key) or
+        DEFAULT_PROVIDER_CONFIGS.get(alias) or
+        ""
+    ).strip()
+
+    if not template:
+        return ""
+    
+    encoded_query = urllib.parse.quote(str(query).strip())
+    formatted = template
+    for placeholder in ["{query}", "{term}", "{aadhaar_number}", "{exploits}", "{rc}", "{ifsc}", "{pan}", "{pancard}", "{search}", "{mobile}"]:
+        formatted = formatted.replace(placeholder, encoded_query)
+    return formatted
+
 # Global CORS Configuration for Public SaaS API
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 origins = [
