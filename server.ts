@@ -111,6 +111,9 @@ const isKeyValid = (key: any): boolean => {
 
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
 export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
+export const getRenderBackendUrl = (): string => {
+  return (process.env.VITE_RENDER_BACKEND_URL || process.env.RENDER_BACKEND_URL || "").trim().replace(/\/$/, "");
+};
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
 
 function checkIsMasterKey(key: string): boolean {
@@ -4919,7 +4922,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
 
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying create-order request to live Render backend...");
-      const renderBackendUrl = "";
+      const renderBackendUrl = getRenderBackendUrl();
       const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
         method: "POST",
         headers: {
@@ -5007,7 +5010,7 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
 
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
-      const renderBackendUrl = "";
+      const renderBackendUrl = getRenderBackendUrl();
       const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
       const data = await response.json();
       return res.status(response.status).json(data);
@@ -5070,7 +5073,7 @@ app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfre
     if (orderId) {
       let isPaid = false;
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-        const renderBackendUrl = "";
+        const renderBackendUrl = getRenderBackendUrl();
         const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
         const data: any = await response.json().catch(() => ({}));
         if (data.order_status === "PAID") isPaid = true;
@@ -5400,10 +5403,17 @@ app.get("/api/telegram", async (req, res) => {
           if (hasMobile) {
             console.log(`[Telegram Cache Hit] Serving ${targetTelegramId} from database cache`);
             
+            // Deduct credits/rupees and log search history for account owner
+            if (balanceCheck.deduct) {
+              try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Telegram cache:", dErr); }
+            }
+            const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+            const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+            await logSearchHistory(req, 'telegram', targetTelegramId, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
+
             // Record telemetry for successful cached search
             if (!isMaster && keyRecord?.id) {
-              
-          await supabaseAdmin.from("api_keys").update({ 
+              await supabaseAdmin.from("api_keys").update({ 
                 requests_used: (keyRecord.requests_used || 0) + 1,
                 last_used_at: new Date().toISOString()
               }).eq("id", keyRecord.id);
@@ -6798,7 +6808,7 @@ app.get("/api/panfind", async (req, res) => {
     
     // 1. Verify payment status with Cashfree
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      const renderBackendUrl = "";
+      const renderBackendUrl = getRenderBackendUrl();
       const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
       const data: any = await response.json();
       order_status = data.order_status;
@@ -8618,7 +8628,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
         let isPaid = false;
         
         if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-          const renderBackendUrl = "";
+          const renderBackendUrl = getRenderBackendUrl();
           const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
           const cfData = await cfResp.json();
           if (cfResp.ok && cfData.order_status === "PAID") {
@@ -8715,7 +8725,7 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
 
     try {
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-        const renderBackendUrl = "";
+        const renderBackendUrl = getRenderBackendUrl();
         const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${trimmedOrderId}`);
         const cfData = await cfResp.json();
         if (cfResp.ok && cfData.order_status === "PAID") {
