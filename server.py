@@ -1649,7 +1649,15 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
             
         part_lower = part.lower()
         # Avoid section headers/footers with no useful fields
-        if not any(k in part_lower for k in ["name", "mobile", "phone", "address", "branch", "ifsc", "aadhaar", "identity", "family", "email", "mail", "username", "term", "leak", "password", "database", "platform"]):
+        useful_keywords = [
+            "name", "mobile", "phone", "address", "branch", "ifsc", "aadhaar", "identity", 
+            "family", "email", "mail", "username", "term", "leak", "password", "database", "platform",
+            "vehicle", "rc", "chassis", "engine", "rto", "model", "class", "owner", "valid", 
+            "registration", "reg", "challan", "pancard", "pan", "dob", "birth", "status", "commercial", 
+            "type", "color", "fuel", "cc", "capacity", "manufactured", "insurance", "policy", "financer", 
+            "gross", "weight", "wheelbase", "gender", "age"
+        ]
+        if not any(k in part_lower for k in useful_keywords):
             continue
             
         record_data = {}
@@ -1811,47 +1819,89 @@ def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
     if isinstance(items, dict):
         for key, val in items.items():
             if isinstance(val, dict):
-                clean_results[key] = {
-                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
-                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
-                    "mobile": str(val.get('mobile', val.get('number', query_num))),
-                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
-                    "email": str(val.get('email', 'N/A')),
-                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
-                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
-                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
-                    "address": str(val.get('address', val.get('location', 'N/A')))
-                }
+                # Copy ALL keys first to avoid losing any data
+                record_data = {k: v for k, v in val.items()}
+                # Ensure standard keys are mapped cleanly as fallback/assist
+                if "name" not in record_data:
+                    record_data["name"] = str(val.get('name', val.get('full_name', 'N/A'))).upper()
+                else:
+                    record_data["name"] = str(record_data["name"]).upper()
+                if "father_name" not in record_data:
+                    record_data["father_name"] = str(val.get('father_name', val.get('fathername', 'N/A'))).upper()
+                if "mobile" not in record_data:
+                    record_data["mobile"] = str(val.get('mobile', val.get('number', query_num)))
+                if "alt_mobile" not in record_data:
+                    record_data["alt_mobile"] = str(val.get('alt_mobile', 'N/A'))
+                if "email" not in record_data:
+                    record_data["email"] = str(val.get('email', 'N/A'))
+                if "aadhar_number" not in record_data:
+                    record_data["aadhar_number"] = str(val.get('aadhar_number', 'N/A'))
+                if "operator" not in record_data:
+                    record_data["operator"] = str(val.get('operator', val.get('carrier', 'N/A'))).upper()
+                if "state_circle" not in record_data:
+                    record_data["state_circle"] = str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper()
+                if "address" not in record_data:
+                    record_data["address"] = str(val.get('address', val.get('location', 'N/A')))
+                
+                clean_results[key] = record_data
     
     # CASE 2: Items is a List
     elif isinstance(items, list):
         for i, val in enumerate(items, 1):
             if isinstance(val, dict):
-                clean_results[f"Result {i}"] = {
-                    "name": str(val.get('name', val.get('full_name', 'N/A'))).upper(),
-                    "father_name": str(val.get('father_name', val.get('fathername', 'N/A'))).upper(),
-                    "mobile": str(val.get('mobile', val.get('number', query_num))),
-                    "alt_mobile": str(val.get('alt_mobile', 'N/A')),
-                    "email": str(val.get('email', 'N/A')),
-                    "aadhar_number": str(val.get('aadhar_number', 'N/A')),
-                    "operator": str(val.get('operator', val.get('carrier', 'N/A'))).upper(),
-                    "state_circle": str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper(),
-                    "address": str(val.get('address', val.get('location', 'N/A')))
-                }
+                # Copy ALL keys first to avoid losing any data
+                record_data = {k: v for k, v in val.items()}
+                # Ensure standard keys are mapped cleanly as fallback/assist
+                if "name" not in record_data:
+                    record_data["name"] = str(val.get('name', val.get('full_name', 'N/A'))).upper()
+                else:
+                    record_data["name"] = str(record_data["name"]).upper()
+                if "father_name" not in record_data:
+                    record_data["father_name"] = str(val.get('father_name', val.get('fathername', 'N/A'))).upper()
+                if "mobile" not in record_data:
+                    record_data["mobile"] = str(val.get('mobile', val.get('number', query_num)))
+                if "alt_mobile" not in record_data:
+                    record_data["alt_mobile"] = str(val.get('alt_mobile', 'N/A'))
+                if "email" not in record_data:
+                    record_data["email"] = str(val.get('email', 'N/A'))
+                if "aadhar_number" not in record_data:
+                    record_data["aadhar_number"] = str(val.get('aadhar_number', 'N/A'))
+                if "operator" not in record_data:
+                    record_data["operator"] = str(val.get('operator', val.get('carrier', 'N/A'))).upper()
+                if "state_circle" not in record_data:
+                    record_data["state_circle"] = str(val.get('circle', val.get('state_circle', val.get('state', 'N/A')))).upper()
+                if "address" not in record_data:
+                    record_data["address"] = str(val.get('address', val.get('location', 'N/A')))
+                
+                clean_results[f"Result {i}"] = record_data
     
     # CASE 3: Raw response is the data itself or we can locate data inside raw_json itself
     elif raw_json.get('status') is True or raw_json.get('name') or raw_json.get('owner_name') or raw_json.get('data') or isinstance(raw_json.get('data'), list):
-        clean_results["Result 1"] = {
-            "name": str(raw_json.get('name', raw_json.get('owner_name', 'N/A'))).upper(),
-            "father_name": str(raw_json.get('father_name', 'N/A')).upper(),
-            "mobile": str(raw_json.get('mobile', query_num)),
-            "alt_mobile": str(raw_json.get('alt_mobile', 'N/A')),
-            "email": str(raw_json.get('email', 'N/A')),
-            "aadhar_number": str(raw_json.get('aadhar_number', 'N/A')),
-            "operator": str(raw_json.get('operator', 'N/A')).upper(),
-            "state_circle": str(raw_json.get('circle', 'N/A')).upper(),
-            "address": str(raw_json.get('address', 'N/A'))
-        }
+        # Copy ALL keys first to avoid losing any data
+        record_data = {k: v for k, v in raw_json.items() if not isinstance(v, (dict, list))}
+        # Ensure standard keys are mapped cleanly as fallback/assist
+        if "name" not in record_data:
+            record_data["name"] = str(raw_json.get('name', raw_json.get('owner_name', 'N/A'))).upper()
+        else:
+            record_data["name"] = str(record_data["name"]).upper()
+        if "father_name" not in record_data:
+            record_data["father_name"] = str(raw_json.get('father_name', 'N/A')).upper()
+        if "mobile" not in record_data:
+            record_data["mobile"] = str(raw_json.get('mobile', query_num))
+        if "alt_mobile" not in record_data:
+            record_data["alt_mobile"] = str(raw_json.get('alt_mobile', 'N/A'))
+        if "email" not in record_data:
+            record_data["email"] = str(raw_json.get('email', 'N/A'))
+        if "aadhar_number" not in record_data:
+            record_data["aadhar_number"] = str(raw_json.get('aadhar_number', 'N/A'))
+        if "operator" not in record_data:
+            record_data["operator"] = str(raw_json.get('operator', 'N/A')).upper()
+        if "state_circle" not in record_data:
+            record_data["state_circle"] = str(raw_json.get('circle', 'N/A')).upper()
+        if "address" not in record_data:
+            record_data["address"] = str(raw_json.get('address', 'N/A'))
+            
+        clean_results["Result 1"] = record_data
 
     # Clean the brand marks and references (such as Tech Vishal) recursively
     clean_results = clean_branding_recursive(clean_results)
@@ -3774,8 +3824,6 @@ async def identity_lookup(
                 results_data = parsed_data["data"]
             else:
                 results_data = parsed_data
-        elif parsed_records:
-            results_data = parsed_records
 
         cleaned_results = clean_branding_recursive(results_data) if results_data else {}
         
@@ -4182,7 +4230,7 @@ async def vehicle_lookup(
                     parsed_data = json.loads(cleaned_body)
                     is_json = True
                 except Exception:
-                    parsed_data = {"raw_data": cleaned_body}
+                    parsed_data = parse_raw_text_to_records(text, target_query)
 
             # Smart error detection
             is_error = False
@@ -4424,7 +4472,7 @@ async def veh_owner_num_lookup(
                     parsed_data = json.loads(cleaned_body)
                     is_json = True
                 except Exception:
-                    parsed_data = {"raw_data": cleaned_body}
+                    parsed_data = parse_raw_text_to_records(text, target_query)
 
             # Error detection
             is_error = False
@@ -4636,7 +4684,7 @@ async def pancard_lookup(
             try:
                 parsed_data = json.loads(cleaned_body)
             except:
-                parsed_data = {"raw_data": cleaned_body}
+                parsed_data = parse_raw_text_to_records(text, target_query)
                 
             cleaned_data = clean_branding_recursive(parsed_data)
             
