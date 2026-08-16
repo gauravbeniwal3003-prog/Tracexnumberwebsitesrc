@@ -15,7 +15,7 @@ interface ServiceRecordItem {
   client: string;
   serviceName: string;
   referenceCode: string;
-  status: 'SUCCESS' | 'REFUNDED' | 'FAILED';
+  status: 'SUCCESS' | 'REFUNDED' | 'FAILED' | 'PROCESSING';
   payload: any;
   createdAtTs?: number;
 }
@@ -60,7 +60,7 @@ export default function ServiceRecords() {
               const statusStr = String(item.status || "SUCCESS").toUpperCase();
               combinedList.push({
                 ...item,
-                status: statusStr.includes("REFUND") ? 'REFUNDED' : (statusStr === 'SUCCESS' ? 'SUCCESS' : 'FAILED')
+                status: statusStr.includes("REFUND") ? 'REFUNDED' : (statusStr.includes("PROCESSING") ? 'PROCESSING' : (statusStr === 'SUCCESS' ? 'SUCCESS' : 'FAILED'))
               });
             }
           });
@@ -234,6 +234,11 @@ export default function ServiceRecords() {
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300">
                             <RotateCcw className="w-3 h-3 text-amber-600" />
                             <span>REFUNDED</span>
+                          </span>
+                        ) : rec.status === 'PROCESSING' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600 animate-spin" />
+                            <span>PROCESSING</span>
                           </span>
                         ) : rec.status === 'SUCCESS' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">

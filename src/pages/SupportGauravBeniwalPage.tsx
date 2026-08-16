@@ -11,7 +11,7 @@ import HeaderNavbar from '../components/HeaderNavbar';
 import ResultCard from '../components/ResultCard';
 import { lookupSupportFree, LookupResult } from '../services/api';
 
-type ServiceType = 'phone' | 'vehicle' | 'veh_owner_num' | 'adhr' | 'pancard' | 'bnk' | 'telegram' | 'email';
+type ServiceType = 'phone' | 'vehicle' | 'veh_owner_num' | 'adhr' | 'telegram' | 'email';
 
 interface ServiceTab {
   id: ServiceType;
@@ -63,22 +63,6 @@ const SERVICE_TABS: ServiceTab[] = [
     placeholder: 'Enter 12-digit Aadhaar Number...',
     hint: 'Address, family details & demographic intel',
     example: '123456789012'
-  },
-  {
-    id: 'pancard',
-    label: 'PAN Card Details',
-    icon: CreditCard,
-    placeholder: 'Enter 10-character PAN Number...',
-    hint: 'Full name, father name & verification status',
-    example: 'ABCDE1234F'
-  },
-  {
-    id: 'bnk',
-    label: 'Bank & IFSC Search',
-    icon: Building2,
-    placeholder: 'Enter IFSC Code (e.g. SBIN0001234)...',
-    hint: 'Branch name, MICR, address & bank details',
-    example: 'SBIN0001234'
   },
   {
     id: 'telegram',

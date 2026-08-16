@@ -11,7 +11,7 @@ import ResultCard from './components/ResultCard.tsx';
 import Skeleton from './components/Skeleton.tsx';
 import SubscriptionBadge from './components/SubscriptionBadge.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
-import ProtectNumberModal from './components/ProtectNumberModal.tsx';
+import ProtectNumberModal, { ProtectTabType } from './components/ProtectNumberModal.tsx';
 import FormattedResponseCard from './components/FormattedResponseCard.tsx';
 import { lookupNumber, ApiResponse, getApiBaseUrl, saveLocalSearchHistory } from './services/api.ts';
 import { useAuth, IS_TESTING_MODE } from './services/AuthContext.tsx';
@@ -31,7 +31,6 @@ import BuyCredits from './pages/BuyCredits.tsx';
 import AdminDashboard from './pages/AdminDashboard.tsx';
 import ApiDocs from './pages/ApiDocs.tsx';
 import PgPaymentPage from './pages/PgPaymentPage.tsx';
-import PanFind from './pages/PanFind.tsx';
 import ScriptPurchase from './pages/ScriptPurchase.tsx';
 import CallHistoryNumber from './pages/CallHistoryNumber.tsx';
 import SupportGauravBeniwalPage from './pages/SupportGauravBeniwalPage.tsx';
@@ -41,11 +40,12 @@ import ServiceRecords from './pages/ServiceRecords.tsx';
 import { DashboardServicesView } from './components/DashboardServicesView.tsx';
 
 import LandingPage from './pages/LandingPage.tsx';
+import ProtectRecordPage from './pages/ProtectRecordPage.tsx';
 
 export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isProtectOpen, setIsProtectOpen] = useState(false);
-  const [protectTab, setProtectTab] = useState<'mobile' | 'telegram'>('mobile');
+  const [protectTab, setProtectTab] = useState<ProtectTabType>('mobile');
 
   useEffect(() => {
     const handleLoginEvent = () => setIsLoginOpen(true);
@@ -60,12 +60,8 @@ export default function App() {
       }
     };
     const handleProtectEvent = (e: any) => {
-      if (e.detail && e.detail.tab) {
-        setProtectTab(e.detail.tab);
-      } else {
-        setProtectTab('mobile');
-      }
-      setIsProtectOpen(true);
+      const tab = e.detail?.tab || 'mobile';
+      window.location.href = `/protect?tab=${tab}`;
     };
 
     window.addEventListener('open-login', handleLoginEvent);
@@ -114,10 +110,8 @@ export default function App() {
         <Route path="/service/:subserviceId" element={<Home service="phone" />} />
         <Route path="/telegram" element={<Home service="telegram" />} />
         <Route path="/identity" element={<Home service="adhr" />} />
-        <Route path="/bank" element={<Home service="bnk" />} />
         <Route path="/vehicle" element={<Home service="vehicle" />} />
         <Route path="/veh-owner" element={<Home service="veh_owner_num" />} />
-        <Route path="/pancard" element={<Home service="pancard" />} />
         <Route path="/email" element={<Home service="email" />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/contactus" element={<Contact />} />
@@ -140,7 +134,6 @@ export default function App() {
         <Route path="/wallet" element={<WalletHistory />} />
         <Route path="/service-records" element={<ServiceRecords />} />
         <Route path="/history" element={<ServiceRecords />} />
-        <Route path="/panfind" element={<Home service="aadhaar_to_pan" />} />
         <Route path="/support" element={<TelegramRedirect />} />
         <Route path="/contact" element={<TelegramRedirect />} />
         
@@ -149,6 +142,9 @@ export default function App() {
         <Route path="/SupportGauravBeniwalOnYouTube" element={<SupportGauravBeniwalPage />} />
         <Route path="/callhistorynumber" element={<CallHistoryNumber />} />
         <Route path="/script" element={<ScriptPurchase />} />
+        <Route path="/protect" element={<ProtectRecordPage />} />
+        <Route path="/protect-record" element={<ProtectRecordPage />} />
+        <Route path="/privacy-protection" element={<ProtectRecordPage />} />
         <Route path="/pgpay" element={<PgPaymentPage />} />
         <Route path="/pgpay/:urlAmt" element={<PgPaymentPage fallbackFixed />} />
         <Route path="/:pgpayCustom" element={<PgPaymentPage customSegment />} />
@@ -209,7 +205,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'pancard' | 'aadhaar_to_pan' | 'email' | 'veh_owner_num' }) {
+function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' | 'vehicle' | 'email' | 'veh_owner_num' }) {
   const { user, profile, loading, isDemoMode, exitDemoMode, signOut, refreshProfile, updateProfileCredits } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -226,7 +222,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     window.dispatchEvent(new CustomEvent('launch-payment'));
   };
   const handleOpenProtect = () => {
-    window.dispatchEvent(new CustomEvent('open-protect'));
+    navigate('/protect');
   };
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -380,14 +376,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         'Processing Profile Matches...',
         'Formatting Identity Intelligence...'
       ];
-    } else if (service === 'bnk') {
-      messages = [
-        'Interrogating Clearing Houses...',
-        'Resolving IFSC Routing Indexes...',
-        'Retrieving Branch Configurations...',
-        'Validating Settlement Networks...',
-        'Exporting Bank Intel Reports...'
-      ];
     } else if (service === 'vehicle') {
       messages = [
         'Connecting to RTO Registry...',
@@ -404,14 +392,6 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         'Mapping Owner Registered Phone Number...',
         'Decrypting Linked Contact Profiles...',
         'Wrapping Owner Intel Response...'
-      ];
-    } else if (service === 'pancard') {
-      messages = [
-        'Connecting to Income Tax Department Registry...',
-        'Decrypting PN/PAN Card Records...',
-        'Verifying Permanent Account Holder...',
-        'Correlating Status & Category Indexes...',
-        'Structuring Financial Intel Logs...'
       ];
     }
     
@@ -443,49 +423,33 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     const targetVal = forceQuery || phoneNumber.trim();
     if (!targetVal) return;
 
-    if (activeService === 'phone') {
-      if (targetVal.length < 10) {
-        setError('Please enter a valid 10-digit mobile number.');
+    if (activeService === 'phone' || activeService === 'mobile' || activeService === 'number') {
+      const cleanPhone = targetVal.replace(/\D/g, '');
+      if (cleanPhone.length !== 10) {
+        setError('Please enter a strictly 10-digit mobile number.');
         return;
       }
-    } else if (activeService === 'telegram') {
-      if (targetVal.length < 3) {
-        setError('Please enter a valid Telegram username.');
+    } else if (activeService === 'telegram' || activeService === 'tg') {
+      if (targetVal.trim().length < 3) {
+        setError('Please enter a valid Telegram username or User ID.');
         return;
       }
-    } else if (activeService === 'adhr') {
-      if (targetVal.length < 12) {
-        setError('Please enter a valid 12-digit Identity/Aadhaar number.');
+    } else if (activeService === 'adhr' || activeService === 'aadhaar' || activeService === 'aadhar') {
+      const cleanAdhr = targetVal.replace(/\D/g, '');
+      if (cleanAdhr.length !== 12) {
+        setError('Aadhaar number must be strictly 12 digits.');
         return;
       }
-    } else if (activeService === 'aadhaar_to_pan') {
-      if (targetVal.length < 12) {
-        setError('Please enter a valid 12-digit Aadhaar number.');
+    } else if (activeService === 'vehicle' || activeService === 'veh' || activeService === 'veh_owner_num' || activeService === 'vehicle_owner') {
+      const cleanVeh = targetVal.replace(/[^a-zA-Z0-9]/g, '');
+      if (cleanVeh.length < 6 || cleanVeh.length > 11) {
+        setError('Please enter a valid Vehicle Registration Number (e.g., DL01AB1234).');
         return;
       }
-    } else if (activeService === 'bnk') {
-      if (targetVal.length < 11) {
-        setError('Please enter a valid 11-digit IFSC code (e.g., ABCD0001325).');
-        return;
-      }
-    } else if (activeService === 'vehicle') {
-      if (targetVal.length < 3) {
-        setError('Please enter a valid Vehicle Number (e.g., DL1CA1234).');
-        return;
-      }
-    } else if (activeService === 'veh_owner_num') {
-      if (targetVal.length < 3) {
-        setError('Please enter a valid Vehicle Number (e.g., HR60E3838).');
-        return;
-      }
-    } else if (activeService === 'pancard') {
-      if (targetVal.length < 5) {
-        setError('Please enter a valid PN/PAN Card Number (e.g., ABCDE1234F).');
-        return;
-      }
-    } else if (activeService === 'email') {
-      if (!targetVal.includes('@') || !targetVal.includes('.')) {
-        setError('Please enter a valid Email Address (e.g., test@gmail.com).');
+    } else if (activeService === 'email' || activeService === 'gmail' || activeService === 'mail') {
+      const cleanEmail = targetVal.trim().toLowerCase();
+      if (!cleanEmail.includes('@gmail.com')) {
+        setError('Email query cannot be sent without @gmail.com (e.g., user@gmail.com).');
         return;
       }
     }
@@ -498,22 +462,18 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     const isAdmin = Boolean(user?.email && ADMIN_EMAILS.some(e => e.toLowerCase() === user.email?.toLowerCase()));
     const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
-    let creditCost = 3;
-    if (activeService === 'telegram') {
+    let creditCost = 2;
+    if (activeService === 'phone' || activeService === 'number' || activeService === 'mobile') {
+      creditCost = 2;
+    } else if (activeService === 'telegram' || activeService === 'tg') {
       creditCost = 5;
-    } else if (activeService === 'adhr') {
-      creditCost = 20;
-    } else if (activeService === 'bnk') {
-      creditCost = 5;
-    } else if (activeService === 'vehicle') {
-      creditCost = 10;
-    } else if (activeService === 'veh_owner_num') {
-      creditCost = 20;
-    } else if (activeService === 'pancard') {
-      creditCost = 10;
-    } else if (activeService === 'aadhaar_to_pan') {
-      creditCost = 150;
-    } else if (activeService === 'email') {
+    } else if (activeService === 'adhr' || activeService === 'aadhaar' || activeService === 'aadhar') {
+      creditCost = 25;
+    } else if (activeService === 'vehicle' || activeService === 'veh') {
+      creditCost = 12;
+    } else if (activeService === 'veh_owner_num' || activeService === 'vehicle_owner') {
+      creditCost = 25;
+    } else if (activeService === 'email' || activeService === 'gmail' || activeService === 'mail') {
       creditCost = 20;
     }
 
@@ -532,7 +492,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     try {
       // CHECK PROTECTION
       let isProtected = false;
-      if (activeService === 'phone' || activeService === 'telegram') {
+      try {
         const checkProtectedResponse = await fetch(`${getApiBaseUrl()}/api/check-protected`, {
           method: 'POST',
           headers: {
@@ -544,77 +504,18 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
           const { isProtected: protectedResult } = await checkProtectedResponse.json();
           if (protectedResult) isProtected = true;
         }
+      } catch (e) {
+        console.warn("Protection check error:", e);
       }
 
       if (isProtected) {
-        setError(`This ${activeService === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`);
+        setError(`This record is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`);
         setIsLoading(false);
         return;
       }
 
       // Import corresponding lookups
-      const { lookupNumber, lookupTelegram, lookupAdhr, lookupBnk, lookupVehicle, lookupVehOwnerNum, lookupPancard, lookupAadhaarToPan, lookupEmail } = await import('./services/api.ts');
-
-      if (activeService === 'aadhaar_to_pan') {
-        setAadhaarPanResult(null);
-        setResult(null);
-        setError(null);
-        setIsLoading(true);
-        setLoadingMessage('Bypassing Rate Limits...');
-
-        try {
-          const resStep1 = await lookupAadhaarToPan(targetVal);
-
-          await refreshProfile(); // update user credits instantly
-
-          if (resStep1.status === 'success' && resStep1.pan_found) {
-            const pan = resStep1.pan;
-            setAadhaarPanResult({
-              pan: pan,
-              aadhaar_response: resStep1.results,
-              pancard_loading: true,
-              pancard_result: null,
-              pancard_error: null
-            });
-            setIsLoading(false);
-
-            // Automatically proceed to Step 2
-            try {
-              const panDetails = await lookupPancard(pan);
-              if (panDetails.status && (panDetails.results || panDetails.raw_results)) {
-                setAadhaarPanResult(prev => prev ? {
-                  ...prev,
-                  pancard_loading: false,
-                  pancard_result: panDetails,
-                  pancard_error: null
-                } : null);
-              } else {
-                setAadhaarPanResult(prev => prev ? {
-                  ...prev,
-                  pancard_loading: false,
-                  pancard_result: null,
-                  pancard_error: panDetails.error || 'Failed to retrieve PAN Card details.'
-                } : null);
-              }
-            } catch (panErr: any) {
-              setAadhaarPanResult(prev => prev ? {
-                ...prev,
-                pancard_loading: false,
-                pancard_result: null,
-                pancard_error: panErr.message || 'Error occurred while fetching PAN details.'
-              } : null);
-            }
-          } else {
-            setIsLoading(false);
-            setError(resStep1.message || 'No PAN number found for this Aadhaar number. Any charged credits have been instantly refunded.');
-          }
-        } catch (err: any) {
-          setIsLoading(false);
-          setError(err.message || 'The Aadhaar to PAN gateway encountered an error.');
-        }
-        setCooldown(5);
-        return;
-      }
+      const { lookupNumber, lookupTelegram, lookupAdhr, lookupVehicle, lookupVehOwnerNum, lookupEmail } = await import('./services/api.ts');
 
       let data: any;
       if (activeService === 'phone') {
@@ -623,14 +524,10 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupTelegram(targetVal);
       } else if (activeService === 'adhr') {
         data = await lookupAdhr(targetVal);
-      } else if (activeService === 'bnk') {
-        data = await lookupBnk(targetVal);
       } else if (activeService === 'vehicle') {
         data = await lookupVehicle(targetVal);
       } else if (activeService === 'veh_owner_num') {
         data = await lookupVehOwnerNum(targetVal);
-      } else if (activeService === 'pancard') {
-        data = await lookupPancard(targetVal);
       } else if (activeService === 'email') {
         data = await lookupEmail(targetVal);
       }
@@ -691,11 +588,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const getHeaderTitle = () => {
     if (service === 'telegram') return 'VIP Telegram ID Lookup';
     if (service === 'adhr') return 'VIP Identity Card Lookup';
-    if (service === 'bnk') return 'VIP BA&NK Lookup';
     if (service === 'vehicle') return 'VIP Vehicle Lookup';
     if (service === 'veh_owner_num') return 'VIP Vehicle To Owner Details Lookup';
-    if (service === 'pancard') return 'VIP PN/PAN Card Lookup';
-    if (service === 'aadhaar_to_pan') return 'VIP Aadhaar to PAN Lookup';
     if (service === 'email') return 'VIP Email Lookup';
     return 'VIP Number Details Lookup';
   };
@@ -703,11 +597,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const getInputPlaceholder = () => {
     if (service === 'telegram') return 'Enter Telegram Username (e.g. @Gaurav_beniwal_0001)...';
     if (service === 'adhr') return 'Enter Identity/Aadhaar query (e.g. 962397300673)...';
-    if (service === 'bnk') return 'Enter Bank query or IFSC code (e.g. HDFC0001325)...';
     if (service === 'vehicle') return 'Enter Vehicle Number (e.g. BR07PB6268)...';
     if (service === 'veh_owner_num') return 'Enter Vehicle Number for Owner Details (e.g. HR60E3838)...';
-    if (service === 'pancard') return 'Enter PN/PAN Card Number (e.g. NTEPK1628C)...';
-    if (service === 'aadhaar_to_pan') return 'Enter 12-digit Aadhaar Number...';
     if (service === 'email') return 'Enter Email Address (e.g. test@gmail.com)...';
     return 'Search number...';
   };
@@ -806,7 +697,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                     onClick={handleOpenProtect}
                     className="mt-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold uppercase tracking-widest transition-all shadow-md cursor-pointer hover:scale-[1.03] active:scale-[0.98]"
                   >
-                    Protect Now (₹79)
+                    Protect Now (₹99)
                   </button>
                 </motion.div>
               )}

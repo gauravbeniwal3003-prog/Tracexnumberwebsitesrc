@@ -24,8 +24,13 @@ export interface PricingPlan {
 }
 
 export const PROTECTION_PRICES = {
-  mobile: 69,
-  telegram: 79
+  mobile: 99,
+  phone: 99,
+  telegram: 99,
+  adhr: 99,
+  vehicle: 99,
+  veh_owner_num: 99,
+  email: 99
 };
 
 export const CREDIT_PLANS: PricingPlan[] = [
@@ -73,18 +78,6 @@ export const API_PLANS: PricingPlan[] = [
   { id: 'api_vehicle_400', name: 'Vehicle Lookup (15 Days)', price: 400, type: 'unlimited', value: 360 },
   { id: 'api_vehicle_700', name: 'Vehicle Lookup (1 Month)', price: 700, type: 'unlimited', value: 720 },
   { id: 'api_vehicle_1800', name: 'Vehicle Lookup (3 Months)', price: 1800, type: 'unlimited', value: 2160 },
-
-  // Bank
-  { id: 'api_bank_20', name: 'BA&NK Lookup (20 Lookups)', price: 20, type: 'credits', value: 20 },
-  { id: 'api_bank_70', name: 'BA&NK Lookup (1 Week)', price: 70, type: 'unlimited', value: 168 },
-  { id: 'api_bank_250', name: 'BA&NK Lookup (1 Month)', price: 250, type: 'unlimited', value: 720 },
-  { id: 'api_bank_600', name: 'BA&NK Lookup (3 Months)', price: 600, type: 'unlimited', value: 2160 },
-
-  // Aadhaar to PAN
-  { id: 'api_aadhaar_to_pan_1000', name: 'Aadhaar To PAN (10 Lookups)', price: 1000, type: 'credits', value: 10 },
-  { id: 'api_aadhaar_to_pan_2000', name: 'Aadhaar To PAN (22 Lookups)', price: 2000, type: 'credits', value: 22 },
-  { id: 'api_aadhaar_to_pan_5000', name: 'Aadhaar To PAN (60 Lookups)', price: 5000, type: 'credits', value: 60 },
-  { id: 'api_aadhaar_to_pan_10000', name: 'Aadhaar To PAN (15 Days)', price: 10000, type: 'unlimited', value: 360 },
 
   // Email
   { id: 'api_email_20', name: 'Email Lookup (40 Lookups)', price: 20, type: 'credits', value: 40 },

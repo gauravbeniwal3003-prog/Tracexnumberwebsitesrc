@@ -397,10 +397,6 @@ export const lookupAdhr = async (aadhaarNumber: string): Promise<ApiResponse> =>
   return await executeUniversalLookup('adhr', aadhaarNumber);
 };
 
-export const lookupBnk = async (ifscCode: string): Promise<ApiResponse> => {
-  return await executeUniversalLookup('bnk', ifscCode);
-};
-
 export const lookupVehicle = async (vehicleNumber: string): Promise<ApiResponse> => {
   return await executeUniversalLookup('vehicle', vehicleNumber);
 };
@@ -409,28 +405,8 @@ export const lookupVehOwnerNum = async (vehicleNumber: string): Promise<ApiRespo
   return await executeUniversalLookup('veh_owner_num', vehicleNumber);
 };
 
-export const lookupPancard = async (pancardNumber: string): Promise<ApiResponse> => {
-  return await executeUniversalLookup('pancard', pancardNumber);
-};
-
 export const lookupEmail = async (email: string): Promise<ApiResponse> => {
   return await executeUniversalLookup('email', email);
-};
-
-export const lookupAadhaarToPan = async (aadhaarNo: string): Promise<any> => {
-  const result = await executeUniversalLookup('aadhaar_to_pan', aadhaarNo);
-  if (result.status && result.results) {
-    return {
-      status: 'success',
-      pan_found: true,
-      data: result.results
-    };
-  }
-  return {
-    status: 'failed',
-    pan_found: false,
-    message: result.error || 'PAN not linked with this Aadhaar'
-  };
 };
 
 export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse> => {

@@ -110,7 +110,7 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
         id: "#4",
         name: "Aadhar Lookup",
         serviceCode: "adhr",
-        price: "₹20.00 / call",
+        price: "₹25.00 / call",
         category: "Aadhaar Services",
         paramPlaceholder: "ENTER_AADHAAR_NUMBER",
         sampleQuery: "998877665544"
@@ -118,36 +118,22 @@ const API_CATEGORIES: { name: string; endpoints: EndpointSpec[] }[] = [
     ]
   },
   {
-    name: "Banking & Financial",
-    endpoints: [
-      {
-        id: "#5",
-        name: "IFSC Lookup",
-        serviceCode: "bnk",
-        price: "₹5.00 / call",
-        category: "Banking & Financial",
-        paramPlaceholder: "ENTER_IFSC_CODE",
-        sampleQuery: "SBIN0001234"
-      }
-    ]
-  },
-  {
     name: "Vehicle & Transport",
     endpoints: [
       {
-        id: "#6",
+        id: "#5",
         name: "Vehicle Lookup",
         serviceCode: "vehicle",
-        price: "₹10.00 / call",
+        price: "₹12.00 / call",
         category: "Vehicle & Transport",
         paramPlaceholder: "ENTER_VEHICLE_NUMBER",
         sampleQuery: "DL01AB1234"
       },
       {
-        id: "#7",
+        id: "#6",
         name: "Vehicle To Owner Number",
         serviceCode: "veh_owner_num",
-        price: "₹20.00 / call",
+        price: "₹25.00 / call",
         category: "Vehicle & Transport",
         paramPlaceholder: "ENTER_VEHICLE_NUMBER",
         sampleQuery: "DL01AB1234"
@@ -166,17 +152,15 @@ function getEndpointSampleResponse(serviceCode: string) {
         user_id: "usr_8829102",
         user_email: "user@tracexdata.online",
         plan_name: "API Member Plan",
-        total_services: 9,
+        total_services: 7,
         pricing_updated_at: new Date().toISOString(),
         services: [
-          { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
-          { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
-          { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
-          { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
-          { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 1.00, your_price: 1.00, discount_percent: 0, currency: "INR" },
-          { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 5.00, your_price: 1.00, discount_percent: 80, currency: "INR" },
-          { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 15.00, your_price: 1.00, discount_percent: 93.33, currency: "INR" },
-          { service_key: "aadhaar_to_pan", service_name: "Aadhaar to PAN Find / Link", category: "Identity & Govt", base_price: 150.00, your_price: 150.00, discount_percent: 0, currency: "INR" },
+          { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 2.00, your_price: 2.00, discount_percent: 0, currency: "INR" },
+          { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 20.00, your_price: 20.00, discount_percent: 0, currency: "INR" },
+          { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 5.00, your_price: 5.00, discount_percent: 0, currency: "INR" },
+          { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 25.00, your_price: 25.00, discount_percent: 0, currency: "INR" },
+          { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 12.00, your_price: 12.00, discount_percent: 0, currency: "INR" },
+          { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 25.00, your_price: 25.00, discount_percent: 0, currency: "INR" },
           { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00, your_price: 0.00, discount_percent: 0, currency: "INR" }
         ]
       };

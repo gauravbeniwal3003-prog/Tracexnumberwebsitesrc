@@ -316,7 +316,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                       <Smartphone className="w-4 h-4 text-cyan-600" />
                       <span>Number Lookup</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹3</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹2</span>
                   </button>
 
                   <button
@@ -349,7 +349,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                       <ShieldCheck className="w-4 h-4 text-amber-600" />
                       <span>Aadhar Lookup</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹25</span>
                   </button>
 
                   <button
@@ -360,7 +360,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                       <Car className="w-4 h-4 text-orange-600" />
                       <span>Vehicle RC Details</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹10</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹12</span>
                   </button>
 
                   <button
@@ -371,18 +371,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                       <Car className="w-4 h-4 text-orange-700" />
                       <span>Vehicle To Owner Number</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/bank_ifsc'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Building2 className="w-4 h-4 text-emerald-600" />
-                      <span>Bank IFSC Lookup</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹5</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹25</span>
                   </button>
                 </div>
 

@@ -65,14 +65,10 @@ export default function AdminDashboard() {
   const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({
     phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
     aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-    aadhaar_to_pan: "https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}",
-    pancard: "https://exploitsindia.site/osint-api/pancard.php?exploits={query}",
-    ifsc: "https://exploitsindia.site/osint-api/ifsc.php?exploits={query}",
     vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
     veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
-    family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
+    telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
   });
   const [isSavingProviders, setIsSavingProviders] = useState(false);
 
@@ -1445,7 +1441,11 @@ export default function AdminDashboard() {
                           </td>
                           <td className="px-6 py-4">
                             <span className={`text-[9px] border px-2 py-0.5 rounded-full font-bold uppercase ${
-                              log.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                              String(log.status || '').toLowerCase().includes('processing')
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : String(log.status || '').toLowerCase().includes('success')
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
                             }`}>
                               {log.status || 'SUCCESS'}
                             </span>
@@ -1618,14 +1618,10 @@ export default function AdminDashboard() {
                  {[
                    { key: 'phone', label: 'Mobile Number OSINT Provider', icon: '📱' },
                    { key: 'aadhaar', label: 'Aadhaar Card Lookup Provider', icon: '🆔' },
-                   { key: 'aadhaar_to_pan', label: 'Aadhaar to PAN Find Provider', icon: '💳' },
-                   { key: 'pancard', label: 'PAN Card Details Provider', icon: '📄' },
-                   { key: 'ifsc', label: 'Bank IFSC Details Provider', icon: '🏦' },
                    { key: 'vehicle', label: 'Vehicle RC Information Provider', icon: '🚗' },
                    { key: 'veh_owner_num', label: 'Vehicle Owner Number Lookup', icon: '🏎️' },
                    { key: 'email', label: 'Email Intelligence OSINT Provider', icon: '📧' },
-                   { key: 'telegram', label: 'Telegram Account OSINT Provider', icon: '✈️' },
-                   { key: 'family', label: 'Ration / Family Tree Provider', icon: '🌾' }
+                   { key: 'telegram', label: 'Telegram Account OSINT Provider', icon: '✈️' }
                  ].map(item => (
                    <div key={item.key} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                      <div className="flex items-center justify-between text-xs">

@@ -12,7 +12,7 @@ export interface ApiServiceConfig {
   subtitle: string;
   iconName: string;
   is_active: boolean;
-  serviceType: 'phone' | 'telegram' | 'adhr' | 'bnk' | 'vehicle' | 'email' | 'veh_owner_num';
+  serviceType: 'phone' | 'telegram' | 'adhr' | 'vehicle' | 'email' | 'veh_owner_num';
 }
 
 export const DEFAULT_API_SERVICES: ApiServiceConfig[] = [
@@ -62,7 +62,7 @@ export const DEFAULT_API_SERVICES: ApiServiceConfig[] = [
     id: "adhr",
     title: "Aadhar Lookup",
     category: "Aadhaar Services",
-    fee: 20,
+    fee: 25,
     serviceCode: "adhr",
     inputLabel: "AADHAAR NUMBER",
     inputPlaceholder: "Enter 12-digit Aadhaar No (e.g. 998877665544)",
@@ -73,24 +73,10 @@ export const DEFAULT_API_SERVICES: ApiServiceConfig[] = [
     serviceType: "adhr"
   },
   {
-    id: "bnk",
-    title: "IFSC Lookup",
-    category: "Banking & Financial",
-    fee: 5,
-    serviceCode: "bnk",
-    inputLabel: "IFSC CODE",
-    inputPlaceholder: "Enter 11-character IFSC Code (e.g. SBIN0001234)",
-    sampleQuery: "SBIN0001234",
-    subtitle: "Bank Branch Name, Address & MICR Details",
-    iconName: "Building2",
-    is_active: true,
-    serviceType: "bnk"
-  },
-  {
     id: "vehicle",
     title: "Vehicle Lookup",
     category: "Vehicle & Transport",
-    fee: 10,
+    fee: 12,
     serviceCode: "vehicle",
     inputLabel: "VEHICLE NUMBER",
     inputPlaceholder: "Enter Vehicle Reg No (e.g. DL01AB1234)",
@@ -104,7 +90,7 @@ export const DEFAULT_API_SERVICES: ApiServiceConfig[] = [
     id: "veh_owner_num",
     title: "Vehicle To Owner Number",
     category: "Vehicle & Transport",
-    fee: 20,
+    fee: 25,
     serviceCode: "veh_owner_num",
     inputLabel: "VEHICLE NUMBER",
     inputPlaceholder: "Enter Vehicle Reg No (e.g. DL01AB1234)",
@@ -134,7 +120,7 @@ export async function getApiServices(): Promise<ApiServiceConfig[]> {
         id: item.id || item.service_code,
         title: item.title || item.name,
         category: item.category || 'General Services',
-        fee: Number(item.fee ?? item.price ?? 10),
+        fee: Number(item.fee ?? item.base_price ?? item.price ?? 10),
         serviceCode: item.service_code || item.id,
         inputLabel: item.input_label || 'QUERY INPUT',
         inputPlaceholder: item.input_placeholder || 'Enter search query',
@@ -186,9 +172,12 @@ export async function updateApiServiceConfig(service: ApiServiceConfig): Promise
     const payload = {
       id: service.id,
       title: service.title,
+      service_name: service.title,
       category: service.category,
-      fee: service.fee,
+      fee: Number(service.fee),
+      base_price: Number(service.fee),
       service_code: service.serviceCode,
+      service_key: service.serviceCode,
       input_label: service.inputLabel,
       input_placeholder: service.inputPlaceholder,
       sample_query: service.sampleQuery,

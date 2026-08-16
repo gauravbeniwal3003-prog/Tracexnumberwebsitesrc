@@ -5,38 +5,77 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldCheck, Check, Loader2, Phone, ShieldAlert, MessageSquare, Car } from 'lucide-react';
+import { X, ShieldCheck, Check, Loader2, Phone, ShieldAlert, MessageSquare, Car, FileText, Mail, UserCheck } from 'lucide-react';
 import { useAuth } from '../services/AuthContext.tsx';
 import { PROTECTION_PRICES } from '../types.ts';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
 import { supabase } from '../services/supabase.ts';
 import { getApiBaseUrl } from '../services/api.ts';
 
+export type ProtectTabType = 'mobile' | 'telegram' | 'adhr' | 'vehicle' | 'veh_owner_num' | 'email';
+
 interface ProtectNumberModalProps {
   onClose: () => void;
-  initialTab?: 'mobile' | 'telegram';
+  initialTab?: ProtectTabType;
 }
 
 export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: ProtectNumberModalProps) {
   const { user, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'mobile' | 'telegram'>(initialTab);
+  const [activeTab, setActiveTab] = useState<ProtectTabType>(initialTab);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const getPrice = () => {
-    if (activeTab === 'mobile') return PROTECTION_PRICES.mobile;
-    return PROTECTION_PRICES.telegram;
+    return 99; // Each feature protection costs ₹99
   };
 
   const getLabel = () => {
-    if (activeTab === 'mobile') return 'Mobile Number';
-    return 'Telegram User ID';
+    switch (activeTab) {
+      case 'mobile': return 'Mobile Number (10 Digits)';
+      case 'telegram': return 'Telegram Username / User ID';
+      case 'adhr': return 'Aadhaar Card Number (12 Digits)';
+      case 'vehicle': return 'Vehicle Reg Number (RC)';
+      case 'veh_owner_num': return 'Vehicle Number for Owner';
+      case 'email': return 'Email Address (@gmail.com)';
+      default: return 'Record Identifier';
+    }
   };
 
   const getPlaceholder = () => {
-    if (activeTab === 'mobile') return '9876543210';
-    return '7850023357';
+    switch (activeTab) {
+      case 'mobile': return '9876543210';
+      case 'telegram': return '@username or 7850023357';
+      case 'adhr': return '998877665544';
+      case 'vehicle': return 'DL01AB1234';
+      case 'veh_owner_num': return 'HR60E3838';
+      case 'email': return 'user@gmail.com';
+      default: return 'Enter value...';
+    }
+  };
+
+  const getMaxInputLength = () => {
+    if (activeTab === 'mobile') return 10;
+    if (activeTab === 'adhr') return 12;
+    if (activeTab === 'vehicle' || activeTab === 'veh_owner_num') return 11;
+    return 100;
+  };
+
+  const handleInputChange = (val: string) => {
+    if (activeTab === 'mobile') {
+      const clean = val.replace(/\D/g, '').slice(0, 10);
+      setInputValue(clean);
+    } else if (activeTab === 'adhr') {
+      const clean = val.replace(/\D/g, '').slice(0, 12);
+      setInputValue(clean);
+    } else if (activeTab === 'vehicle' || activeTab === 'veh_owner_num') {
+      const clean = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11);
+      setInputValue(clean);
+    } else if (activeTab === 'email') {
+      setInputValue(val.trim());
+    } else {
+      setInputValue(val);
+    }
   };
 
   const handleProtect = async (e: React.FormEvent) => {
@@ -51,10 +90,11 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
       return;
     }
 
+    // Smart Validation Logics
     if (activeTab === 'mobile') {
       const cleanVal = inputValue.replace(/\D/g, '');
       if (cleanVal.length !== 10) {
-        alert("Please enter a valid 10-digit mobile number");
+        alert("Mobile number must be strictly 10 digits");
         return;
       }
     } else if (activeTab === 'telegram') {
@@ -63,11 +103,28 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
         alert("Telegram handle/ID must be at least 3 characters");
         return;
       }
+    } else if (activeTab === 'adhr') {
+      const cleanVal = inputValue.replace(/\D/g, '');
+      if (cleanVal.length !== 12) {
+        alert("Aadhaar number must be strictly 12 digits");
+        return;
+      }
+    } else if (activeTab === 'email') {
+      const cleanVal = inputValue.trim().toLowerCase();
+      if (!cleanVal.includes('@gmail.com')) {
+        alert("Email query cannot be sent without @gmail.com");
+        return;
+      }
+    } else if (activeTab === 'vehicle' || activeTab === 'veh_owner_num') {
+      const cleanVal = inputValue.replace(/[^a-zA-Z0-9]/g, '');
+      if (cleanVal.length < 6 || cleanVal.length > 11) {
+        alert("Please enter a valid Vehicle Registration Number");
+        return;
+      }
     }
 
     setLoading(true);
     const backendUrl = getApiBaseUrl();
-
     const finalAmount = getPrice();
 
     try {
@@ -134,6 +191,15 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
     }
   };
 
+  const tabs: { id: ProtectTabType; label: string; icon: any }[] = [
+    { id: 'mobile', label: 'Mobile', icon: Phone },
+    { id: 'telegram', label: 'Telegram', icon: MessageSquare },
+    { id: 'adhr', label: 'Aadhaar', icon: FileText },
+    { id: 'vehicle', label: 'Vehicle RC', icon: Car },
+    { id: 'veh_owner_num', label: 'Vehicle Owner', icon: UserCheck },
+    { id: 'email', label: 'Email', icon: Mail },
+  ];
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <motion.div
@@ -148,7 +214,7 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="glass-card w-full max-w-md p-8 relative z-10 bg-white border-sky-200 shadow-[0_20px_50px_rgba(14,165,233,0.15)]"
+        className="glass-card w-full max-w-lg p-6 sm:p-8 relative z-10 bg-white border-sky-200 shadow-[0_20px_50px_rgba(14,165,233,0.15)] rounded-3xl"
       >
         <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-800 transition-colors cursor-pointer">
           <X size={20} />
@@ -159,46 +225,47 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
             <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-emerald-200">
               <Check size={40} />
             </div>
-            <h2 className="text-2xl font-black text-slate-900 mb-2">Request Shared!</h2>
-            <p className="text-slate-600 text-sm font-medium">Your security request has been sent for manual authorization.</p>
+            <h2 className="text-2xl font-black text-slate-900 mb-2">Request Processed!</h2>
+            <p className="text-slate-600 text-sm font-medium">Your record protection is being activated on TRACEXDATA.</p>
           </div>
         ) : (
           <>
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-sky-100 text-sky-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-sky-200 shadow-sm">
-                <ShieldCheck size={32} />
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-sky-200 shadow-sm">
+                <ShieldCheck size={28} />
               </div>
-              <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase tracking-tight">TraceX Security</h2>
-              <p className="text-slate-600 text-sm font-medium">Stop anyone from finding your details or records on our platform.</p>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 mb-1 uppercase tracking-tight">TraceX Record Protection</h2>
+              <p className="text-slate-600 text-xs sm:text-sm font-medium">Protect your personal records & details from being searched on our site.</p>
             </div>
 
-            {/* Selection Tabs */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200 mb-6">
-              <button
-                type="button"
-                onClick={() => { setActiveTab('mobile'); setInputValue(''); }}
-                className={`py-2 text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer ${activeTab === 'mobile' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-              >
-                Mobile
-              </button>
-              <button
-                type="button"
-                onClick={() => { setActiveTab('telegram'); setInputValue(''); }}
-                className={`py-2 text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer ${activeTab === 'telegram' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-              >
-                Telegram
-              </button>
+            {/* Selection Tabs Grid */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200 mb-5">
+              {tabs.map((tab) => {
+                const IconComp = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => { setActiveTab(tab.id); setInputValue(''); }}
+                    className={`py-2 px-1 text-[10px] sm:text-xs font-black uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 ${isActive ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}
+                  >
+                    <IconComp size={12} className={isActive ? 'text-white' : 'text-slate-400'} />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="space-y-6">
-              <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-100 shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Protection Active</span>
-                  <span className="text-sky-700 font-extrabold text-sm">Lifetime</span>
+            <div className="space-y-5">
+              <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-100 shadow-sm">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Protection Validity</span>
+                  <span className="text-sky-700 font-extrabold text-xs sm:text-sm">Lifetime Guard 🛡️</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Pricing</span>
-                  <span className="text-slate-900 font-black text-xl">₹{getPrice()}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Protection Fee</span>
+                  <span className="text-slate-900 font-black text-lg sm:text-xl">₹99.00</span>
                 </div>
               </div>
 
@@ -208,21 +275,18 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
                   <div className="relative">
                     {activeTab === 'mobile' && <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
                     {activeTab === 'telegram' && <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
-                    
+                    {activeTab === 'adhr' && <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
+                    {(activeTab === 'vehicle' || activeTab === 'veh_owner_num') && <Car className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
+                    {activeTab === 'email' && <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
+
                     <input
                       required
                       type="text"
+                      maxLength={getMaxInputLength()}
                       value={inputValue}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (activeTab === 'mobile') {
-                          setInputValue(cleanIndianPhoneNumber(val));
-                        } else {
-                          setInputValue(val.trim());
-                        }
-                      }}
+                      onChange={(e) => handleInputChange(e.target.value)}
                       placeholder={getPlaceholder()}
-                      className="w-full bg-slate-50 border border-sky-200 rounded-xl px-12 py-3 focus:outline-none focus:bg-white focus:border-sky-500 transition-all text-slate-900 font-mono font-medium"
+                      className="w-full bg-slate-50 border border-sky-200 rounded-xl px-12 py-3 focus:outline-none focus:bg-white focus:border-sky-500 transition-all text-slate-900 font-mono font-medium text-sm"
                     />
                   </div>
                 </div>
@@ -230,21 +294,21 @@ export default function ProtectNumberModal({ onClose, initialTab = 'mobile' }: P
                 <button
                   disabled={loading || !inputValue}
                   type="submit"
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold flex items-center justify-center gap-2 hover:from-sky-600 hover:to-blue-700 transition-all disabled:opacity-50 shadow-md cursor-pointer"
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold flex items-center justify-center gap-2 hover:from-sky-600 hover:to-blue-700 transition-all disabled:opacity-50 shadow-md cursor-pointer text-sm"
                 >
                   {loading ? (
-                    <Loader2 className="animate-spin" size={20} />
+                    <Loader2 className="animate-spin" size={18} />
                   ) : (
                     <>
-                      <span>Activate Protection</span>
-                      <ShieldAlert size={20} />
+                      <span>Activate Protection (₹99)</span>
+                      <ShieldAlert size={18} />
                     </>
                   )}
                 </button>
               </form>
 
               <p className="text-[10px] text-slate-500 text-center uppercase tracking-widest leading-relaxed font-bold">
-                Once protected, your record will be locked and hidden from all searches forever.
+                Once protected, searching this record on dashboard or API will show a TRACEXDATA Protection shield message.
               </p>
             </div>
           </>

@@ -647,48 +647,57 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 3.0,            // Number lookup: ₹2.00 per lookup
-  number: 3.0,
-  mobile: 3.0,
+  phone: 2.0,            // Number lookup: ₹2.00 per lookup
+  number: 2.0,
+  mobile: 2.0,
   telegram: 5.0,         // Telegram lookup: ₹5.00 per lookup
   tg: 5.0,
-  bnk: 5.0,              // Bank/IFSC lookup: ₹5.00 per lookup
-  bank: 5.0,
-  ifsc: 5.0,
   email: 20.0,           // Gmail / Email lookup: ₹20.00 per lookup
   mail: 20.0,
   gmail: 20.0,
-  rasion: 5.0,           // Ration card lookup: ₹5.00
-  family: 5.0,
-  ration: 5.0,
-  adhr: 20.0,            // Aadhar lookup: ₹20.00
-  aadhar: 20.0,
-  aadhaar: 20.0,
-  identity: 20.0,
-  vehicle: 10.0,         // Vehicle details lookup: ₹10.00
-  veh: 10.0,
-  veh_owner_num: 20.0,   // Vehicle to owner number lookup: ₹20.00
-  veh_numm: 20.0,
-  vehicle_owner: 20.0,
+  adhr: 25.0,            // Aadhar lookup: ₹25.00
+  aadhar: 25.0,
+  aadhaar: 25.0,
+  identity: 25.0,
+  vehicle: 12.0,         // Vehicle details lookup: ₹12.00
+  veh: 12.0,
+  veh_owner_num: 25.0,   // Vehicle to owner number lookup: ₹25.00
+  veh_numm: 25.0,
+  vehicle_owner: 25.0,
   balance: 0.0
 };
+
+function getCanonicalServiceKey(key: string): string {
+  const normKey = (key || "").trim().toLowerCase();
+  if (["number", "mobile", "phone"].includes(normKey)) return "phone";
+  if (["tg", "telegram"].includes(normKey)) return "telegram";
+  if (["aadhar", "aadhaar", "identity", "adhr"].includes(normKey)) return "adhr";
+  if (["veh", "vehicle"].includes(normKey)) return "vehicle";
+  if (["vehicle_owner", "veh_numm", "veh_owner_num"].includes(normKey)) return "veh_owner_num";
+  if (["gmail", "mail", "email"].includes(normKey)) return "email";
+  return normKey;
+}
 
 // Dynamic Price Calculator: Retrieves custom per-user pricing or discount
 async function getEffectiveServicePrice(serviceKey: string, userId?: string, userEmail?: string): Promise<number> {
   const normKey = (serviceKey || "").trim().toLowerCase();
-  let basePrice = LOOKUP_RATES[normKey] ?? 2.0;
+  const canonicalKey = getCanonicalServiceKey(normKey);
+
+  let basePrice = LOOKUP_RATES[normKey] ?? LOOKUP_RATES[canonicalKey] ?? 2.0;
   if (!supabaseAdmin) return basePrice;
 
   try {
-    const { data: serviceData } = 
-          await supabaseAdmin
+    const { data: serviceData } = await supabaseAdmin
       .from("api_services")
-      .select("base_price")
-      .eq("service_key", normKey)
+      .select("base_price, fee")
+      .or(`service_key.eq.${normKey},service_code.eq.${normKey},id.eq.${normKey},service_key.eq.${canonicalKey},service_code.eq.${canonicalKey},id.eq.${canonicalKey}`)
       .maybeSingle();
 
-    if (serviceData && serviceData.base_price !== undefined && serviceData.base_price !== null && Number(serviceData.base_price) > 0) {
-      basePrice = Number(serviceData.base_price);
+    if (serviceData) {
+      const dbPrice = Number(serviceData.base_price ?? serviceData.fee);
+      if (!isNaN(dbPrice) && dbPrice > 0) {
+        basePrice = dbPrice;
+      }
     }
 
     if (!userId && !userEmail) return basePrice;
@@ -704,7 +713,10 @@ async function getEffectiveServicePrice(serviceKey: string, userId?: string, use
 
     const { data: customPricings } = await query;
     if (customPricings && customPricings.length > 0) {
-      const directMatch = customPricings.find((p: any) => p.service_key === serviceKey);
+      const directMatch = customPricings.find((p: any) => {
+        const pk = (p.service_key || p.service_code || "").toLowerCase();
+        return pk === normKey || pk === canonicalKey;
+      });
       if (directMatch) {
         if (directMatch.custom_price !== null && directMatch.custom_price !== undefined) {
           return Number(directMatch.custom_price);
@@ -715,7 +727,10 @@ async function getEffectiveServicePrice(serviceKey: string, userId?: string, use
         }
       }
 
-      const allMatch = customPricings.find((p: any) => p.service_key === 'ALL');
+      const allMatch = customPricings.find((p: any) => {
+        const pk = (p.service_key || p.service_code || "").toLowerCase();
+        return pk === "all";
+      });
       if (allMatch) {
         if (allMatch.custom_price !== null && allMatch.custom_price !== undefined) {
           return Number(allMatch.custom_price);
@@ -2301,7 +2316,7 @@ app.get("/api/service-records", async (req, res) => {
           client: (r.user_email || targetUserEmail || "User").split('@')[0],
           serviceName: (r.search_type || "Lookup").replace(/_/g, ' ').toUpperCase(),
           referenceCode: r.query || "N/A",
-          status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED"),
+          status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "PROCESSING" ? "PROCESSING" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED")),
           payload: r.payload || r.results || {
             status: r.status || "SUCCESS",
             search_type: r.search_type,
@@ -2339,7 +2354,7 @@ app.get("/api/service-records", async (req, res) => {
               client: r.client_name || (targetUserEmail || "User").split('@')[0],
               serviceName: r.service_name || "API Service",
               referenceCode: r.reference_code || "N/A",
-              status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED"),
+              status: statusUpper.includes("REFUND") ? "REFUNDED" : (statusUpper === "PROCESSING" ? "PROCESSING" : (statusUpper === "SUCCESS" ? "SUCCESS" : "FAILED")),
               payload: r.result_payload || { status: r.status || "SUCCESS", message: "Processed" },
               createdAtTs: r.created_at ? new Date(r.created_at).getTime() : 0
             });
@@ -2494,11 +2509,9 @@ app.all(["/api/pricing", "/api/user/pricing", "/api/services/pricing"], async (r
     { service_key: "phone", service_name: "Mobile / Phone Intelligence Lookup", category: "Phone & Telecom", base_price: 2.00 },
     { service_key: "email", service_name: "Email Address OSINT Lookup", category: "Digital & Social", base_price: 20.00 },
     { service_key: "telegram", service_name: "Telegram Username / User ID Search", category: "Digital & Social", base_price: 5.00 },
-    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 20.00 },
-    { service_key: "bnk", service_name: "Bank Account & UPI Name Verification", category: "Financial & Banking", base_price: 5.00 },
-    { service_key: "rasion", service_name: "Ration Card Search & Family Details", category: "Identity & Govt", base_price: 5.00 },
-    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 10.00 },
-    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 20.00 },
+    { service_key: "adhr", service_name: "Aadhaar Card Search & Details", category: "Identity & Govt", base_price: 25.00 },
+    { service_key: "vehicle", service_name: "Vehicle RC Lookup & Details", category: "Vehicle & Transport", base_price: 12.00 },
+    { service_key: "veh_owner_num", service_name: "Vehicle Owner Mobile Number Search", category: "Vehicle & Transport", base_price: 25.00 },
     { service_key: "balance", service_name: "Check Account Wallet Balance API", category: "Account & Wallet", base_price: 0.00 }
   ];
 
@@ -2629,6 +2642,88 @@ app.post("/api/visitor/log", (req, res) => {
   }
 });
 
+// Universal Privacy Shield & Record Protection Checker
+async function checkRecordIsProtected(serviceType: string, query: string): Promise<boolean> {
+  if (!supabaseAdmin) return false;
+  try {
+    const rawQuery = String(query || '').trim();
+    if (!rawQuery) return false;
+
+    // Normalize service type string
+    let st = serviceType.toLowerCase();
+    if (['mobile', 'number', 'phone'].includes(st)) st = 'phone';
+    if (['telegram', 'tg'].includes(st)) st = 'telegram';
+    if (['adhr', 'aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
+    if (['vehicle', 'veh'].includes(st)) st = 'vehicle';
+    if (['veh_owner_num', 'vehicle_owner'].includes(st)) st = 'veh_owner_num';
+    if (['email', 'gmail', 'mail'].includes(st)) st = 'email';
+
+    // 1. Check in unified table protected_records
+    const { data: rec } = await supabaseAdmin
+      .from('protected_records')
+      .select('record_value')
+      .eq('service_type', st)
+      .ilike('record_value', rawQuery)
+      .maybeSingle();
+
+    if (rec) return true;
+
+    // 2. Specific service matching and format normalizations
+    if (st === 'phone') {
+      const cleanPhone = rawQuery.replace(/\D/g, '');
+      if (cleanPhone) {
+        const { data: legacyNum } = await supabaseAdmin
+          .from('protected_numbers')
+          .select('phone_number')
+          .eq('phone_number', cleanPhone)
+          .maybeSingle();
+        if (legacyNum) return true;
+
+        const { data: recPhone } = await supabaseAdmin
+          .from('protected_records')
+          .select('record_value')
+          .eq('service_type', 'phone')
+          .eq('record_value', cleanPhone)
+          .maybeSingle();
+        if (recPhone) return true;
+      }
+    } else if (st === 'telegram') {
+      const cleanTg = rawQuery.replace(/^@/, '').trim();
+      const withAt = `@${cleanTg}`;
+      const { data: legacyTg1 } = await supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', cleanTg).maybeSingle();
+      const { data: legacyTg2 } = await supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', withAt).maybeSingle();
+      if (legacyTg1 || legacyTg2) return true;
+
+      const { data: recTg1 } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', cleanTg).maybeSingle();
+      const { data: recTg2 } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', withAt).maybeSingle();
+      if (recTg1 || recTg2) return true;
+    } else if (st === 'adhr') {
+      const cleanAdhr = rawQuery.replace(/\D/g, '');
+      if (cleanAdhr) {
+        const { data: recAdhr } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'adhr').eq('record_value', cleanAdhr).maybeSingle();
+        if (recAdhr) return true;
+      }
+    } else if (st === 'vehicle' || st === 'veh_owner_num') {
+      const cleanVeh = rawQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (cleanVeh) {
+        const { data: recVeh } = await supabaseAdmin.from('protected_records').select('record_value').in('service_type', ['vehicle', 'veh_owner_num']).ilike('record_value', cleanVeh).maybeSingle();
+        if (recVeh) return true;
+      }
+    } else if (st === 'email') {
+      const cleanEmail = rawQuery.toLowerCase();
+      if (cleanEmail) {
+        const { data: recEmail } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'email').ilike('record_value', cleanEmail).maybeSingle();
+        if (recEmail) return true;
+      }
+    }
+
+    return false;
+  } catch (err) {
+    console.warn("[checkRecordIsProtected Exception]", err);
+    return false;
+  }
+}
+
 // POST /api/check-protected - Check safe/privacy protection status securely without client leaks
 app.post("/api/check-protected", async (req, res) => {
   const { type, query } = req.body;
@@ -2636,37 +2731,7 @@ app.post("/api/check-protected", async (req, res) => {
     return res.status(400).json({ error: "Missing type or query" });
   }
   try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: "Database offline" });
-    }
-    let isProtected = false;
-    if (type === 'phone') {
-      const cleanPhone = String(query).replace(/\D/g, '');
-      const { data } = 
-          await supabaseAdmin
-        .from('protected_numbers')
-        .select('phone_number')
-        .eq('phone_number', cleanPhone)
-        .maybeSingle();
-      if (data) isProtected = true;
-    } else if (type === 'telegram') {
-      const cleanTelegram = String(query).replace(/^@/, '').trim();
-      const withAt = `@${cleanTelegram}`;
-      const { data: data1 } = 
-          await supabaseAdmin
-        .from('protected_telegrams')
-        .select('telegram_id')
-        .eq('telegram_id', cleanTelegram)
-        .maybeSingle();
-      const { data: data2 } = 
-          await supabaseAdmin
-        .from('protected_telegrams')
-        .select('telegram_id')
-        .eq('telegram_id', withAt)
-        .maybeSingle();
-      if (data1 || data2) isProtected = true;
-    }
-
+    const isProtected = await checkRecordIsProtected(String(type), String(query));
     return res.json({ isProtected });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal server error" });
@@ -3018,48 +3083,21 @@ app.get("/api/user-lookup", async (req, res) => {
 
   const cleanedQuery = String(query).trim();
 
-  // SECURE PRIVACY PROTECTION CHECK
-  let isProtected = false;
-  if (service === 'phone') {
-    const cleanPhone = cleanedQuery.replace(/\D/g, '');
-    try {
-      const { data } = await client
-        .from('protected_numbers')
-        .select('phone_number')
-        .eq('phone_number', cleanPhone)
-        .maybeSingle();
-      if (data) isProtected = true;
-    } catch (e) {}
-  } else if (service === 'telegram') {
-    const cleanTelegram = cleanedQuery.replace(/^@/, '').trim();
-    const withAt = `@${cleanTelegram}`;
-    try {
-      const { data: data1 } = await client
-        .from('protected_telegrams')
-        .select('telegram_id')
-        .eq('telegram_id', cleanTelegram)
-        .maybeSingle();
-      const { data: data2 } = await client
-        .from('protected_telegrams')
-        .select('telegram_id')
-        .eq('telegram_id', withAt)
-        .maybeSingle();
-      if (data1 || data2) isProtected = true;
-    } catch (e) {}
-  }
+  // SECURE PRIVACY PROTECTION CHECK FOR ALL AVAILABLE SERVICES
+  const isProtected = await checkRecordIsProtected(service, cleanedQuery);
 
   if (isProtected) {
     await logSearchHistory(req, service, cleanedQuery, 'protected', client, undefined, user.id, user.email);
     return res.status(200).json({
       status: "error",
       error_type: "protected_record",
-      message: `This ${service === 'phone' ? 'number' : 'Telegram handle'} is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`
+      message: `This record is protected with TRACEXDATA Protection feature. 🛡️\nWant to protect your own record to stay safe from unauthorized searches? Click here.`
     });
   }
 
   // Pre-lookup wallet balance & plan check
   const serviceKey = service === 'adhr' ? 'aadhaar' : service === 'bnk' ? 'ifsc' : service;
-  const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 3.0;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 2.0;
   
   const isAdmin = checkIsAdmin(user.email);
   let currentCredits = isAdmin ? 99999.00 : Number(profile?.credits ?? profile?.wallet_balance ?? 0);
@@ -3123,6 +3161,25 @@ app.get("/api/user-lookup", async (req, res) => {
         console.error("[USER_LOOKUP] Failed to record upfront wallet debit:", dbErr);
       }
     }
+  }
+
+  // Instantly record search query to database (< 50ms) so user account history shows it immediately
+  try {
+    const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    if (supabaseAdmin) {
+      await supabaseAdmin.from("service_records").insert({
+        user_id: user.id,
+        client_name: user.email || (isAdmin ? "Admin" : "User"),
+        service_name: `Web Search: ${service.toUpperCase()}`,
+        reference_code: refCode,
+        status: "SUCCESS",
+        result_payload: { status: "PROCESSING", query: cleanedQuery, service },
+        log_number: Math.floor(100 + Math.random() * 900)
+      });
+    }
+    await logSearchHistory(req, service, cleanedQuery, 'PROCESSING', client, { status: "PROCESSING", query: cleanedQuery, service }, user.id, user.email);
+  } catch (upfrontLogErr) {
+    console.error("[USER_LOOKUP] Upfront log error:", upfrontLogErr);
   }
 
   // Execute lookup using internal master authorization key
@@ -3272,7 +3329,7 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   }
 
   const serviceKey = lookupType === 'adhr' ? 'aadhaar' : lookupType === 'bnk' ? 'ifsc' : lookupType;
-  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 3.0;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 2.0;
   const planUpper = String(keyRecord.plan_name || "").toUpperCase();
   const isUnlimited = planUpper.includes("UNLIMITED") || (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
 
@@ -3324,6 +3381,44 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   };
 
   return { authorized: true, userProfile, deduct };
+}
+
+async function upfrontDeductAndLog(
+  req: express.Request,
+  lookupType: string,
+  targetQuery: string,
+  balanceCheck: ApiBalanceCheckResult,
+  keyRecord?: any
+) {
+  const userId = balanceCheck.userProfile?.id || keyRecord?.user_id || null;
+  const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "User";
+
+  let deductResult: any = { newCredits: undefined, lookupCost: 0 };
+  if (balanceCheck.deduct) {
+    try {
+      deductResult = await balanceCheck.deduct();
+    } catch (dErr) {
+      console.error(`[UPFRONT_DEDUCT_ERR] ${lookupType}:`, dErr);
+    }
+  }
+
+  // Instantly record search query to database (< 50ms)
+  try {
+    await logSearchHistory(
+      req,
+      lookupType,
+      targetQuery,
+      "PROCESSING",
+      supabaseAdmin,
+      { status: "PROCESSING", query: targetQuery, service: lookupType, timestamp: new Date().toISOString() },
+      userId,
+      userEmail
+    );
+  } catch (logErr) {
+    console.error(`[UPFRONT_LOG_ERR] ${lookupType}:`, logErr);
+  }
+
+  return { userId, userEmail, ...deductResult };
 }
 
 app.all("/api/lookup", async (req, res) => {
@@ -4720,6 +4815,48 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
       return;
     }
 
+    if (plan_id.startsWith('protect_')) {
+      const parts = plan_id.split('_');
+      let st = parts[1] || 'phone';
+      let targetVal = parts.slice(2).join('_');
+      
+      if (['mobile', 'number'].includes(st)) st = 'phone';
+      if (['tg'].includes(st)) st = 'telegram';
+      if (['aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
+      if (['veh'].includes(st)) st = 'vehicle';
+      if (['vehicle_owner'].includes(st)) st = 'veh_owner_num';
+      if (['gmail', 'mail'].includes(st)) st = 'email';
+
+      let cleanVal = targetVal;
+      if (st === 'phone') cleanVal = targetVal.replace(/\D/g, '');
+      if (st === 'adhr') cleanVal = targetVal.replace(/\D/g, '');
+      if (st === 'vehicle' || st === 'veh_owner_num') cleanVal = targetVal.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (st === 'email') cleanVal = targetVal.trim().toLowerCase();
+
+      try {
+        await supabaseAdmin.from('protected_records').upsert({
+          user_id: finalUserId || null,
+          service_type: st,
+          record_value: cleanVal || targetVal
+        }, { onConflict: 'service_type,record_value' });
+
+        if (st === 'phone' && cleanVal) {
+          await supabaseAdmin.from('protected_numbers').upsert({ phone_number: cleanVal }, { onConflict: 'phone_number' });
+        } else if (st === 'telegram' && targetVal) {
+          const cleanTg = targetVal.replace(/^@/, '').trim();
+          await supabaseAdmin.from('protected_telegrams').upsert({ telegram_id: cleanTg }, { onConflict: 'telegram_id' });
+        }
+      } catch (e) {
+        console.warn("[FULFILL_PROTECT_ERR]", e);
+      }
+
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      }
+      console.log(`[SaaS] Record protection fulfilled successfully for ${st}:${cleanVal}`);
+      return;
+    }
+
     const isApiPlan = plan_id.includes('a15') || plan_id.includes('a30') || plan_id.startsWith('api_');
 
     if (isApiPlan) {
@@ -5368,16 +5505,11 @@ app.get("/api/telegram", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'telegram', targetTelegramId, balanceCheck, keyRecord);
+
     // Checking safety protection bypass
-    let isProtected = false;
-    const { data: protectedData } = 
-          await supabaseAdmin
-      .from('protected_telegrams')
-      .select('telegram_id')
-      .eq('telegram_id', targetTelegramId)
-      .maybeSingle();
-    
-    if (protectedData) isProtected = true;
+    const isProtected = await checkRecordIsProtected('telegram', targetTelegramId);
 
     if (isProtected) {
       // Record telemetry for protected search
@@ -5580,13 +5712,8 @@ app.get("/api/telegram", async (req, res) => {
       console.error("[Telegram Cache Save Error]", cacheSaveErr);
     }
 
-    // Deduct credits and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Telegram:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'telegram', targetTelegramId, "success", supabaseAdmin, results, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'telegram', targetTelegramId, "success", supabaseAdmin, results, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5687,6 +5814,31 @@ app.get("/api/identity", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'adhr', targetQuery, balanceCheck, keyRecord);
+
+    const isProtected = await checkRecordIsProtected('adhr', targetQuery);
+    if (isProtected) {
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: (keyRecord.requests_used || 0) + 1,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+      await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "success", Date.now() - startTime);
+      return res.status(200).json({
+        status: "success",
+        message: "Protected: This Aadhaar record is protected on TRACEXDATA. 🛡️",
+        results: {
+          "Identity Record": {
+            status: "PROTECTED RECORD",
+            aadhaar: maskNumberForLog(targetQuery),
+            notice: "This record is protected by TRACEXDATA Privacy Protection."
+          }
+        }
+      });
+    }
+
     const api_url = getProviderUrl('aadhaar', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -5732,13 +5884,8 @@ app.get("/api/identity", async (req, res) => {
 
     const cleanedData = cleanBrandingObject(parsedData);
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Aadhaar:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'adhr', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'adhr', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5839,6 +5986,9 @@ app.get("/api/bank", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'bnk', targetQuery, balanceCheck, keyRecord);
+
     const api_url = getProviderUrl('ifsc', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -5884,13 +6034,8 @@ app.get("/api/bank", async (req, res) => {
 
     const cleanedData = cleanBrandingObject(parsedData);
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Bank:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'bnk', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'bnk', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5991,6 +6136,9 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'rasion', targetQuery, balanceCheck, keyRecord);
+
     const api_url = getProviderUrl('family', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -6036,13 +6184,8 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
 
     const cleanedData = cleanBrandingObject(parsedData);
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Rasion:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'rasion', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'rasion', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6165,6 +6308,31 @@ app.get("/api/vehicle", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'vehicle', targetQuery, balanceCheck, keyRecord);
+
+    const isProtected = await checkRecordIsProtected('vehicle', targetQuery);
+    if (isProtected) {
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: (keyRecord.requests_used || 0) + 1,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+      await logApiRequest(keyRecord?.id || null, `VEH: ${targetQuery}`, "success", Date.now() - startTime);
+      return res.status(200).json({
+        status: "success",
+        message: "Protected: This Vehicle RC record is protected on TRACEXDATA. 🛡️",
+        results: {
+          "Vehicle Record": {
+            status: "PROTECTED RECORD",
+            vehicle_number: targetQuery,
+            notice: "This vehicle RC record is protected by TRACEXDATA Privacy Protection."
+          }
+        }
+      });
+    }
+
     // 1. Check database cache first for speed of response
     const { data: cachedRow, error: cacheErr } = 
           await supabaseAdmin
@@ -6266,13 +6434,8 @@ app.get("/api/vehicle", async (req, res) => {
       }
     }
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Vehicle:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'vehicle', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'vehicle', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6372,6 +6535,31 @@ app.get("/api/veh-owner-num", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'veh_owner_num', targetQuery, balanceCheck, keyRecord);
+
+    const isProtected = await checkRecordIsProtected('veh_owner_num', targetQuery);
+    if (isProtected) {
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: (keyRecord.requests_used || 0) + 1,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+      await logApiRequest(keyRecord?.id || null, `VEH_OWN: ${targetQuery}`, "success", Date.now() - startTime);
+      return res.status(200).json({
+        status: "success",
+        message: "Protected: This Vehicle record is protected on TRACEXDATA. 🛡️",
+        results: {
+          "Vehicle Owner Record": {
+            status: "PROTECTED RECORD",
+            vehicle_number: targetQuery,
+            notice: "This vehicle owner record is protected by TRACEXDATA Privacy Protection."
+          }
+        }
+      });
+    }
+
     // 1. Check database cache first for speed of response using prefix
     const cacheKey = `OWN_${targetQuery}`;
     const { data: cachedRow, error: cacheErr } = 
@@ -6463,27 +6651,8 @@ app.get("/api/veh-owner-num", async (req, res) => {
 
     const cleanedData = scrubAllBranding(parsedData);
 
-    // Save success result in the database cache
-    if (cleanedData && Object.keys(cleanedData).length > 0) {
-      try {
-        
-          await supabaseAdmin.from("vehicle_search_results").upsert({
-          vehicle_number: cacheKey,
-          raw_data: cleanedData
-        }, { onConflict: "vehicle_number" });
-        console.log(`[CACHE SAVE] Saved Vehicle To Owner Number lookup for ${targetQuery} to database cache.`);
-      } catch (cacheSaveErr) {
-        console.error("Failed to save Vehicle To Owner Number result to database cache:", cacheSaveErr);
-      }
-    }
-
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Veh Owner Num:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'veh_owner_num', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'veh_owner_num', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6576,6 +6745,31 @@ app.get("/api/email", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'email', targetQuery, balanceCheck, keyRecord);
+
+    const isProtected = await checkRecordIsProtected('email', targetQuery);
+    if (isProtected) {
+      if (!isMaster && keyRecord?.id) {
+        await supabaseAdmin.from("api_keys").update({ 
+          requests_used: (keyRecord.requests_used || 0) + 1,
+          last_used_at: new Date().toISOString()
+        }).eq("id", keyRecord.id);
+      }
+      await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "success", Date.now() - startTime);
+      return res.status(200).json({
+        status: "success",
+        message: "Protected: This Email record is protected on TRACEXDATA. 🛡️",
+        results: {
+          "Email Record": {
+            status: "PROTECTED RECORD",
+            email: targetQuery,
+            notice: "This email address is protected by TRACEXDATA Privacy Protection."
+          }
+        }
+      });
+    }
+
     // Fetch from the external provider
     const api_url = getProviderUrl('email', targetQuery);
     const response = await fetch(api_url, {
@@ -6631,13 +6825,8 @@ app.get("/api/email", async (req, res) => {
 
     const cleanedData = scrubAllBranding(parsedData);
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Email:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'email', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'email', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6738,6 +6927,9 @@ app.get("/api/pancard", async (req, res) => {
       return res.status(403).json(balanceCheck.errorResponse);
     }
 
+    // Upfront credit deduction & instant database search history logging (< 50ms)
+    const { userId, userEmail } = await upfrontDeductAndLog(req, 'pancard', targetQuery, balanceCheck, keyRecord);
+
     const api_url = getProviderUrl('pancard', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -6769,13 +6961,8 @@ app.get("/api/pancard", async (req, res) => {
 
     const cleanedData = cleanBrandingObject(parsedData);
 
-    // Deduct credits/rupees and log search history for account owner
-    if (balanceCheck.deduct) {
-      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for PAN Card:", dErr); }
-    }
-    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
-    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
-    await logSearchHistory(req, 'pancard', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
+    // Update log search history with final payload for account owner
+    await logSearchHistory(req, 'pancard', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -7678,6 +7865,9 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
       } else if (rpcSuccess === false) {
           return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits." });
       }
+
+      // Log search history upfront to guarantee instant DB recording (< 50ms)
+      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "PROCESSING", supabaseAdmin, { status: "PROCESSING", aadhaar_number: targetAadhaar }, user?.id, user?.email);
     }
 
     // 5. Query External PAN Find API via Dynamic Provider URL
@@ -8198,19 +8388,78 @@ app.get("/api/admin/history", verifyAdminToken, async (req, res) => {
     if (!db) {
       return res.status(500).json({ error: "Supabase connection offline" });
     }
-    const { data, error } = await db
+
+    // Fetch search history records
+    const { data: searchLogs, error: shErr } = await db
       .from("search_history")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(150);
 
-    if (error) {
-      console.error("[GET_ADMIN_HISTORY_ERR]", error);
-      return res.status(500).json({ error: "Internal Server Error" });
+    // Fetch service records
+    const { data: serviceLogs, error: srErr } = await db
+      .from("service_records")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(150);
+
+    if (shErr) {
+      console.error("[GET_ADMIN_HISTORY_ERR]", shErr);
     }
 
-    return res.json({ status: "success", data });
+    // Fetch all profiles for user_email enrichment
+    const userIds = new Set<string>();
+    (searchLogs || []).forEach((r: any) => { if (r.user_id) userIds.add(r.user_id); });
+    (serviceLogs || []).forEach((r: any) => { if (r.user_id) userIds.add(r.user_id); });
+
+    const emailMap: Record<string, string> = {};
+    if (userIds.size > 0) {
+      const { data: profiles } = await db
+        .from("profiles")
+        .select("id, email")
+        .in("id", Array.from(userIds));
+      (profiles || []).forEach((p: any) => {
+        if (p.id && p.email) emailMap[p.id] = p.email;
+      });
+    }
+
+    const mergedLogs: any[] = [];
+    const seen = new Set<string>();
+
+    (searchLogs || []).forEach((r: any) => {
+      const uKey = `${r.search_type}_${r.query}_${r.created_at}`;
+      seen.add(uKey);
+      const mappedEmail = r.user_email || emailMap[r.user_id] || "Registered User";
+      mergedLogs.push({
+        ...r,
+        user_email: mappedEmail,
+        id: r.id || `sh_${Math.random()}`
+      });
+    });
+
+    (serviceLogs || []).forEach((r: any) => {
+      const uKey = `${r.service_name}_${r.reference_code}_${r.created_at}`;
+      if (!seen.has(uKey)) {
+        seen.add(uKey);
+        const mappedEmail = emailMap[r.user_id] || r.client_name || "Registered User";
+        mergedLogs.push({
+          id: r.id || `sr_${Math.random()}`,
+          user_id: r.user_id,
+          user_email: mappedEmail,
+          search_type: r.service_name || "API SERVICE",
+          query: r.reference_code || "N/A",
+          status: r.status || "SUCCESS",
+          payload: r.result_payload || {},
+          created_at: r.created_at
+        });
+      }
+    });
+
+    mergedLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    return res.json({ status: "success", data: mergedLogs.slice(0, 150) });
   } catch (err: any) {
+    console.error("[ADMIN_HISTORY_FAIL]", err);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });

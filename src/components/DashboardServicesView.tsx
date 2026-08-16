@@ -204,9 +204,6 @@ export function DashboardServicesView({
     if (location.pathname === '/vehicle' || initialService === 'vehicle' || initialService === 'veh_owner_num') {
       return CATEGORIES.find(c => c.id === 'vehicle') || null;
     }
-    if (location.pathname === '/bank' || initialService === 'bnk') {
-      return CATEGORIES.find(c => c.id === 'banking') || null;
-    }
     if (location.pathname === '/email' || initialService === 'email') {
       return CATEGORIES.find(c => c.id === 'email') || null;
     }
@@ -299,7 +296,26 @@ export function DashboardServicesView({
                 <input
                   type="text"
                   value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  maxLength={
+                    selectedSubService.serviceType === 'phone' ? 10 :
+                    selectedSubService.serviceType === 'adhr' ? 12 :
+                    (selectedSubService.serviceType === 'vehicle' || selectedSubService.serviceType === 'veh_owner_num') ? 11 : 100
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const st = selectedSubService.serviceType;
+                    if (st === 'phone') {
+                      setPhoneNumber(raw.replace(/\D/g, '').slice(0, 10));
+                    } else if (st === 'adhr') {
+                      setPhoneNumber(raw.replace(/\D/g, '').slice(0, 12));
+                    } else if (st === 'vehicle' || st === 'veh_owner_num') {
+                      setPhoneNumber(raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
+                    } else if (st === 'email') {
+                      setPhoneNumber(raw.trim());
+                    } else {
+                      setPhoneNumber(raw);
+                    }
+                  }}
                   placeholder={selectedSubService.inputPlaceholder}
                   className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all font-mono"
                   autoFocus
