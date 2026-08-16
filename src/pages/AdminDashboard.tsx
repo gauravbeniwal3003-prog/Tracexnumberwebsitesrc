@@ -557,6 +557,8 @@ export default function AdminDashboard() {
         return;
       }
 
+      const targetBal = Number(newUserProfileData.wallet_balance !== undefined && newUserProfileData.wallet_balance !== 0 ? newUserProfileData.wallet_balance : (newUserProfileData.credits || 0));
+
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
         method: 'POST',
         headers: {
@@ -567,8 +569,8 @@ export default function AdminDashboard() {
           id: randId,
           email: newUserProfileData.email.trim().toLowerCase(),
           full_name: newUserProfileData.full_name?.trim() || newUserProfileData.email.split('@')[0],
-          credits: Number(newUserProfileData.credits || 0),
-          wallet_balance: Number(newUserProfileData.wallet_balance || 0),
+          credits: targetBal,
+          wallet_balance: targetBal,
           user_discount_percent: Number(newUserProfileData.user_discount_percent || 0),
           unlimited_expiry: expiry
         })
@@ -581,7 +583,7 @@ export default function AdminDashboard() {
           email: '',
           full_name: '',
           credits: 10,
-          wallet_balance: 0,
+          wallet_balance: 10,
           user_discount_percent: 0,
           unlimited_expiry: ''
         });
@@ -599,6 +601,7 @@ export default function AdminDashboard() {
     if (!selectedUser) return;
     
     const expiry = selectedUser.unlimited_expiry ? new Date(selectedUser.unlimited_expiry).toISOString() : null;
+    const targetBal = Number(selectedUser.wallet_balance !== undefined ? selectedUser.wallet_balance : (selectedUser.credits || 0));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -617,8 +620,8 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           email: selectedUser.email,
           full_name: selectedUser.full_name || '',
-          credits: Number(selectedUser.credits || 0),
-          wallet_balance: Number(selectedUser.wallet_balance || 0),
+          credits: targetBal,
+          wallet_balance: targetBal,
           user_discount_percent: Number(selectedUser.user_discount_percent || 0),
           unlimited_expiry: expiry
         })
@@ -1239,9 +1242,8 @@ export default function AdminDashboard() {
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
                           <th className="px-6 py-4">User Context</th>
-                          <th className="px-6 py-4">Wallet Balance</th>
+                          <th className="px-6 py-4">Wallet Balance (₹ INR)</th>
                           <th className="px-6 py-4">Discount</th>
-                          <th className="px-6 py-4">Credits</th>
                           <th className="px-6 py-4">Unlimited Plan</th>
                           <th className="px-6 py-4">Referral Code</th>
                           <th className="px-6 py-4">Actions</th>
@@ -1250,7 +1252,7 @@ export default function AdminDashboard() {
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
                         {filteredProfiles.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">
+                            <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">
                               No registered users found
                             </td>
                           </tr>
@@ -1258,6 +1260,7 @@ export default function AdminDashboard() {
                           filteredProfiles.map(p => {
                             const hasUnlimited = p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date();
                             const isUserAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === (p.email || '').toLowerCase());
+                            const userBal = Number(p.wallet_balance !== undefined && p.wallet_balance !== null ? p.wallet_balance : (p.credits || 0));
                             
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1270,14 +1273,11 @@ export default function AdminDashboard() {
                                   </div>
                                   <div className="text-[11px] text-slate-500 mt-0.5">{p.email}</div>
                                 </td>
-                                <td className="px-6 py-4 font-mono font-black text-emerald-600">
-                                  ₹{p.wallet_balance || 0}
+                                <td className="px-6 py-4 font-mono font-black text-emerald-600 text-sm">
+                                  ₹{userBal.toFixed(2)}
                                 </td>
                                 <td className="px-6 py-4 font-mono font-bold text-amber-600">
                                   {p.user_discount_percent ? `${p.user_discount_percent}% OFF` : '0%'}
-                                </td>
-                                <td className="px-6 py-4 font-mono font-bold text-indigo-600">
-                                  {p.credits || 0} credits
                                 </td>
                                 <td className="px-6 py-4">
                                   {hasUnlimited ? (
@@ -1861,24 +1861,17 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-indigo-600 font-bold uppercase mb-1">Credits</label>
-                    <input 
-                      type="number" 
-                      value={newUserProfileData.credits}
-                      onChange={(e) => setNewUserProfileData({...newUserProfileData, credits: Number(e.target.value)})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet ₹</label>
+                    <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet Balance (₹ INR)</label>
                     <input 
                       type="number" 
                       value={newUserProfileData.wallet_balance}
-                      onChange={(e) => setNewUserProfileData({...newUserProfileData, wallet_balance: Number(e.target.value)})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-mono"
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setNewUserProfileData({...newUserProfileData, wallet_balance: val, credits: val});
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-mono font-bold"
                     />
                   </div>
 
@@ -1950,10 +1943,29 @@ export default function AdminDashboard() {
                     <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet Balance (₹ INR)</label>
                     <input 
                       type="number" 
-                      value={selectedUser.wallet_balance || 0}
-                      onChange={(e) => setSelectedUser({...selectedUser, wallet_balance: Number(e.target.value)})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono"
+                      value={selectedUser.wallet_balance !== undefined ? selectedUser.wallet_balance : (selectedUser.credits || 0)}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setSelectedUser({...selectedUser, wallet_balance: val, credits: val});
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono font-bold"
                     />
+                    <div className="flex gap-1.5 mt-2">
+                      {[10, 50, 100, 500].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => {
+                            const cur = Number(selectedUser.wallet_balance ?? selectedUser.credits ?? 0);
+                            const nextVal = cur + amt;
+                            setSelectedUser({ ...selectedUser, wallet_balance: nextVal, credits: nextVal });
+                          }}
+                          className="px-2 py-1 rounded bg-slate-100 hover:bg-emerald-50 text-emerald-700 font-mono text-[10px] border border-slate-200 font-bold cursor-pointer transition-colors"
+                        >
+                          +₹{amt}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
@@ -1964,28 +1976,6 @@ export default function AdminDashboard() {
                       onChange={(e) => setSelectedUser({...selectedUser, user_discount_percent: Number(e.target.value)})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono"
                     />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-indigo-600 font-bold uppercase mb-1">Trace Credits Balance</label>
-                  <input 
-                    type="number" 
-                    value={selectedUser.credits || 0}
-                    onChange={(e) => setSelectedUser({...selectedUser, credits: Number(e.target.value)})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono"
-                  />
-                  <div className="flex gap-2 mt-2">
-                    {[10, 50, 100, 500].map(amt => (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => setSelectedUser({ ...selectedUser, credits: (Number(selectedUser.credits) || 0) + amt })}
-                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-indigo-50 text-indigo-700 font-mono text-[10px] border border-slate-200 font-bold"
-                      >
-                        +{amt}
-                      </button>
-                    ))}
                   </div>
                 </div>
 

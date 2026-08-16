@@ -1429,10 +1429,12 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   }
 
   let dbCredits: number | null = null;
-  if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
+  if (profileRow && (profileRow.wallet_balance !== undefined && profileRow.wallet_balance !== null)) {
+    dbCredits = Number(profileRow.wallet_balance);
+  } else if (profileRow && (profileRow.credits !== undefined && profileRow.credits !== null)) {
+    dbCredits = Number(profileRow.credits);
+  } else if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
     dbCredits = Number(appUserRow.credits);
-  } else if (profileRow && (profileRow.credits !== undefined || profileRow.wallet_balance !== undefined)) {
-    dbCredits = Number(profileRow.credits ?? profileRow.wallet_balance);
   }
 
   const finalCredits = dbCredits !== null ? dbCredits : 10.00;
@@ -8143,14 +8145,24 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     mergedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
 
-    return res.json({ status: "success", data: mergedProfiles });
+    // Ensure credits and wallet_balance are 100% synchronized for admin panel view
+    const sanitizedProfiles = mergedProfiles.map(p => {
+      const bal = Number(p.wallet_balance !== undefined && p.wallet_balance !== null ? p.wallet_balance : (p.credits ?? 0));
+      return {
+        ...p,
+        credits: bal,
+        wallet_balance: bal
+      };
+    });
+
+    return res.json({ status: "success", data: sanitizedProfiles });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 
 app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
-  const { id, email, full_name, credits, unlimited_expiry } = req.body;
+  const { id, email, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
   if (!email) {
     return res.status(400).json({ error: "Email is required" });
   }
@@ -8159,6 +8171,7 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     const db = (req as any).adminClient || supabaseAdmin;
     const randId = id || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"));
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
+    const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
 
     const { data, error } = await db
       .from("profiles")
@@ -8166,7 +8179,9 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         id: randId,
         email: email.trim().toLowerCase(),
         full_name: full_name?.trim() || email.split("@")[0],
-        credits: Number(credits || 0),
+        credits: targetBalance,
+        wallet_balance: targetBalance,
+        user_discount_percent: Number(user_discount_percent || 0),
         unlimited_expiry: expiry,
         is_free_credit_claimed: true,
         last_weekly_credit_at: new Date().toISOString()
@@ -8179,7 +8194,7 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         id: randId,
         email: email.trim().toLowerCase(),
         full_name: full_name?.trim() || email.split("@")[0],
-        credits: Number(credits || 0)
+        credits: targetBalance
       }).catch(() => {});
     }
 
@@ -8191,12 +8206,14 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       id: randId,
       email: email.trim().toLowerCase(),
       full_name: full_name?.trim() || email.split("@")[0],
-      credits: Number(credits || 0),
+      credits: targetBalance,
+      wallet_balance: targetBalance,
+      user_discount_percent: Number(user_discount_percent || 0),
       unlimited_expiry: expiry,
       is_free_credit_claimed: true,
       last_weekly_credit_at: new Date().toISOString()
     };
-    return res.json({ status: "success", data: profileObj });
+    return res.json({ status: "success", data: { ...profileObj, credits: targetBalance, wallet_balance: targetBalance } });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
@@ -8209,14 +8226,14 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   try {
     const db = (req as any).adminClient || supabaseAdmin;
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
-    const creds = Number(credits || 0);
+    const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
 
     const updateObj: any = {
       id: id,
       email: email,
       full_name: full_name || "",
-      credits: creds,
-      wallet_balance: wallet_balance !== undefined ? Number(wallet_balance) : creds,
+      credits: targetBalance,
+      wallet_balance: targetBalance,
       unlimited_expiry: expiry,
       user_discount_percent: Number(user_discount_percent || 0)
     };
@@ -8226,10 +8243,10 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       .upsert(updateObj, { onConflict: 'id' })
       .select();
 
-    // Fix 1470 Problem: Keep app_users table credits in sync if admin updates via dashboard
+    // Sync app_users table as well
     if (!error) {
-      await db.from("app_users").update({ credits: creds }).eq("id", id).catch(() => {});
-      await db.from("app_users").update({ credits: creds }).eq("email", email).catch(() => {});
+      await db.from("app_users").update({ credits: targetBalance }).eq("id", id).catch(() => {});
+      await db.from("app_users").update({ credits: targetBalance }).eq("email", email).catch(() => {});
     }
 
     if (error) {
@@ -8237,7 +8254,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
     const profileObj = (data && data.length > 0) ? data[0] : updateObj;
-    return res.json({ status: "success", data: profileObj });
+    return res.json({ status: "success", data: { ...profileObj, credits: targetBalance, wallet_balance: targetBalance } });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
