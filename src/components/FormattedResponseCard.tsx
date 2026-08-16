@@ -20,16 +20,12 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
-  'developer', 'owner', 'buy_api', 'provider', 'credits', 'site', 
-  'website', 'api_buy_link', 'website_link', 'support', 'contact', 'bought_from',
-  'vendor', 'bot_owner', 'channel', 'dev', 'admin', 'bot', 'seller', 'paid_by', 
-  'copyright', 'created_by', 'tg_channel', 'tg_owner', 'watermark'
+  'api_buy_link', 'website_link', 'buy_api', 'tg_channel', 'tg_owner'
 ];
 
 function isBannedKey(key: string): boolean {
   if (!key) return false;
   const k = key.toLowerCase().replace(/[\s\-_]/g, '');
-  if (k.startsWith('telegram') || k.startsWith('tgid') || k === 'telegramid' || k === 'telegramusername') return false;
   return BANNED_KEYS.some(banned => k === banned || k.includes(banned));
 }
 
@@ -70,11 +66,16 @@ export function getCleanJsonString(data: any): string {
         try {
           payload = JSON.parse(trimmed);
         } catch {
-          payload = data;
+          return data; // Return the raw text directly if parse fails
         }
+      } else {
+        return data; // Not JSON string, return plain text directly
       }
     }
     const cleaned = cleanJsonPayload(payload);
+    if (typeof cleaned === 'string') {
+      return cleaned;
+    }
     return JSON.stringify(cleaned, null, 2);
   } catch (err) {
     return typeof data === 'string' ? data : JSON.stringify(data || {}, null, 2);

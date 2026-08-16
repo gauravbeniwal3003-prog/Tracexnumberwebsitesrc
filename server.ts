@@ -924,6 +924,44 @@ async function logSearchHistory(
         created_at: nowIso
       });
     }
+
+    // Auto trim database search history to keep strictly the last 50 records for this user/account owner
+    if (userId || finalEmail) {
+      try {
+        let shQuery = db.from("search_history").select("id").order("created_at", { ascending: false });
+        if (userId) {
+          shQuery = shQuery.eq("user_id", userId);
+        } else {
+          shQuery = shQuery.eq("user_email", finalEmail);
+        }
+        const { data: shRows } = await shQuery;
+        if (shRows && shRows.length > 50) {
+          const idsToDelete = shRows.slice(50).map((r: any) => r.id);
+          if (idsToDelete.length > 0) {
+            await db.from("search_history").delete().in("id", idsToDelete);
+          }
+        }
+      } catch (trimShErr) {
+        console.error("Error auto-trimming search_history table:", trimShErr);
+      }
+
+      if (userId) {
+        try {
+          const { data: srRows } = await db.from("service_records")
+            .select("id")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false });
+          if (srRows && srRows.length > 50) {
+            const idsToDelete = srRows.slice(50).map((r: any) => r.id);
+            if (idsToDelete.length > 0) {
+              await db.from("service_records").delete().in("id", idsToDelete);
+            }
+          }
+        } catch (trimSrErr) {
+          console.error("Error auto-trimming service_records table:", trimSrErr);
+        }
+      }
+    }
   } catch (err) {
     console.error("Failed to write search_history / service_records:", err);
   }
@@ -4538,39 +4576,47 @@ app.all("/api/developer_api.php", async (req, res) => {
 
 // --- ORDER FULFILLMENT UPGRADE ---
 
-async function fulfillOrder(orderId: string, userId: string) {
+async function fulfillOrder(orderId: string, userId: string, optionalEmail?: string) {
   if (!supabaseAdmin) return;
 
   try {
-    const { data: claim, error: claimErr } = 
+    let { data: claim, error: claimErr } = 
           await supabaseAdmin
       .from("payment_claims")
       .select("*")
       .eq("payment_id", orderId)
-      .single();
+      .maybeSingle();
 
-    if (claimErr || !claim || claim.status === "success" || claim.status === "consumed") return;
-
-    // Atomic Lock
-    const { data: lockResult, error: lockErr } = 
-          await supabaseAdmin
-      .from("payment_claims")
-      .update({ status: "processing" })
-      .eq("payment_id", orderId)
-      .eq("status", "pending")
-      .select();
-
-    if (lockErr || !lockResult || lockResult.length === 0) {
-      console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed.`);
+    if (claim && (claim.status === "success" || claim.status === "consumed")) {
+      console.log(`[FULFILL] Order ${orderId} already completed with status: ${claim.status}`);
       return;
     }
 
-    const { plan_id, user_email } = claim;
+    if (claim) {
+      // Atomic Lock
+      const { data: lockResult, error: lockErr } = 
+            await supabaseAdmin
+        .from("payment_claims")
+        .update({ status: "processing" })
+        .eq("payment_id", orderId)
+        .eq("status", "pending")
+        .select();
+
+      if (lockErr || !lockResult || lockResult.length === 0) {
+        console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed or not pending.`);
+        return;
+      }
+    }
+
+    let plan_id = claim?.plan_id || "wallet_100";
+    let user_email = claim?.user_email || optionalEmail;
+    let orderAmount = claim?.amount || 0;
 
     // Handle manual pgpay guest payments
     if (plan_id === "pgpay_manual" || plan_id === "panfind") {
-      
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      }
       console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
       return;
     }
@@ -4578,27 +4624,43 @@ async function fulfillOrder(orderId: string, userId: string) {
     // Handle Gaurav PVT Python Script purchase fulfillment
     if (plan_id === "gaurav_pvt_script") {
       const activatedStatus = `success_activated:${Date.now()}`;
-      
-          await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
+      }
       console.log(`[SaaS] Gaurav PVT Script purchase verified & fulfilled securely: ${orderId}`);
       return;
     }
     
     // Flexible check for ID variants with automatic UUID resolution fallback
     let finalUserId = userId;
-    if (!userId || userId.startsWith("guest_") || userId === "null" || userId.length !== 36) {
-      if (claim.user_id && claim.user_id.length === 36) {
+    const isUuid = (idStr: string | null | undefined) => !!idStr && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
+
+    if (!isUuid(finalUserId)) {
+      if (isUuid(claim?.user_id)) {
         finalUserId = claim.user_id;
         console.log(`[FULFILL] Resolved non-UUID user_id to valid claim user_id: ${finalUserId}`);
       } else {
-        console.log(`[FULFILL] Non-UUID user_id '${userId}' skipped database state updates, marking order ${orderId} fulfilled.`);
-        
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        return;
+        // Try searching profile by user_email
+        const emailToFind = user_email || optionalEmail;
+        if (emailToFind && emailToFind !== "N/A" && emailToFind.includes("@")) {
+          const { data: profByEmail } = await supabaseAdmin.from("profiles").select("id, email").eq("email", emailToFind).maybeSingle();
+          if (profByEmail && profByEmail.id) {
+            finalUserId = profByEmail.id;
+            console.log(`[FULFILL] Resolved user_id via email (${emailToFind}) to profile id: ${finalUserId}`);
+          }
+        }
       }
     }
 
-    const isApiPlan = claim.plan_id.includes('a15') || claim.plan_id.includes('a30') || claim.plan_id.startsWith('api_');
+    if (!isUuid(finalUserId)) {
+      console.log(`[FULFILL] Could not resolve a valid UUID user_id for order ${orderId}. Marking claim as success.`);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      }
+      return;
+    }
+
+    const isApiPlan = plan_id.includes('a15') || plan_id.includes('a30') || plan_id.startsWith('api_');
 
     if (isApiPlan) {
       // API Key Logic
@@ -4607,79 +4669,39 @@ async function fulfillOrder(orderId: string, userId: string) {
       let limit: number | null = null;
       let planName = "Number Lookup (1 Month)";
 
-      // Full ID Mapping
-      if (plan_id === 'api_number_20') {
-        planName = "Number Lookup API (40 Lookups)"; days = 30; limit = 40;
-      } else if (plan_id === 'api_number_50') {
-        planName = "Number Lookup API (200 Lookups)"; days = 30; limit = 200;
-      } else if (plan_id === 'api_number_150') {
-        planName = "Number Lookup API (1 Week Unlimited)"; days = 7; limit = null;
-      } else if (plan_id === 'api_number_400' || plan_id === 'api_number') {
-        planName = "Number Lookup API (1 Month Unlimited)"; days = 30; limit = null;
-      } else if (plan_id === 'api_number_1000') {
-        planName = "Number Lookup API (3 Months Unlimited)"; days = 90; limit = null;
-      } else if (plan_id === 'api_number_1600') {
-        planName = "Number Lookup API (6 Months Unlimited)"; days = 180; limit = null;
-      } else if (plan_id === 'api_number_3000') {
-        planName = "Number Lookup API (1 Year Unlimited)"; days = 365; limit = null;
-
-      } else if (plan_id === 'api_telegram_20') {
-        planName = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5;
-      } else if (plan_id === 'api_telegram_50') {
-        planName = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20;
-      } else if (plan_id === 'api_telegram_200') {
-        planName = "Telegram Lookup API (1 Week Unlimited)"; days = 7; limit = null;
-      } else if (plan_id === 'api_telegram_650' || plan_id === 'api_telegram') {
-        planName = "Telegram Lookup API (1 Month Unlimited)"; days = 30; limit = null;
-      } else if (plan_id === 'api_telegram_1800') {
-        planName = "Telegram Lookup API (3 Months Unlimited)"; days = 90; limit = null;
-
-      } else if (plan_id === 'api_identity_20') {
-        planName = "Identity Card API (5 Lookups)"; days = 30; limit = 5;
-      } else if (plan_id === 'api_identity_50') {
-        planName = "Identity Card API (30 Lookups)"; days = 30; limit = 30;
-      } else if (plan_id === 'api_identity_150') {
-        planName = "Identity Card API (1 Week Unlimited)"; days = 7; limit = null;
-      } else if (plan_id === 'api_identity_450' || plan_id === 'api_identity') {
-        planName = "Identity Card API (1 Month Unlimited)"; days = 30; limit = null;
-      } else if (plan_id === 'api_identity_1100') {
-        planName = "Identity Card API (3 Months Unlimited)"; days = 90; limit = null;
-
-      } else if (plan_id === 'api_vehicle_20') {
-        planName = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10;
-      } else if (plan_id === 'api_vehicle_400') {
-        planName = "Vehicle Lookup API (15 Days Unlimited)"; days = 15; limit = null;
-      } else if (plan_id === 'api_vehicle_700' || plan_id === 'api_vehicle') {
-        planName = "Vehicle Lookup API (1 Month Unlimited)"; days = 30; limit = null;
-      } else if (plan_id === 'api_vehicle_1800') {
-        planName = "Vehicle Lookup API (3 Months Unlimited)"; days = 90; limit = null;
-
-      } else if (plan_id === 'api_bank_20') {
-        planName = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20;
-      } else if (plan_id === 'api_bank_70') {
-        planName = "BA&NK Lookup API (1 Week Unlimited)"; days = 7; limit = null;
-      } else if (plan_id === 'api_bank_250' || plan_id === 'api_bank') {
-        planName = "BA&NK Lookup API (1 Month Unlimited)"; days = 30; limit = null;
-      } else if (plan_id === 'api_bank_600') {
-        planName = "BA&NK Lookup API (3 Months Unlimited)"; days = 90; limit = null;
-
-      } else if (plan_id === 'api_aadhaar_to_pan_1000') {
-        planName = "Aadhaar To PAN API (10 Lookups)"; days = 30; limit = 10;
-      } else if (plan_id === 'api_aadhaar_to_pan_2000') {
-        planName = "Aadhaar To PAN API (22 Lookups)"; days = 30; limit = 22;
-      } else if (plan_id === 'api_aadhaar_to_pan_5000') {
-        planName = "Aadhaar To PAN API (60 Lookups)"; days = 30; limit = 60;
-      } else if (plan_id === 'api_aadhaar_to_pan_10000') {
-        planName = "Aadhaar To PAN API (15 Days Unlimited)"; days = 15; limit = null;
-
-      } else if (plan_id === 'api_pancard') {
-        planName = "PN Card Lookup (1 Month)"; days = 30; limit = null;
-      } else if (plan_id === 'api_combo') {
-        planName = "All Combo Special (1 Month)"; days = 30; limit = null;
-      } else if (plan_id === 'api_rasion') {
-        planName = "Rasion Card Lookup (1 Month)"; days = 30; limit = null;
-      } else {
-        // Fallback for any other custom/older api plan
+      if (plan_id === 'api_number_20') { planName = "Number Lookup API (40 Lookups)"; days = 30; limit = 40; }
+      else if (plan_id === 'api_number_50') { planName = "Number Lookup API (200 Lookups)"; days = 30; limit = 200; }
+      else if (plan_id === 'api_number_150') { planName = "Number Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+      else if (plan_id === 'api_number_400' || plan_id === 'api_number') { planName = "Number Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+      else if (plan_id === 'api_number_1000') { planName = "Number Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+      else if (plan_id === 'api_number_1600') { planName = "Number Lookup API (6 Months Unlimited)"; days = 180; limit = null; }
+      else if (plan_id === 'api_number_3000') { planName = "Number Lookup API (1 Year Unlimited)"; days = 365; limit = null; }
+      else if (plan_id === 'api_telegram_20') { planName = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5; }
+      else if (plan_id === 'api_telegram_50') { planName = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20; }
+      else if (plan_id === 'api_telegram_200') { planName = "Telegram Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+      else if (plan_id === 'api_telegram_650' || plan_id === 'api_telegram') { planName = "Telegram Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+      else if (plan_id === 'api_telegram_1800') { planName = "Telegram Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+      else if (plan_id === 'api_identity_20') { planName = "Identity Card API (5 Lookups)"; days = 30; limit = 5; }
+      else if (plan_id === 'api_identity_50') { planName = "Identity Card API (30 Lookups)"; days = 30; limit = 30; }
+      else if (plan_id === 'api_identity_150') { planName = "Identity Card API (1 Week Unlimited)"; days = 7; limit = null; }
+      else if (plan_id === 'api_identity_450' || plan_id === 'api_identity') { planName = "Identity Card API (1 Month Unlimited)"; days = 30; limit = null; }
+      else if (plan_id === 'api_identity_1100') { planName = "Identity Card API (3 Months Unlimited)"; days = 90; limit = null; }
+      else if (plan_id === 'api_vehicle_20') { planName = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10; }
+      else if (plan_id === 'api_vehicle_400') { planName = "Vehicle Lookup API (15 Days Unlimited)"; days = 15; limit = null; }
+      else if (plan_id === 'api_vehicle_700' || plan_id === 'api_vehicle') { planName = "Vehicle Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+      else if (plan_id === 'api_vehicle_1800') { planName = "Vehicle Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+      else if (plan_id === 'api_bank_20') { planName = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20; }
+      else if (plan_id === 'api_bank_70') { planName = "BA&NK Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+      else if (plan_id === 'api_bank_250' || plan_id === 'api_bank') { planName = "BA&NK Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+      else if (plan_id === 'api_bank_600') { planName = "BA&NK Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+      else if (plan_id === 'api_aadhaar_to_pan_1000') { planName = "Aadhaar To PAN API (10 Lookups)"; days = 30; limit = 10; }
+      else if (plan_id === 'api_aadhaar_to_pan_2000') { planName = "Aadhaar To PAN API (22 Lookups)"; days = 30; limit = 22; }
+      else if (plan_id === 'api_aadhaar_to_pan_5000') { planName = "Aadhaar To PAN API (60 Lookups)"; days = 30; limit = 60; }
+      else if (plan_id === 'api_aadhaar_to_pan_10000') { planName = "Aadhaar To PAN API (15 Days Unlimited)"; days = 15; limit = null; }
+      else if (plan_id === 'api_pancard') { planName = "PN Card Lookup (1 Month)"; days = 30; limit = null; }
+      else if (plan_id === 'api_combo') { planName = "All Combo Special (1 Month)"; days = 30; limit = null; }
+      else if (plan_id === 'api_rasion') { planName = "Rasion Card Lookup (1 Month)"; days = 30; limit = null; }
+      else {
         if (plan_id.includes('15')) days = 15;
         if (plan_id.includes('unl')) limit = null;
         planName = `${days} Days Unlimited API`;
@@ -4688,8 +4710,7 @@ async function fulfillOrder(orderId: string, userId: string) {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + days);
 
-      
-          await supabaseAdmin.from("api_keys").insert({
+      await supabaseAdmin.from("api_keys").insert({
         api_key: apiKey,
         user_id: finalUserId,
         user_email: user_email || "N/A",
@@ -4698,22 +4719,38 @@ async function fulfillOrder(orderId: string, userId: string) {
         expires_at: expiresAt.toISOString()
       });
       
-      
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      } else {
+        await supabaseAdmin.from("payment_claims").insert({
+          payment_id: orderId,
+          user_id: finalUserId,
+          user_email: user_email || "N/A",
+          plan_id: plan_id,
+          amount: orderAmount,
+          status: "success"
+        });
+      }
       console.log(`[SaaS] API Key generated for ${finalUserId} (Plan: ${planName})`);
       return;
     }
 
-    // Existing credit/unlimited logic (fallback)
+    // Wallet refill & credit topup logic
     const { data: profile } = 
           await supabaseAdmin.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
-    if (!profile) return;
+    if (!profile) {
+      console.error(`[FULFILL] Profile not found for resolved user_id: ${finalUserId}`);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      }
+      return;
+    }
     
     const updateData: any = {};
     let creditsToAdd = 0;
     
-    if (claim.amount && claim.amount > 0) {
-      creditsToAdd = Math.round(Number(claim.amount));
+    if (orderAmount && orderAmount > 0) {
+      creditsToAdd = Math.round(Number(orderAmount));
     } else if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
     else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
     else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
@@ -4724,47 +4761,72 @@ async function fulfillOrder(orderId: string, userId: string) {
     else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 900;
     else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
     else {
-      // Dynamic fallback extraction
-      const match = strPlanId().match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
+      const match = String(plan_id || '').match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
       if (match) {
         creditsToAdd = parseInt(match[1], 10);
       }
     }
-    
-    // Helper function to convert plan_id safely
-    function strPlanId(): string {
-      return String(plan_id || '');
-    }
 
     if (creditsToAdd > 0) {
-      updateData.credits = (profile.credits || 0) + creditsToAdd;
+      const addAmt = Number(creditsToAdd);
+      updateData.credits = Number(profile.credits || 0) + addAmt;
+      updateData.wallet_balance = Number(profile.wallet_balance || profile.credits || 0) + addAmt;
+      if (profile.balance !== undefined) {
+        updateData.balance = Number(profile.balance || 0) + addAmt;
+      }
     } else if (plan_id.startsWith('u') || plan_id.startsWith('unlimited')) {
-        const hoursMap: any = {
-            'u1h': 1, 'unlimited_1h': 1,
-            'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
-            'u1w': 168, 'unlimited_1w': 168,
-            'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
-        };
-        const hours = hoursMap[plan_id as string] || 0;
-        const now = new Date();
-        const start = profile.unlimited_expiry && new Date(profile.unlimited_expiry) > now 
-                    ? new Date(profile.unlimited_expiry) : now;
-        if (hours > 0) {
-            updateData.unlimited_expiry = new Date(start.getTime() + (hours * 3600000)).toISOString();
-        }
+      const hoursMap: any = {
+        'u1h': 1, 'unlimited_1h': 1,
+        'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
+        'u1w': 168, 'unlimited_1w': 168,
+        'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
+      };
+      const hours = hoursMap[plan_id as string] || 0;
+      const now = new Date();
+      const start = profile.unlimited_expiry && new Date(profile.unlimited_expiry) > now 
+                  ? new Date(profile.unlimited_expiry) : now;
+      if (hours > 0) {
+        updateData.unlimited_expiry = new Date(start.getTime() + (hours * 3600000)).toISOString();
+      }
     }
 
     if (Object.keys(updateData).length > 0) {
+      await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
       
-          await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
-      
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      } else {
+        await supabaseAdmin.from("payment_claims").insert({
+          payment_id: orderId,
+          user_id: finalUserId,
+          user_email: profile.email || user_email || "N/A",
+          plan_id: plan_id,
+          amount: orderAmount || creditsToAdd,
+          status: "success"
+        });
+      }
+
+      // Record in wallet_transactions
+      try {
+        await supabaseAdmin.from("wallet_transactions").insert({
+          user_id: finalUserId,
+          amount: Number(orderAmount || creditsToAdd),
+          type: "CREDIT",
+          payment_method: "Cashfree",
+          reference_id: orderId,
+          description: `Recharge via Cashfree (Order ${orderId})`,
+          status: "SUCCESS"
+        });
+      } catch (txErr) {
+        console.error("Failed to insert wallet_transactions log:", txErr);
+      }
 
       // Trigger 5% Referral Bonus to referrer
-      const depositAmt = Number(claim.amount || creditsToAdd || 0);
+      const depositAmt = Number(orderAmount || creditsToAdd || 0);
       if (depositAmt > 0) {
         await processReferralDepositBonus(finalUserId, depositAmt);
       }
+      console.log(`[FULFILL] Successfully credited ₹${creditsToAdd} / updated plan for user ${finalUserId} (Order ${orderId})`);
     }
   } catch (err) {
     console.error("Fulfillment error:", err);
@@ -4777,6 +4839,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
   const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind" ;
   
   let authenticatedUserId = null;
+  let authenticatedUserEmail = null;
   const authHeader = req.headers.authorization;
   if (authHeader) {
     const token = authHeader.replace("Bearer ", "");
@@ -4784,6 +4847,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
       const user = await getUserFromToken(token);
       if (user) {
         authenticatedUserId = user.id;
+        authenticatedUserEmail = user.email;
       }
     }
   }
@@ -4795,6 +4859,9 @@ app.post("/api/cashfree/create-order", async (req, res) => {
   // Override user_id with the authenticated user ID (prevent IDOR)
   if (!isPgPay && authenticatedUserId) {
     req.body.user_id = authenticatedUserId;
+  }
+  if (!req.body.user_email && authenticatedUserEmail) {
+    req.body.user_email = authenticatedUserEmail;
   }
 
   if (!supabaseAdmin && !isPgPay) {
@@ -4840,8 +4907,8 @@ app.post("/api/cashfree/create-order", async (req, res) => {
       order_amount: Number(amount),
       order_currency: "INR",
       customer_details: {
-        customer_id: user_id || `guest_${Date.now()}`,
-        customer_email: user_email || "customer@example.com",
+        customer_id: user_id || authenticatedUserId || `guest_${Date.now()}`,
+        customer_email: user_email || authenticatedUserEmail || "customer@example.com",
         customer_phone: customer_phone || "9999999999"
       },
       order_meta: {
@@ -4871,11 +4938,13 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     if (supabaseAdmin) {
       try {
         const isValidUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        const dbUserId = (user_id && isValidUuid(user_id)) ? user_id : null;
+        const dbUserId = (user_id && isValidUuid(user_id)) ? user_id : (authenticatedUserId || null);
+        const dbUserEmail = user_email || authenticatedUserEmail || "N/A";
         
-          await supabaseAdmin.from("payment_claims").insert({
+        await supabaseAdmin.from("payment_claims").insert({
           payment_id: orderId,
           user_id: dbUserId,
+          user_email: dbUserEmail,
           plan_id: plan_id,
           amount: Number(amount),
           status: "pending"
@@ -4929,7 +4998,7 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
 
     if (data.order_status === "PAID") {
       if (supabaseAdmin) {
-        await fulfillOrder(order_id, data.customer_details.customer_id);
+        await fulfillOrder(order_id, data.customer_details?.customer_id, data.customer_details?.customer_email);
       } else {
         console.log("[TRACEXDATA] Payment verified PAID, but database is not active. Skipping database fulfillment callback.");
       }
@@ -4955,6 +5024,46 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   } catch (error) {
     console.error("Status Check Error:", error);
     res.status(500).json({ error: "Failed to verify status" });
+  }
+});
+
+// Cashfree Webhooks (Handles async background payment notifications from Cashfree gateway)
+app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfree", "/api/cashfree/callback"], async (req, res) => {
+  try {
+    console.log("[CASHFREE_WEBHOOK] Received webhook event:", JSON.stringify(req.body));
+    const payload = req.body || {};
+    const orderId = payload.data?.order?.order_id || payload.orderId || payload.order_id || payload.data?.order_id;
+    const customerId = payload.data?.customer_details?.customer_id || payload.customer_id;
+    const customerEmail = payload.data?.customer_details?.customer_email || payload.customer_email;
+    
+    if (orderId) {
+      let isPaid = false;
+      if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+        const renderBackendUrl = "";
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
+        const data: any = await response.json().catch(() => ({}));
+        if (data.order_status === "PAID") isPaid = true;
+      } else {
+        const response = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
+          headers: {
+            'x-client-id': CASHFREE_APP_ID,
+            'x-client-secret': CASHFREE_SECRET_KEY,
+            'x-api-version': '2023-08-01'
+          }
+        });
+        const data: any = await response.json().catch(() => ({}));
+        if (data.order_status === "PAID") isPaid = true;
+      }
+
+      if (isPaid && supabaseAdmin) {
+        console.log(`[CASHFREE_WEBHOOK] Order ${orderId} verified PAID. Fulfilling order...`);
+        await fulfillOrder(orderId, customerId || "guest", customerEmail);
+      }
+    }
+    return res.status(200).json({ status: "OK", message: "Webhook received and processed" });
+  } catch (err) {
+    console.error("[CASHFREE_WEBHOOK_ERROR]", err);
+    return res.status(200).json({ status: "OK", message: "Webhook processed with warnings" });
   }
 });
 
@@ -5493,6 +5602,11 @@ app.get("/api/identity", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'adhr');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     const api_url = getProviderUrl('aadhaar', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -5537,6 +5651,14 @@ app.get("/api/identity", async (req, res) => {
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Aadhaar:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'adhr', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5632,6 +5754,11 @@ app.get("/api/bank", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'bnk');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     const api_url = getProviderUrl('ifsc', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -5676,6 +5803,14 @@ app.get("/api/bank", async (req, res) => {
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Bank:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'bnk', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5771,6 +5906,11 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'rasion');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     const api_url = getProviderUrl('family', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -5815,6 +5955,14 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Rasion:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'rasion', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -5932,6 +6080,11 @@ app.get("/api/vehicle", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'vehicle');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     // 1. Check database cache first for speed of response
     const { data: cachedRow, error: cacheErr } = 
           await supabaseAdmin
@@ -5947,6 +6100,13 @@ app.get("/api/vehicle", async (req, res) => {
     if (isCacheValid) {
       console.log(`[CACHE HIT] Serving Vehicle lookup for ${targetQuery} from database cache.`);
       
+      if (balanceCheck.deduct) {
+        try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Vehicle cache:", dErr); }
+      }
+      const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+      const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+      await logSearchHistory(req, 'vehicle', targetQuery, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
+
       // Record telemetry for successful search
       if (!isMaster && keyRecord?.id) {
         
@@ -6025,6 +6185,14 @@ app.get("/api/vehicle", async (req, res) => {
         console.error("Failed to save Vehicle result to database cache:", cacheSaveErr);
       }
     }
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Vehicle:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'vehicle', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6119,6 +6287,11 @@ app.get("/api/veh-owner-num", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'veh_owner_num');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     // 1. Check database cache first for speed of response using prefix
     const cacheKey = `OWN_${targetQuery}`;
     const { data: cachedRow, error: cacheErr } = 
@@ -6135,6 +6308,13 @@ app.get("/api/veh-owner-num", async (req, res) => {
     if (isCacheValid) {
       console.log(`[CACHE HIT] Serving Vehicle To Owner Number lookup for ${targetQuery} from database cache.`);
       
+      if (balanceCheck.deduct) {
+        try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Veh Owner Num cache:", dErr); }
+      }
+      const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+      const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+      await logSearchHistory(req, 'veh_owner_num', targetQuery, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
+
       // Record telemetry for successful search
       if (!isMaster && keyRecord?.id) {
         
@@ -6216,6 +6396,14 @@ app.get("/api/veh-owner-num", async (req, res) => {
         console.error("Failed to save Vehicle To Owner Number result to database cache:", cacheSaveErr);
       }
     }
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Veh Owner Num:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'veh_owner_num', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6303,6 +6491,11 @@ app.get("/api/email", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'email');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     // Fetch from the external provider
     const api_url = getProviderUrl('email', targetQuery);
     const response = await fetch(api_url, {
@@ -6357,6 +6550,14 @@ app.get("/api/email", async (req, res) => {
     }
 
     const cleanedData = scrubAllBranding(parsedData);
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Email:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'email', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -6452,6 +6653,11 @@ app.get("/api/pancard", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'pancard');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     const api_url = getProviderUrl('pancard', targetQuery);
     const response = await fetch(api_url, {
       headers: {
@@ -6482,6 +6688,14 @@ app.get("/api/pancard", async (req, res) => {
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
+
+    // Deduct credits/rupees and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for PAN Card:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'pancard', targetQuery, "success", supabaseAdmin, cleanedData, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
@@ -8333,12 +8547,12 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
       return res.status(401).json({ error: "Session has expired or is invalid" });
     }
 
-    // Grab all 'pending' payment claims that belong to this user
+    // Grab all 'pending' payment claims that belong to this user (by user_id or user_email)
     const { data: pendingClaims, error: claimsErr } = 
           await supabaseAdmin
       .from("payment_claims")
       .select("*")
-      .eq("user_id", user.id)
+      .or(`user_id.eq.${user.id},user_email.eq.${user.email}`)
       .eq("status", "pending");
 
     if (claimsErr) {

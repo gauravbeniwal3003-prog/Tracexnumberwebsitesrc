@@ -1596,16 +1596,18 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
     lines = raw_text.split('\n')
     cleaned_lines = []
     
-    # Only filter out pure promotional lines
+    # Filter out pure promotional lines
     forbidden_patterns = [
         r't\.me\/', r'telegram\.me\/', r'techvishalboss\.com', r'exploitsindia\.site',
         r'uersxinfo\.in', r'@anishexploits', r'@techvishalboss', r'@uersxinfo', r'@uersx',
-        r'key=TVB_SGL_BCFC1E32', r'key=498wlpajf'
+        r'key=TVB_SGL_BCFC1E32', r'key=498wlpajf', r'@vectraen', r'vectraen', r'osintcallerbot',
+        r'buy\s*api', r'support\s*:', r'support\s*@', r'tracexdata'
     ]
     
     for line in lines:
         line_lower = line.lower().strip()
         if not line_lower:
+            cleaned_lines.append("")
             continue
         
         # Skip pure promotional lines
@@ -1614,7 +1616,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
             
         # Inline branding removal that doesn't damage legitimate names/addresses
         line = re.sub(
-            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)',
+            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot)',
             '',
             line,
             flags=re.IGNORECASE
@@ -1622,7 +1624,23 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         # Strip code tag elements
         line = re.sub(r'<\/?code>', '', line)
         cleaned_lines.append(line)
-    return '\n'.join(cleaned_lines)
+        
+    # Remove consecutive multiple empty lines (max 1 empty line between blocks)
+    result_lines = []
+    for line in cleaned_lines:
+        if line.strip() == "":
+            if len(result_lines) > 0 and result_lines[-1].strip() != "":
+                result_lines.append("")
+        else:
+            result_lines.append(line)
+            
+    # Strip leading/trailing empty lines
+    while result_lines and result_lines[0].strip() == "":
+        result_lines.pop(0)
+    while result_lines and result_lines[-1].strip() == "":
+        result_lines.pop()
+        
+    return '\n'.join(result_lines)
 
 def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
     import re
@@ -1780,20 +1798,24 @@ def clean_branding_recursive(obj):
     elif isinstance(obj, list):
         return [clean_branding_recursive(x) for x in obj]
     elif isinstance(obj, str):
-        import re
-        # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
-        pattern = re.compile(
-            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)',
-            re.IGNORECASE
-        )
-        val = pattern.sub("", obj)
-        # Clean up multi-spaces
-        val = re.sub(r'\s+', ' ', val).strip()
-        # Clean trailing and leading punctuation leftover from branding removal
-        val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
-        if not val:
-            return "N/A"
-        return val
+        if "\n" in obj:
+            # Multi-line raw text blocks should be cleaned preserving newlines and spacing
+            return clean_branding_text_line_by_line(obj)
+        else:
+            import re
+            # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
+            pattern = re.compile(
+                r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot)',
+                re.IGNORECASE
+            )
+            val = pattern.sub("", obj)
+            # Clean up multi-spaces (single lines only)
+            val = re.sub(r'[ \t]+', ' ', val).strip()
+            # Clean trailing and leading punctuation leftover from branding removal
+            val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
+            if not val:
+                return "N/A"
+            return val
     return obj
 
 def make_api_response(data: dict) -> dict:
@@ -1801,9 +1823,21 @@ def make_api_response(data: dict) -> dict:
     data["website_link"] = "https://tracexdata.online"
     return data
 
-def build_output(raw_json: dict, query_num: str, plan_info: dict, usage: int):
+def build_output(raw_json: any, query_num: str, plan_info: dict, usage: int):
+    if isinstance(raw_json, str):
+        cleaned_text = clean_branding_text_line_by_line(raw_json)
+        cleaned_text = clean_branding_recursive(cleaned_text)
+        limit = plan_info.get('request_limit') if isinstance(plan_info, dict) else None
+        return make_api_response({
+            "status": "success",
+            "success": True,
+            "results": cleaned_text,
+            "credits_remaining": (int(limit) - usage) if (limit is not None) else 999999,
+            "requests_used": usage
+        })
+
     # Detect items: could be a list or a dict (Result 1, Result 2, etc.)
-    items = raw_json.get('results') or raw_json.get('data') or raw_json.get('records')
+    items = raw_json.get('results') or raw_json.get('data') or raw_json.get('records') if isinstance(raw_json, dict) else None
     
     # Safely handle the case where raw_json is already the parsed results dictionary (e.g. from plain-text API responses)
     if not items and isinstance(raw_json, dict):
@@ -2087,7 +2121,7 @@ async def support_lookup(
                     try:
                         parsed = resp.json()
                     except Exception:
-                        parsed = parse_raw_text_to_records(text, clean_phone)
+                        parsed = text
 
                     if parsed and isinstance(parsed, dict):
                         records = parsed.get("results") or parsed.get("data") or parsed.get("records")
@@ -2147,7 +2181,7 @@ async def support_lookup(
                         try:
                             parsed = resp.json()
                         except Exception:
-                            parsed = parse_raw_text_to_records(text, cleaned_query)
+                            parsed = text
                         response_data = parsed
                 except Exception as err:
                     print(f"[SUPPORT_LOOKUP] External API error in Python: {err}")
@@ -2442,8 +2476,7 @@ async def user_lookup(
                         parsed = resp.json()
                         response_data = parsed
                     except:
-                        parsed_records = parse_raw_text_to_records(text, cleaned_query)
-                        response_data = parsed_records
+                        response_data = cleaned_body
                 else:
                     raise Exception(f"API status {resp.status_code}")
                     
@@ -3132,8 +3165,8 @@ async def saas_lookup(
                 try:
                     payload = resp.json()
                 except Exception as json_err:
-                    print(f"[LOOKUP_DIAGNOSTIC] Response is not JSON ({json_err}), parsing as plain text...")
-                    payload = parse_raw_text_to_records(body_text)
+                    print(f"[LOOKUP_DIAGNOSTIC] Response is not JSON ({json_err}), using as plain text...")
+                    payload = body_text
                 break
             except Exception as lookup_err:
                 print(f"[LOOKUP_DIAGNOSTIC] Attempt {attempt} failed: {lookup_err}")
@@ -3814,16 +3847,18 @@ async def identity_lookup(
         try:
             parsed_data = resp.json()
         except Exception:
-            parsed_data = parse_raw_text_to_records(text, target_query)
+            parsed_data = cleaned_body
             
         results_data = {}
-        if parsed_data and isinstance(parsed_data, dict):
+        if isinstance(parsed_data, dict):
             if "results" in parsed_data and parsed_data["results"]:
                 results_data = parsed_data["results"]
             elif "data" in parsed_data and parsed_data["data"]:
                 results_data = parsed_data["data"]
             else:
                 results_data = parsed_data
+        elif isinstance(parsed_data, str):
+            results_data = parsed_data
 
         cleaned_results = clean_branding_recursive(results_data) if results_data else {}
         
@@ -3998,16 +4033,18 @@ async def bank_lookup(
         try:
             parsed_data = resp.json()
         except Exception:
-            parsed_data = parse_raw_text_to_records(text, target_query)
+            parsed_data = cleaned_body
             
         results_data = {}
-        if parsed_data and isinstance(parsed_data, dict):
+        if isinstance(parsed_data, dict):
             if "results" in parsed_data and parsed_data["results"]:
                 results_data = parsed_data["results"]
             elif "data" in parsed_data and parsed_data["data"]:
                 results_data = parsed_data["data"]
             else:
                 results_data = parsed_data
+        elif isinstance(parsed_data, str):
+            results_data = parsed_data
 
         cleaned_results = clean_branding_recursive(results_data) if results_data else {}
         
@@ -4230,7 +4267,7 @@ async def vehicle_lookup(
                     parsed_data = json.loads(cleaned_body)
                     is_json = True
                 except Exception:
-                    parsed_data = parse_raw_text_to_records(text, target_query)
+                    parsed_data = cleaned_body
 
             # Smart error detection
             is_error = False
@@ -4267,11 +4304,11 @@ async def vehicle_lookup(
             cleaned_data = clean_branding_recursive(parsed_data)
             
             # Save successful search result in the database cache for extremely fast subsequent lookups
-            if cleaned_data and isinstance(cleaned_data, dict) and len(cleaned_data) > 0:
+            if cleaned_data:
                 try:
                     db.table("vehicle_search_results").upsert({
                         "vehicle_number": target_query,
-                        "raw_data": cleaned_data
+                        "raw_data": cleaned_data if isinstance(cleaned_data, dict) else {"raw_text": cleaned_data}
                     }, on_conflict="vehicle_number").execute()
                     print(f"[CACHE SAVE] Saved Vehicle lookup for {target_query} to database cache.")
                 except Exception as cache_save_err:
@@ -4472,7 +4509,7 @@ async def veh_owner_num_lookup(
                     parsed_data = json.loads(cleaned_body)
                     is_json = True
                 except Exception:
-                    parsed_data = parse_raw_text_to_records(text, target_query)
+                    parsed_data = cleaned_body
 
             # Error detection
             is_error = False
@@ -4508,11 +4545,11 @@ async def veh_owner_num_lookup(
             cleaned_data = clean_branding_recursive(parsed_data)
             
             # Save successful search result in database cache using unique prefix
-            if cleaned_data and isinstance(cleaned_data, dict) and len(cleaned_data) > 0:
+            if cleaned_data:
                 try:
                     db.table("vehicle_search_results").upsert({
                         "vehicle_number": cache_key,
-                        "raw_data": cleaned_data
+                        "raw_data": cleaned_data if isinstance(cleaned_data, dict) else {"raw_text": cleaned_data}
                     }, on_conflict="vehicle_number").execute()
                     print(f"[CACHE SAVE] Saved Vehicle To Owner Number lookup for {target_query} to cache.")
                 except Exception as cache_save_err:
@@ -4684,7 +4721,7 @@ async def pancard_lookup(
             try:
                 parsed_data = json.loads(cleaned_body)
             except:
-                parsed_data = parse_raw_text_to_records(text, target_query)
+                parsed_data = cleaned_body
                 
             cleaned_data = clean_branding_recursive(parsed_data)
             
