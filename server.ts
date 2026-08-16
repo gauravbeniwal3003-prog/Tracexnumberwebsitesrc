@@ -1123,7 +1123,10 @@ function formatUnifiedSaaSResponse({
 function cleanBrandingObject(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    return obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "").trim();
+    let val = obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)/gi, "").trim();
+    val = val.replace(/\s+/g, ' ').trim();
+    val = val.replace(/^[:\-\s@]+|[:\-\s@]+$/g, '').trim();
+    return val || "N/A";
   }
   if (Array.isArray(obj)) {
     return obj.map(item => cleanBrandingObject(item));
@@ -1131,6 +1134,9 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
+      if (['api_creator', 'api_by_link', 'website_link', 'creator', 'credit', 'support'].includes(key.toLowerCase())) {
+        continue;
+      }
       cleaned[key] = cleanBrandingObject(obj[key]);
     }
     return cleaned;

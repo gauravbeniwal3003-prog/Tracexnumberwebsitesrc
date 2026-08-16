@@ -1595,22 +1595,26 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
     import re
     lines = raw_text.split('\n')
     cleaned_lines = []
-    # Broad patterns for any kind of branding or unwanted spam lines
-    forbidden_keywords = [
-        "cyb3r", "s0ldier", "anish", "exploits", "buy api", "buy_api", 
-        "retailer", "seller", "admin", "cyb3rs0ldier", "cyb3r_s0ldier",
-        "support:", "c143", "cyber", "soldier", "userxinfo", "uersxinfo",
-        "techvishal", "techvishalboss", "exploitsindia", "userx", "uersx"
+    
+    # Only filter out pure promotional lines
+    forbidden_patterns = [
+        r't\.me\/', r'telegram\.me\/', r'techvishalboss\.com', r'exploitsindia\.site',
+        r'uersxinfo\.in', r'@anishexploits', r'@techvishalboss', r'@uersxinfo', r'@uersx',
+        r'key=TVB_SGL_BCFC1E32', r'key=498wlpajf'
     ]
+    
     for line in lines:
         line_lower = line.lower().strip()
         if not line_lower:
             continue
-        if any(fw in line_lower for fw in forbidden_keywords):
+        
+        # Skip pure promotional lines
+        if any(re.search(pat, line_lower) for pat in forbidden_patterns):
             continue
-        # Strip some inline patterns
+            
+        # Inline branding removal that doesn't damage legitimate names/addresses
         line = re.sub(
-            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)',
             '',
             line,
             flags=re.IGNORECASE
@@ -1758,14 +1762,20 @@ def parse_raw_text_to_records(raw_text: str, query_val: str = None) -> dict:
 
 def clean_branding_recursive(obj):
     if isinstance(obj, dict):
-        return {k: clean_branding_recursive(v) for k, v in obj.items()}
+        cleaned_dict = {}
+        for k, v in obj.items():
+            # Skip keys that are purely promotional branding fields like "api_creator" or "api_by_link"
+            if str(k).lower() in ["api_creator", "api_by_link", "website_link", "creator", "credit", "support"]:
+                continue
+            cleaned_dict[k] = clean_branding_recursive(v)
+        return cleaned_dict
     elif isinstance(obj, list):
         return [clean_branding_recursive(x) for x in obj]
     elif isinstance(obj, str):
         import re
-        # Aggressive regular expression matching all forms of supplier branding
+        # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
         pattern = re.compile(
-            r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|anish|exploits|userxinfo|uersxinfo|userx|uersx|vishal(?:[\s\-_]*boss)?|cyber|cyb3r|s0ldier|soldier|techvishalboss\.com|exploitsindia\.site|exploitsindia|techvishal|developer|provider|api_buy_link|website_link|buy_api|contact|support)',
+            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)',
             re.IGNORECASE
         )
         val = pattern.sub("", obj)
@@ -1773,7 +1783,7 @@ def clean_branding_recursive(obj):
         val = re.sub(r'\s+', ' ', val).strip()
         # Clean trailing and leading punctuation leftover from branding removal
         val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
-        if not val or val.upper() in ["", "BOSS"]:
+        if not val:
             return "N/A"
         return val
     return obj
