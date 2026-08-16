@@ -500,17 +500,17 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
     let creditCost = 3;
     if (activeService === 'telegram') {
-      creditCost = 10;
+      creditCost = 5;
     } else if (activeService === 'adhr') {
-      creditCost = 25;
+      creditCost = 20;
     } else if (activeService === 'bnk') {
       creditCost = 5;
     } else if (activeService === 'vehicle') {
-      creditCost = 20;
+      creditCost = 10;
     } else if (activeService === 'veh_owner_num') {
-      creditCost = 35;
-    } else if (activeService === 'pancard') {
       creditCost = 20;
+    } else if (activeService === 'pancard') {
+      creditCost = 10;
     } else if (activeService === 'aadhaar_to_pan') {
       creditCost = 150;
     } else if (activeService === 'email') {

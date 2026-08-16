@@ -2161,17 +2161,17 @@ async def user_lookup(
         except:
             pass
             
-    credit_cost = 2
+    credit_cost = 3
     if service_clean == 'phone':
-        credit_cost = 2
+        credit_cost = 3
     elif service_clean == 'telegram':
-        credit_cost = 8
-    elif service_clean == 'adhr':
-        credit_cost = 10
-    elif service_clean == 'bnk':
-        credit_cost = 10
-    elif service_clean == 'vehicle':
         credit_cost = 5
+    elif service_clean == 'adhr':
+        credit_cost = 20
+    elif service_clean == 'bnk':
+        credit_cost = 5
+    elif service_clean == 'vehicle':
+        credit_cost = 10
     elif service_clean == 'pancard':
         credit_cost = 10
     elif service_clean == 'aadhaar_to_pan':
@@ -2179,7 +2179,7 @@ async def user_lookup(
     elif service_clean == 'email':
         credit_cost = 20
     elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
-        credit_cost = 15
+        credit_cost = 20
         
     # Check if daily free credit top-up is due before evaluating current credits
     from datetime import timedelta
@@ -2444,13 +2444,13 @@ def check_user_wallet_and_deduct(db, license, service_type: str):
     user_email = license.get('user_email')
     
     cost_map = {
-        'phone': 2, 'number': 2, 'telegram': 8, 'tg': 8,
-        'adhr': 10, 'aadhaar': 10, 'identity': 10, 'bnk': 10,
-        'bank': 10, 'ifsc': 10, 'vehicle': 5, 'rc': 5,
+        'phone': 3, 'number': 3, 'telegram': 5, 'tg': 5,
+        'adhr': 20, 'aadhaar': 20, 'identity': 20, 'bnk': 5,
+        'bank': 5, 'ifsc': 5, 'vehicle': 10, 'rc': 10,
         'pancard': 10, 'pan': 10, 'aadhaar_to_pan': 150,
-        'email': 20, 'veh_owner_num': 15, 'veh_numm': 15
+        'email': 20, 'veh_owner_num': 20, 'veh_numm': 20
     }
-    required_cost = cost_map.get(str(service_type or 'phone').lower(), 2)
+    required_cost = cost_map.get(str(service_type or 'phone').lower(), 3)
 
     plan_name = str(license.get('plan_name') or "").upper()
     if any(p in plan_name for p in ["VIP", "INTERNAL", "SYSTEM", "UNLIMITED"]):
