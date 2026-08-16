@@ -8,9 +8,15 @@ import { supabase } from './supabase.ts';
 export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
 
 export const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_RENDER_BACKEND_URL) {
+  if (typeof window !== 'undefined' && import.meta.env.VITE_RENDER_BACKEND_URL) {
     const customUrl = import.meta.env.VITE_RENDER_BACKEND_URL.trim();
     if (customUrl) {
+      try {
+        const parsed = new URL(customUrl, window.location.origin);
+        if (parsed.origin === window.location.origin) {
+          return '';
+        }
+      } catch (e) {}
       return customUrl.replace(/\/$/, "");
     }
   }

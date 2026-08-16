@@ -118,12 +118,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!token) return;
 
-      const response = await fetch(`${getApiBaseUrl()}/api/profile`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      let response: Response | null = null;
+      const baseUrl = getApiBaseUrl();
+      const primaryUrl = `${baseUrl}/api/profile`;
+
+      try {
+        response = await fetch(primaryUrl, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      } catch (networkErr) {
+        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed, retrying relative /api/profile:", networkErr);
+        if (baseUrl) {
+          try {
+            response = await fetch('/api/profile', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+          } catch (retryErr) {
+            console.warn("[FETCH_PROFILE_ERR] Relative profile fetch also failed:", retryErr);
+          }
         }
-      });
-      if (response.ok) {
+      }
+
+      if (response && response.ok) {
         const profileData = await response.json();
         setProfile(profileData);
 
@@ -138,9 +158,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (e) {}
         }
-      } else {
+      } else if (response) {
         const errorText = await response.text();
-        console.error('Failed to fetch secure profile:', errorText);
+        console.warn('Failed to fetch secure profile from server:', errorText);
         const savedMobileSession = localStorage.getItem('tracex_mobile_session');
         if (response.status === 401 && !savedMobileSession) {
           console.warn('Unauthorized session detected, clearing invalid auth state.');
@@ -148,9 +168,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setProfile(null);
         }
+      } else {
+        // Network calls failed completely - construct fallback profile from existing user or localStorage session
+        const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+        if (savedMobileSession) {
+          try {
+            const parsed = JSON.parse(savedMobileSession);
+            if (parsed?.user) {
+              setProfile(prev => prev || {
+                id: parsed.user.id,
+                email: parsed.user.email || 'user@example.com',
+                full_name: parsed.user.full_name || 'User',
+                credits: parsed.user.credits !== undefined ? parsed.user.credits : 10.00,
+                avatar_url: '',
+                is_free_credit_claimed: true,
+                last_weekly_credit_at: new Date().toISOString()
+              });
+            }
+          } catch (e) {}
+        }
       }
     } catch (err) {
-      console.error('Error fetching secure profile:', err);
+      console.warn('Error fetching secure profile:', err);
     }
   };
 

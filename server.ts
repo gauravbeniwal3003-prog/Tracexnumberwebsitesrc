@@ -896,13 +896,26 @@ async function logSearchHistory(
       }
     }
 
+    // Bi-directional resolution: if userId is missing but userEmail is known, resolve profile ID
+    if (!userId && userEmail && userEmail !== "API User" && userEmail !== "N/A") {
+      try {
+        const { data: prof } = await db.from("profiles").select("id").eq("email", userEmail).limit(1);
+        if (prof?.[0]?.id) {
+          userId = prof[0].id;
+        }
+      } catch (e) {
+        // profile query ignored
+      }
+    }
+
     const finalEmail = userEmail || "API User";
     const nowIso = new Date().toISOString();
 
-    // Insert into search_history
+    // Insert into search_history with dual compatibility (service + search_type)
     await db.from("search_history").insert({
-      user_id: userId,
+      user_id: userId || null,
       user_email: finalEmail,
+      service: searchType,
       search_type: searchType,
       query: query,
       status: status,
@@ -911,10 +924,11 @@ async function logSearchHistory(
     });
 
     // Also insert into service_records for complete dual-table log compatibility
-    if (userId) {
+    if (userId || (finalEmail && finalEmail !== "API User")) {
       const refCode = query || `QRY-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       await db.from("service_records").insert({
-        user_id: userId,
+        user_id: userId || null,
+        user_email: finalEmail,
         client_name: finalEmail,
         service_name: (searchType || "Lookup").replace(/_/g, ' ').toUpperCase(),
         reference_code: refCode,
@@ -3255,11 +3269,28 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
 
   const deduct = async () => {
     const newCredits = Math.max(0, currentCredits - lookupCost);
-    if (userProfile && userProfile.email) { await supabaseAdmin.from("app_users").update({ credits: newCredits }).eq("id", userProfile.id); }
+    if (userProfile && userProfile.email) { 
+      await supabaseAdmin.from("app_users").update({ credits: newCredits }).eq("id", userProfile.id); 
+    }
     await supabaseAdmin
       .from("profiles")
       .update({ credits: newCredits, wallet_balance: newCredits })
       .eq("id", userProfile.id);
+
+    try {
+      await supabaseAdmin.from("wallet_transactions").insert({
+        user_id: userProfile.id,
+        user_email: userProfile.email || "API User",
+        service: `API Request: ${lookupType.toUpperCase()}`,
+        type: "Debit",
+        amount: lookupCost,
+        balance_after: newCredits,
+        created_at: new Date().toISOString()
+      });
+    } catch (wtErr) {
+      console.error("Failed to insert wallet_transaction for API deduction:", wtErr);
+    }
+
     return { newCredits, lookupCost };
   };
 
@@ -5303,6 +5334,11 @@ app.get("/api/telegram", async (req, res) => {
       const isAllowed = true;
     }
 
+    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'telegram');
+    if (!balanceCheck.authorized) {
+      return res.status(403).json(balanceCheck.errorResponse);
+    }
+
     // Checking safety protection bypass
     let isProtected = false;
     const { data: protectedData } = 
@@ -5507,6 +5543,14 @@ app.get("/api/telegram", async (req, res) => {
     } catch (cacheSaveErr) {
       console.error("[Telegram Cache Save Error]", cacheSaveErr);
     }
+
+    // Deduct credits and log search history for account owner
+    if (balanceCheck.deduct) {
+      try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Telegram:", dErr); }
+    }
+    const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
+    const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
+    await logSearchHistory(req, 'telegram', targetTelegramId, "success", supabaseAdmin, results, logUserId, logUserEmail);
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
