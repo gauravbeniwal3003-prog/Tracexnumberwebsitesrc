@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from './supabase.ts';
 import { UserProfile } from '../types.ts';
@@ -99,8 +99,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const user = realUser || (isDemoMode ? demoUserObj : null);
   const profile = realProfile || (isDemoMode ? demoProfileObj : null);
 
+  const isFetchingProfileRef = useRef(false);
+
   const fetchProfile = async (userId: string) => {
-    if (IS_TESTING_MODE) return;
+    if (IS_TESTING_MODE || isFetchingProfileRef.current) return;
+    isFetchingProfileRef.current = true;
     try {
       let token: string | undefined = undefined;
       const { data: { session } } = await supabase.auth.getSession();
@@ -190,6 +193,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.warn('Error fetching secure profile:', err);
+    } finally {
+      isFetchingProfileRef.current = false;
     }
   };
 
@@ -418,7 +423,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Live polling & focus listener for instant DB wallet balance sync
     const pollInterval = setInterval(() => {
       refreshProfile();
-    }, 10000);
+    }, 1000);
 
     const handleFocus = () => {
       refreshProfile();

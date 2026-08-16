@@ -836,120 +836,140 @@ async function logSearchHistory(
   customUserId?: string,
   customUserEmail?: string
 ) {
-  const db = passedClient || supabaseAdmin;
+  // Always prefer admin client for writes to bypass RLS policies
+  const db = supabaseAdmin || passedClient;
   if (!db) return;
+
   try {
     let userId: string | null = customUserId || null;
     let userEmail: string | null = customUserEmail || null;
 
-    // 1. Try to get user from Authorization token
-    if (!userId) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.replace("Bearer ", "").trim();
-        if (token) {
-          try {
-            const client = passedClient || await getRequestClient(token);
-            const user = await getUserFromToken(token, client);
-            if (user) {
-              userId = user.id;
-              userEmail = user.email || null;
+    if (!userId && req) {
+      if ((req as any).user) {
+        userId = (req as any).user.id || null;
+        userEmail = (req as any).user.email || userEmail;
+      }
+
+      // 1. Try to get user from Authorization token
+      if (!userId) {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.replace("Bearer ", "").trim();
+          if (token) {
+            try {
+              const user = await getUserFromToken(token, db);
+              if (user) {
+                userId = user.id;
+                userEmail = user.email || userEmail;
+              }
+            } catch (authErr) {
+              // Token parse warning ignored
             }
-          } catch (authErr) {
-            // Token parse warning ignored
+          }
+        }
+      }
+
+      // 2. Try query or body params
+      if (!userId) {
+        const qUserId = String(req.query?.user_id || req.body?.user_id || req.query?.userId || req.body?.userId || "").trim();
+        const qUserEmail = String(req.query?.user_email || req.body?.user_email || req.query?.email || req.body?.email || "").trim();
+        if (qUserId) userId = qUserId;
+        if (qUserEmail && !userEmail) userEmail = qUserEmail;
+      }
+
+      // 3. If no user from token, check API key
+      if (!userId) {
+        const key = String(
+          req.query?.key || 
+          req.query?.api_key || 
+          req.query?.apiKey || 
+          req.headers?.['x-api-key'] ||
+          req.headers?.['api_key'] ||
+          req.body?.key || 
+          req.body?.api_key || 
+          req.body?.apiKey || 
+          ""
+        ).trim();
+
+        if (key && key !== INTERNAL_MASTER_KEY) {
+          const { data: keyRecords } = await db
+            .from("api_keys")
+            .select("user_id, user_email")
+            .eq("api_key", key)
+            .limit(1);
+
+          if (keyRecords && keyRecords[0]) {
+            userId = keyRecords[0].user_id || null;
+            userEmail = keyRecords[0].user_email || null;
           }
         }
       }
     }
 
-    // 2. If no user from token, check if there's an API key in query, headers, or body
-    if (!userId) {
-      const key = String(
-        req.query.key || 
-        req.query.api_key || 
-        req.query.apiKey || 
-        req.headers['x-api-key'] ||
-        req.headers['api_key'] ||
-        req.body?.key || 
-        req.body?.api_key || 
-        req.body?.apiKey || 
-        ""
-      ).trim();
-
-      if (key && key !== INTERNAL_MASTER_KEY) {
-        const { data: keyRecords } = await db
-          .from("api_keys")
-          .select("user_id, user_email")
-          .eq("api_key", key)
-          .limit(1);
-
-        if (keyRecords && keyRecords[0]) {
-          userId = keyRecords[0].user_id || null;
-          userEmail = keyRecords[0].user_email || null;
-        }
-      }
-    }
-
-    if (!userEmail && userId) {
+    // Bi-directional profile resolution
+    if (userId && (!userEmail || userEmail === "API User" || userEmail === "N/A")) {
       try {
         const { data: prof } = await db.from("profiles").select("email").eq("id", userId).limit(1);
         if (prof?.[0]?.email) userEmail = prof[0].email;
-      } catch (e) {
-        // profile query ignored
-      }
+      } catch (e) {}
     }
 
-    // Bi-directional resolution: if userId is missing but userEmail is known, resolve profile ID
     if (!userId && userEmail && userEmail !== "API User" && userEmail !== "N/A") {
       try {
-        const { data: prof } = await db.from("profiles").select("id").eq("email", userEmail).limit(1);
+        const { data: prof } = await db.from("profiles").select("id, email").ilike("email", userEmail).limit(1);
         if (prof?.[0]?.id) {
           userId = prof[0].id;
+          if (prof[0].email) userEmail = prof[0].email;
         }
-      } catch (e) {
-        // profile query ignored
-      }
+      } catch (e) {}
     }
 
     const finalEmail = userEmail || "API User";
     const nowIso = new Date().toISOString();
+    const cleanStatus = String(status || "SUCCESS").trim().toUpperCase();
+    const isSuccess = cleanStatus === "SUCCESS" || cleanStatus === "COMPLETED" || cleanStatus === "TRUE" || cleanStatus === "OK";
 
-    // Insert into search_history with dual compatibility (service + search_type)
+    let cleanPayload = resultsPayload;
+    if (!cleanPayload) {
+      cleanPayload = { status: cleanStatus, search_type: searchType, query: query, created_at: nowIso };
+    } else if (typeof cleanPayload === 'object') {
+      cleanPayload = scrubAllBranding(cleanPayload);
+    }
+
+    // Insert into search_history
     await db.from("search_history").insert({
       user_id: userId || null,
       user_email: finalEmail,
       service: searchType,
       search_type: searchType,
       query: query,
-      status: status,
-      payload: resultsPayload || { status, search_type: searchType, query, created_at: nowIso },
+      status: cleanStatus,
+      payload: cleanPayload,
       created_at: nowIso
     });
 
     // Also insert into service_records for complete dual-table log compatibility
-    if (userId || (finalEmail && finalEmail !== "API User")) {
-      const refCode = query || `QRY-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      await db.from("service_records").insert({
-        user_id: userId || null,
-        user_email: finalEmail,
-        client_name: finalEmail,
-        service_name: (searchType || "Lookup").replace(/_/g, ' ').toUpperCase(),
-        reference_code: refCode,
-        status: status.toUpperCase() === "SUCCESS" ? "SUCCESS" : "FAILED",
-        result_payload: resultsPayload || { status, search_type: searchType, query, created_at: nowIso },
-        log_number: Math.floor(100 + Math.random() * 900),
-        created_at: nowIso
-      });
-    }
+    const refCode = query || `QRY-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    await db.from("service_records").insert({
+      user_id: userId || null,
+      user_email: finalEmail,
+      client_name: finalEmail,
+      service_name: (searchType || "Lookup").replace(/_/g, ' ').toUpperCase(),
+      reference_code: refCode,
+      status: isSuccess ? "SUCCESS" : "FAILED",
+      result_payload: cleanPayload,
+      log_number: Math.floor(100 + Math.random() * 900),
+      created_at: nowIso
+    });
 
-    // Auto trim database search history to keep strictly the last 50 records for this user/account owner
+    // Auto trim database search history to keep strictly the last 50 records for this user
     if (userId || finalEmail) {
       try {
         let shQuery = db.from("search_history").select("id").order("created_at", { ascending: false });
         if (userId) {
           shQuery = shQuery.eq("user_id", userId);
         } else {
-          shQuery = shQuery.eq("user_email", finalEmail);
+          shQuery = shQuery.ilike("user_email", finalEmail);
         }
         const { data: shRows } = await shQuery;
         if (shRows && shRows.length > 50) {
@@ -2237,11 +2257,17 @@ app.get("/api/service-records", async (req, res) => {
       }
     }
 
-    if (!targetUserId && reqUserId) {
-      targetUserId = reqUserId;
+    if (!targetUserId && targetUserEmail) {
+      try {
+        const { data: prof } = await supabaseAdmin.from("profiles").select("id").ilike("email", targetUserEmail).limit(1);
+        if (prof?.[0]?.id) targetUserId = prof[0].id;
+      } catch (e) {}
     }
-    if (!targetUserEmail && reqEmail) {
-      targetUserEmail = reqEmail;
+    if (!targetUserEmail && targetUserId) {
+      try {
+        const { data: prof } = await supabaseAdmin.from("profiles").select("email").eq("id", targetUserId).limit(1);
+        if (prof?.[0]?.email) targetUserEmail = prof[0].email;
+      } catch (e) {}
     }
 
     if (!targetUserId && !targetUserEmail) {
@@ -2254,11 +2280,11 @@ app.get("/api/service-records", async (req, res) => {
     // 1. Fetch from search_history
     let querySh = supabaseAdmin.from("search_history").select("*").order("created_at", { ascending: false }).limit(60);
     if (targetUserId && targetUserEmail) {
-      querySh = querySh.or(`user_id.eq.${targetUserId},user_email.eq.${targetUserEmail}`);
+      querySh = querySh.or(`user_id.eq.${targetUserId},user_email.ilike.${targetUserEmail}`);
     } else if (targetUserId) {
       querySh = querySh.eq("user_id", targetUserId);
     } else if (targetUserEmail) {
-      querySh = querySh.eq("user_email", targetUserEmail);
+      querySh = querySh.ilike("user_email", targetUserEmail);
     }
 
     const { data: searchLogs } = await querySh;
@@ -7594,7 +7620,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
 
     if (cachedRecord && cachedRecord.pan_number && cachedRecord.raw_data) {
       // Return cached result immediately (charges 0 credits!)
-      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "success");
+      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "success", supabaseAdmin, cachedRecord.raw_data, user?.id, user?.email);
       return res.json({
         status: "success",
         pan_found: true,
@@ -7685,7 +7711,7 @@ app.post("/api/aadhaar-to-pan", async (req, res) => {
 
     // 6. Log search to persistent history
     const searchStatus = panFound ? "success" : "not_found";
-    await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, searchStatus);
+    await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, searchStatus, supabaseAdmin, apiData, user?.id, user?.email);
 
     if (!panFound || checkIsNoRecordFound(apiData)) {
       if (user && user.email) {
