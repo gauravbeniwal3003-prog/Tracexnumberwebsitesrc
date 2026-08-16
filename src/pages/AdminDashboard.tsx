@@ -12,7 +12,7 @@ import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import {  getApiBaseUrl, getAbsoluteBaseUrl  } from '../services/api';
 import { getApiServices, updateApiServiceConfig, ApiServiceConfig } from '../services/apiServices';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 
 // IMPORTANT: Replace with real admin emails or use DB property
@@ -25,10 +25,40 @@ const ADMIN_EMAILS = [
 export default function AdminDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') || 'stats') as 'stats' | 'keys' | 'settings' | 'logs' | 'users' | 'transactions' | 'history' | 'services' | 'pricing' | 'referrals';
+  const { tab: pathTab } = useParams<{ tab?: string }>();
+  const [searchParams] = useSearchParams();
+
+  const resolveTab = (inputTab?: string | null): 'stats' | 'keys' | 'settings' | 'logs' | 'users' | 'transactions' | 'history' | 'services' | 'pricing' | 'referrals' => {
+    if (!inputTab) return 'stats';
+    const lower = inputTab.toLowerCase();
+    const map: Record<string, 'stats' | 'keys' | 'settings' | 'logs' | 'users' | 'transactions' | 'history' | 'services' | 'pricing' | 'referrals'> = {
+      dashboard: 'stats',
+      stats: 'stats',
+      services: 'services',
+      apis: 'services',
+      pricing: 'pricing',
+      rates: 'pricing',
+      users: 'users',
+      usermanager: 'users',
+      referrals: 'referrals',
+      referral: 'referrals',
+      keys: 'keys',
+      keymanager: 'keys',
+      transactions: 'transactions',
+      history: 'history',
+      'search-history': 'history',
+      settings: 'settings',
+      gateway: 'settings',
+      logs: 'logs',
+      tracelogs: 'logs'
+    };
+    return map[lower] || 'stats';
+  };
+
+  const activeTab = resolveTab(pathTab || searchParams.get('tab'));
+
   const setActiveTab = (tab: string) => {
-    setSearchParams({ tab });
+    navigate(`/admin/${tab}`);
   };
   const [isAdmin, setIsAdmin] = useState(false);
   const [stats, setStats] = useState<any>({});

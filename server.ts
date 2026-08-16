@@ -8122,14 +8122,15 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       const recCred = Number(record.credits || 0);
       const recWal = Number(record.wallet_balance || 0);
 
-      const maxBal = Math.max(exCred, exWal, recCred, recWal);
+      const computedMax = Math.max(exCred, exWal, recCred, recWal);
+      const finalBal = computedMax > 0 ? computedMax : 10.00;
 
       userMap.set(key, {
         id: record.id || existing.id,
         email: record.email || existing.email || "",
         full_name: record.full_name || existing.full_name || (record.email ? record.email.split("@")[0] : "User"),
-        credits: maxBal,
-        wallet_balance: maxBal,
+        credits: finalBal,
+        wallet_balance: finalBal,
         phone: record.phone || existing.phone || "",
         unlimited_expiry: record.unlimited_expiry || existing.unlimited_expiry || null,
         user_discount_percent: record.user_discount_percent ?? existing.user_discount_percent ?? 0,
@@ -8148,17 +8149,14 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     if (authData && authData.users) {
       for (const authUser of authData.users) {
         if (!authUser.email) continue;
-        const key = authUser.email.toLowerCase().trim();
-        if (!userMap.has(key)) {
-          processUserRecord({
-            id: authUser.id,
-            email: authUser.email,
-            full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
-            credits: 10.00,
-            wallet_balance: 10.00,
-            created_at: authUser.created_at
-          });
-        }
+        processUserRecord({
+          id: authUser.id,
+          email: authUser.email,
+          full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
+          credits: 10.00,
+          wallet_balance: 10.00,
+          created_at: authUser.created_at
+        });
       }
     }
 

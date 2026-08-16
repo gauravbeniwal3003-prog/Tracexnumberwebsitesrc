@@ -125,6 +125,7 @@ export default function App() {
         <Route path="/buy-credits" element={<BuyCredits />} />
         <Route path="/account/api" element={<ApiDocs />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/:tab" element={<AdminDashboard />} />
         <Route path="/api-docs" element={<ApiDocs />} />
         <Route path="/api" element={<ApiDocs />} />
         <Route path="/developer-api" element={<ApiDocs />} />
