@@ -1428,16 +1428,11 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     return null;
   }
 
-  let dbCredits: number | null = null;
-  if (profileRow && (profileRow.wallet_balance !== undefined && profileRow.wallet_balance !== null)) {
-    dbCredits = Number(profileRow.wallet_balance);
-  } else if (profileRow && (profileRow.credits !== undefined && profileRow.credits !== null)) {
-    dbCredits = Number(profileRow.credits);
-  } else if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
-    dbCredits = Number(appUserRow.credits);
-  }
-
-  const finalCredits = dbCredits !== null ? dbCredits : 10.00;
+  const pCred = profileRow ? Number(profileRow.credits || 0) : 0;
+  const pWal = profileRow ? Number(profileRow.wallet_balance || 0) : 0;
+  const aCred = appUserRow ? Number(appUserRow.credits || 0) : 0;
+  const maxBal = Math.max(pCred, pWal, aCred);
+  const finalCredits = maxBal > 0 ? maxBal : 10.00;
 
   const merged = {
     id: userId || appUserRow?.id || profileRow?.id,
@@ -3102,7 +3097,7 @@ app.get("/api/user-lookup", async (req, res) => {
   const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 2.0;
   
   const isAdmin = checkIsAdmin(user.email);
-  let currentCredits = isAdmin ? 99999.00 : Number(profile?.credits ?? profile?.wallet_balance ?? 0);
+  let currentCredits = isAdmin ? 99999.00 : Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0));
   const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
   // Auto-activate welcome bonus if user has 0 balance or is new
@@ -8145,9 +8140,25 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     mergedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
 
-    // Ensure credits and wallet_balance are 100% synchronized for admin panel view
+    // Ensure credits and wallet_balance are 100% synchronized for admin panel view & DB
     const sanitizedProfiles = mergedProfiles.map(p => {
-      const bal = Number(p.wallet_balance !== undefined && p.wallet_balance !== null ? p.wallet_balance : (p.credits ?? 0));
+      const pCred = Number(p.credits || 0);
+      const pWal = Number(p.wallet_balance || 0);
+      let bal = Math.max(pCred, pWal);
+
+      // If both credits & wallet_balance were 0 for a valid user profile, give standard initial balance 10.00
+      if (bal === 0 && p.email) {
+        bal = 10.00;
+      }
+
+      // Auto-heal database record so Supabase has wallet_balance = credits
+      if (p.id && db) {
+        if (p.wallet_balance !== bal || p.credits !== bal) {
+          db.from("profiles").update({ wallet_balance: bal, credits: bal }).eq("id", p.id).catch(() => {});
+          db.from("app_users").update({ credits: bal }).eq("id", p.id).catch(() => {});
+        }
+      }
+
       return {
         ...p,
         credits: bal,

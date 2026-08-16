@@ -1956,7 +1956,7 @@ export default function AdminDashboard() {
                           key={amt}
                           type="button"
                           onClick={() => {
-                            const cur = Number(selectedUser.wallet_balance ?? selectedUser.credits ?? 0);
+                            const cur = Math.max(Number(selectedUser.wallet_balance || 0), Number(selectedUser.credits || 0));
                             const nextVal = cur + amt;
                             setSelectedUser({ ...selectedUser, wallet_balance: nextVal, credits: nextVal });
                           }}

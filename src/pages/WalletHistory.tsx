@@ -25,7 +25,7 @@ export default function WalletHistory() {
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const balance = profile?.credits ?? 10;
+  const balance = Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0));
 
   useEffect(() => {
     async function loadWalletTransactions() {
