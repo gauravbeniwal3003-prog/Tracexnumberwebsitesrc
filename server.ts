@@ -4728,7 +4728,7 @@ app.all("/api/developer_api.php", async (req, res) => {
 
 // --- ORDER FULFILLMENT UPGRADE ---
 
-async function fulfillOrder(orderId: string, userId: string, optionalEmail?: string) {
+async function fulfillOrder(orderId: string, userId: string, optionalEmail?: string, optionalPhone?: string) {
   if (!supabaseAdmin) return;
 
   try {
@@ -4745,282 +4745,365 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
     }
 
     if (claim) {
-      // Atomic Lock
+      // Atomic Lock supporting re-entrancy from previous unresolved states
       const { data: lockResult, error: lockErr } = 
             await supabaseAdmin
         .from("payment_claims")
         .update({ status: "processing" })
         .eq("payment_id", orderId)
-        .eq("status", "pending")
+        .in("status", ["pending", "unresolved_user", "unresolved_profile"])
         .select();
 
       if (lockErr || !lockResult || lockResult.length === 0) {
-        console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed or not pending.`);
+        console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed or not in a pending state.`);
         return;
       }
     }
 
-    let plan_id = claim?.plan_id || "wallet_100";
-    let user_email = claim?.user_email || optionalEmail;
-    let orderAmount = claim?.amount || 0;
+    // Wrap the core fulfillment steps in a try-catch to automatically release the processing lock on failures
+    try {
+      let plan_id = claim?.plan_id || "wallet_100";
+      let user_email = claim?.user_email || optionalEmail;
+      let orderAmount = claim?.amount || 0;
 
-    // Handle manual pgpay guest payments
-    if (plan_id === "pgpay_manual" || plan_id === "panfind") {
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      // Handle manual pgpay guest payments
+      if (plan_id === "pgpay_manual" || plan_id === "panfind") {
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        }
+        console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
+        return;
       }
-      console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
-      return;
-    }
 
-    // Handle Gaurav PVT Python Script purchase fulfillment
-    if (plan_id === "gaurav_pvt_script") {
-      const activatedStatus = `success_activated:${Date.now()}`;
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
+      // Handle Gaurav PVT Python Script purchase fulfillment
+      if (plan_id === "gaurav_pvt_script") {
+        const activatedStatus = `success_activated:${Date.now()}`;
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
+        }
+        console.log(`[SaaS] Gaurav PVT Script purchase verified & fulfilled securely: ${orderId}`);
+        return;
       }
-      console.log(`[SaaS] Gaurav PVT Script purchase verified & fulfilled securely: ${orderId}`);
-      return;
-    }
-    
-    // Flexible check for ID variants with automatic UUID resolution fallback
-    let finalUserId = userId;
-    const isUuid = (idStr: string | null | undefined) => !!idStr && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
+      
+      // Flexible check for ID variants with automatic UUID, Email, and Phone fallbacks
+      let finalUserId = userId;
+      const isUuid = (idStr: string | null | undefined) => !!idStr && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
 
-    if (!isUuid(finalUserId)) {
-      if (isUuid(claim?.user_id)) {
-        finalUserId = claim.user_id;
-        console.log(`[FULFILL] Resolved non-UUID user_id to valid claim user_id: ${finalUserId}`);
-      } else {
-        // Try searching profile by user_email
-        const emailToFind = user_email || optionalEmail;
+      if (!isUuid(finalUserId)) {
+        if (isUuid(claim?.user_id)) {
+          finalUserId = claim.user_id;
+          console.log(`[FULFILL] Resolved non-UUID user_id to valid claim user_id: ${finalUserId}`);
+        }
+      }
+
+      // Email fallback lookup in profiles and app_users
+      if (!isUuid(finalUserId)) {
+        const emailToFind = user_email || optionalEmail || claim?.user_email;
         if (emailToFind && emailToFind !== "N/A" && emailToFind.includes("@")) {
-          const { data: profByEmail } = await supabaseAdmin.from("profiles").select("id, email").eq("email", emailToFind).maybeSingle();
-          if (profByEmail && profByEmail.id) {
-            finalUserId = profByEmail.id;
-            console.log(`[FULFILL] Resolved user_id via email (${emailToFind}) to profile id: ${finalUserId}`);
+          const cleanEmail = emailToFind.trim().toLowerCase();
+          try {
+            const { data: profByEmail } = await supabaseAdmin.from("profiles").select("id").eq("email", cleanEmail).maybeSingle();
+            if (profByEmail && profByEmail.id) {
+              finalUserId = profByEmail.id;
+              console.log(`[FULFILL] Resolved user_id via email (${cleanEmail}) in profiles to id: ${finalUserId}`);
+            } else {
+              const { data: appByEmail } = await supabaseAdmin.from("app_users").select("id").eq("email", cleanEmail).maybeSingle();
+              if (appByEmail && appByEmail.id) {
+                finalUserId = appByEmail.id;
+                console.log(`[FULFILL] Resolved user_id via email (${cleanEmail}) in app_users to id: ${finalUserId}`);
+              }
+            }
+          } catch (emailErr) {
+            console.warn("[FULFILL] Email resolution query error:", emailErr);
           }
         }
       }
-    }
 
-    if (!isUuid(finalUserId)) {
-      console.log(`[FULFILL] Could not resolve a valid UUID user_id for order ${orderId}. Marking claim as success.`);
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-      }
-      return;
-    }
-
-    if (plan_id.startsWith('protect_')) {
-      const parts = plan_id.split('_');
-      let st = parts[1] || 'phone';
-      let targetVal = parts.slice(2).join('_');
-      
-      if (['mobile', 'number'].includes(st)) st = 'phone';
-      if (['tg'].includes(st)) st = 'telegram';
-      if (['aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
-      if (['veh'].includes(st)) st = 'vehicle';
-      if (['vehicle_owner'].includes(st)) st = 'veh_owner_num';
-      if (['gmail', 'mail'].includes(st)) st = 'email';
-
-      let cleanVal = targetVal;
-      if (st === 'phone') cleanVal = targetVal.replace(/\D/g, '');
-      if (st === 'adhr') cleanVal = targetVal.replace(/\D/g, '');
-      if (st === 'vehicle' || st === 'veh_owner_num') cleanVal = targetVal.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      if (st === 'email') cleanVal = targetVal.trim().toLowerCase();
-
-      try {
-        await supabaseAdmin.from('protected_records').upsert({
-          user_id: finalUserId || null,
-          service_type: st,
-          record_value: cleanVal || targetVal
-        }, { onConflict: 'service_type,record_value' });
-
-        if (st === 'phone' && cleanVal) {
-          await supabaseAdmin.from('protected_numbers').upsert({ phone_number: cleanVal }, { onConflict: 'phone_number' });
-        } else if (st === 'telegram' && targetVal) {
-          const cleanTg = targetVal.replace(/^@/, '').trim();
-          await supabaseAdmin.from('protected_telegrams').upsert({ telegram_id: cleanTg }, { onConflict: 'telegram_id' });
+      // Phone fallback lookup in profiles and app_users (critical for mobile login recharges)
+      if (!isUuid(finalUserId)) {
+        const rawPhone = optionalPhone || 
+                         (user_email && !user_email.includes("@") ? user_email : null) || 
+                         (claim?.user_email && !claim.user_email.includes("@") ? claim.user_email : null);
+        if (rawPhone) {
+          const phoneToFind = rawPhone.replace(/\D/g, "").slice(-10);
+          if (phoneToFind && phoneToFind.length === 10) {
+            try {
+              const { data: profByPhone } = await supabaseAdmin.from("profiles").select("id").eq("phone", phoneToFind).maybeSingle();
+              if (profByPhone && profByPhone.id) {
+                finalUserId = profByPhone.id;
+                console.log(`[FULFILL] Resolved user_id via phone (${phoneToFind}) in profiles to id: ${finalUserId}`);
+              } else {
+                const { data: appByPhone } = await supabaseAdmin.from("app_users").select("id").eq("phone", phoneToFind).maybeSingle();
+                if (appByPhone && appByPhone.id) {
+                  finalUserId = appByPhone.id;
+                  console.log(`[FULFILL] Resolved user_id via phone (${phoneToFind}) in app_users to id: ${finalUserId}`);
+                }
+              }
+            } catch (phoneErr) {
+              console.warn("[FULFILL] Phone resolution query error:", phoneErr);
+            }
+          }
         }
-      } catch (e) {
-        console.warn("[FULFILL_PROTECT_ERR]", e);
       }
 
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-      }
-      console.log(`[SaaS] Record protection fulfilled successfully for ${st}:${cleanVal}`);
-      return;
-    }
-
-    const isApiPlan = plan_id.includes('a15') || plan_id.includes('a30') || plan_id.startsWith('api_');
-
-    if (isApiPlan) {
-      // API Key Logic
-      const apiKey = `tx_${crypto.randomBytes(16).toString('hex')}`;
-      let days = 30;
-      let limit: number | null = null;
-      let planName = "Number Lookup (1 Month)";
-
-      if (plan_id === 'api_number_20') { planName = "Number Lookup API (40 Lookups)"; days = 30; limit = 40; }
-      else if (plan_id === 'api_number_50') { planName = "Number Lookup API (200 Lookups)"; days = 30; limit = 200; }
-      else if (plan_id === 'api_number_150') { planName = "Number Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
-      else if (plan_id === 'api_number_400' || plan_id === 'api_number') { planName = "Number Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
-      else if (plan_id === 'api_number_1000') { planName = "Number Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
-      else if (plan_id === 'api_number_1600') { planName = "Number Lookup API (6 Months Unlimited)"; days = 180; limit = null; }
-      else if (plan_id === 'api_number_3000') { planName = "Number Lookup API (1 Year Unlimited)"; days = 365; limit = null; }
-      else if (plan_id === 'api_telegram_20') { planName = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5; }
-      else if (plan_id === 'api_telegram_50') { planName = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20; }
-      else if (plan_id === 'api_telegram_200') { planName = "Telegram Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
-      else if (plan_id === 'api_telegram_650' || plan_id === 'api_telegram') { planName = "Telegram Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
-      else if (plan_id === 'api_telegram_1800') { planName = "Telegram Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
-      else if (plan_id === 'api_identity_20') { planName = "Identity Card API (5 Lookups)"; days = 30; limit = 5; }
-      else if (plan_id === 'api_identity_50') { planName = "Identity Card API (30 Lookups)"; days = 30; limit = 30; }
-      else if (plan_id === 'api_identity_150') { planName = "Identity Card API (1 Week Unlimited)"; days = 7; limit = null; }
-      else if (plan_id === 'api_identity_450' || plan_id === 'api_identity') { planName = "Identity Card API (1 Month Unlimited)"; days = 30; limit = null; }
-      else if (plan_id === 'api_identity_1100') { planName = "Identity Card API (3 Months Unlimited)"; days = 90; limit = null; }
-      else if (plan_id === 'api_vehicle_20') { planName = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10; }
-      else if (plan_id === 'api_vehicle_400') { planName = "Vehicle Lookup API (15 Days Unlimited)"; days = 15; limit = null; }
-      else if (plan_id === 'api_vehicle_700' || plan_id === 'api_vehicle') { planName = "Vehicle Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
-      else if (plan_id === 'api_vehicle_1800') { planName = "Vehicle Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
-      else if (plan_id === 'api_bank_20') { planName = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20; }
-      else if (plan_id === 'api_bank_70') { planName = "BA&NK Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
-      else if (plan_id === 'api_bank_250' || plan_id === 'api_bank') { planName = "BA&NK Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
-      else if (plan_id === 'api_bank_600') { planName = "BA&NK Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
-      else if (plan_id === 'api_aadhaar_to_pan_1000') { planName = "Aadhaar To PAN API (10 Lookups)"; days = 30; limit = 10; }
-      else if (plan_id === 'api_aadhaar_to_pan_2000') { planName = "Aadhaar To PAN API (22 Lookups)"; days = 30; limit = 22; }
-      else if (plan_id === 'api_aadhaar_to_pan_5000') { planName = "Aadhaar To PAN API (60 Lookups)"; days = 30; limit = 60; }
-      else if (plan_id === 'api_aadhaar_to_pan_10000') { planName = "Aadhaar To PAN API (15 Days Unlimited)"; days = 15; limit = null; }
-      else if (plan_id === 'api_pancard') { planName = "PN Card Lookup (1 Month)"; days = 30; limit = null; }
-      else if (plan_id === 'api_combo') { planName = "All Combo Special (1 Month)"; days = 30; limit = null; }
-      else if (plan_id === 'api_rasion') { planName = "Rasion Card Lookup (1 Month)"; days = 30; limit = null; }
-      else {
-        if (plan_id.includes('15')) days = 15;
-        if (plan_id.includes('unl')) limit = null;
-        planName = `${days} Days Unlimited API`;
+      if (!isUuid(finalUserId)) {
+        console.log(`[FULFILL] Could not resolve a valid UUID user_id for order ${orderId}. Setting status to unresolved_user.`);
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "unresolved_user" }).eq("payment_id", orderId);
+        }
+        return;
       }
 
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + days);
+      if (plan_id.startsWith('protect_')) {
+        const parts = plan_id.split('_');
+        let st = parts[1] || 'phone';
+        let targetVal = parts.slice(2).join('_');
+        
+        if (['mobile', 'number'].includes(st)) st = 'phone';
+        if (['tg'].includes(st)) st = 'telegram';
+        if (['aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
+        if (['veh'].includes(st)) st = 'vehicle';
+        if (['vehicle_owner'].includes(st)) st = 'veh_owner_num';
+        if (['gmail', 'mail'].includes(st)) st = 'email';
 
-      await supabaseAdmin.from("api_keys").insert({
-        api_key: apiKey,
-        user_id: finalUserId,
-        user_email: user_email || "N/A",
-        plan_name: planName,
-        request_limit: limit,
-        expires_at: expiresAt.toISOString()
-      });
-      
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-      } else {
-        await supabaseAdmin.from("payment_claims").insert({
-          payment_id: orderId,
+        let cleanVal = targetVal;
+        if (st === 'phone') cleanVal = targetVal.replace(/\D/g, '');
+        if (st === 'adhr') cleanVal = targetVal.replace(/\D/g, '');
+        if (st === 'vehicle' || st === 'veh_owner_num') cleanVal = targetVal.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (st === 'email') cleanVal = targetVal.trim().toLowerCase();
+
+        try {
+          await supabaseAdmin.from('protected_records').upsert({
+            user_id: finalUserId || null,
+            service_type: st,
+            record_value: cleanVal || targetVal
+          }, { onConflict: 'service_type,record_value' });
+
+          if (st === 'phone' && cleanVal) {
+            await supabaseAdmin.from('protected_numbers').upsert({ phone_number: cleanVal }, { onConflict: 'phone_number' });
+          } else if (st === 'telegram' && targetVal) {
+            const cleanTg = targetVal.replace(/^@/, '').trim();
+            await supabaseAdmin.from('protected_telegrams').upsert({ telegram_id: cleanTg }, { onConflict: 'telegram_id' });
+          }
+        } catch (e) {
+          console.warn("[FULFILL_PROTECT_ERR]", e);
+        }
+
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        }
+        console.log(`[SaaS] Record protection fulfilled successfully for ${st}:${cleanVal}`);
+        return;
+      }
+
+      const isApiPlan = plan_id.includes('a15') || plan_id.includes('a30') || plan_id.startsWith('api_');
+
+      if (isApiPlan) {
+        // API Key Logic
+        const apiKey = `tx_${crypto.randomBytes(16).toString('hex')}`;
+        let days = 30;
+        let limit: number | null = null;
+        let planName = "Number Lookup (1 Month)";
+
+        if (plan_id === 'api_number_20') { planName = "Number Lookup API (40 Lookups)"; days = 30; limit = 40; }
+        else if (plan_id === 'api_number_50') { planName = "Number Lookup API (200 Lookups)"; days = 30; limit = 200; }
+        else if (plan_id === 'api_number_150') { planName = "Number Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+        else if (plan_id === 'api_number_400' || plan_id === 'api_number') { planName = "Number Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+        else if (plan_id === 'api_number_1000') { planName = "Number Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+        else if (plan_id === 'api_number_1600') { planName = "Number Lookup API (6 Months Unlimited)"; days = 180; limit = null; }
+        else if (plan_id === 'api_number_3000') { planName = "Number Lookup API (1 Year Unlimited)"; days = 365; limit = null; }
+        else if (plan_id === 'api_telegram_20') { planName = "Telegram Lookup API (5 Lookups)"; days = 30; limit = 5; }
+        else if (plan_id === 'api_telegram_50') { planName = "Telegram Lookup API (20 Lookups)"; days = 30; limit = 20; }
+        else if (plan_id === 'api_telegram_200') { planName = "Telegram Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+        else if (plan_id === 'api_telegram_650' || plan_id === 'api_telegram') { planName = "Telegram Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+        else if (plan_id === 'api_telegram_1800') { planName = "Telegram Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+        else if (plan_id === 'api_identity_20') { planName = "Identity Card API (5 Lookups)"; days = 30; limit = 5; }
+        else if (plan_id === 'api_identity_50') { planName = "Identity Card API (30 Lookups)"; days = 30; limit = 30; }
+        else if (plan_id === 'api_identity_150') { planName = "Identity Card API (1 Week Unlimited)"; days = 7; limit = null; }
+        else if (plan_id === 'api_identity_450' || plan_id === 'api_identity') { planName = "Identity Card API (1 Month Unlimited)"; days = 30; limit = null; }
+        else if (plan_id === 'api_identity_1100') { planName = "Identity Card API (3 Months Unlimited)"; days = 90; limit = null; }
+        else if (plan_id === 'api_vehicle_20') { planName = "Vehicle Lookup API (10 Lookups)"; days = 30; limit = 10; }
+        else if (plan_id === 'api_vehicle_400') { planName = "Vehicle Lookup API (15 Days Unlimited)"; days = 15; limit = null; }
+        else if (plan_id === 'api_vehicle_700' || plan_id === 'api_vehicle') { planName = "Vehicle Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+        else if (plan_id === 'api_vehicle_1800') { planName = "Vehicle Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+        else if (plan_id === 'api_bank_20') { planName = "BA&NK Lookup API (20 Lookups)"; days = 30; limit = 20; }
+        else if (plan_id === 'api_bank_70') { planName = "BA&NK Lookup API (1 Week Unlimited)"; days = 7; limit = null; }
+        else if (plan_id === 'api_bank_250' || plan_id === 'api_bank') { planName = "BA&NK Lookup API (1 Month Unlimited)"; days = 30; limit = null; }
+        else if (plan_id === 'api_bank_600') { planName = "BA&NK Lookup API (3 Months Unlimited)"; days = 90; limit = null; }
+        else if (plan_id === 'api_aadhaar_to_pan_1000') { planName = "Aadhaar To PAN API (10 Lookups)"; days = 30; limit = 10; }
+        else if (plan_id === 'api_aadhaar_to_pan_2000') { planName = "Aadhaar To PAN API (22 Lookups)"; days = 30; limit = 22; }
+        else if (plan_id === 'api_aadhaar_to_pan_5000') { planName = "Aadhaar To PAN API (60 Lookups)"; days = 30; limit = 60; }
+        else if (plan_id === 'api_aadhaar_to_pan_10000') { planName = "Aadhaar To PAN API (15 Days Unlimited)"; days = 15; limit = null; }
+        else if (plan_id === 'api_pancard') { planName = "PN Card Lookup (1 Month)"; days = 30; limit = null; }
+        else if (plan_id === 'api_combo') { planName = "All Combo Special (1 Month)"; days = 30; limit = null; }
+        else if (plan_id === 'api_rasion') { planName = "Rasion Card Lookup (1 Month)"; days = 30; limit = null; }
+        else {
+          if (plan_id.includes('15')) days = 15;
+          if (plan_id.includes('unl')) limit = null;
+          planName = `${days} Days Unlimited API`;
+        }
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + days);
+
+        await supabaseAdmin.from("api_keys").insert({
+          api_key: apiKey,
           user_id: finalUserId,
           user_email: user_email || "N/A",
-          plan_id: plan_id,
-          amount: orderAmount,
-          status: "success"
+          plan_name: planName,
+          request_limit: limit,
+          expires_at: expiresAt.toISOString()
         });
+        
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        } else {
+          await supabaseAdmin.from("payment_claims").insert({
+            payment_id: orderId,
+            user_id: finalUserId,
+            user_email: user_email || "N/A",
+            plan_id: plan_id,
+            amount: orderAmount,
+            status: "success"
+          });
+        }
+        console.log(`[SaaS] API Key generated for ${finalUserId} (Plan: ${planName})`);
+        return;
       }
-      console.log(`[SaaS] API Key generated for ${finalUserId} (Plan: ${planName})`);
-      return;
-    }
 
-    // Wallet refill & credit topup logic
-    const { data: profile } = 
-          await supabaseAdmin.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
-    if (!profile) {
-      console.error(`[FULFILL] Profile not found for resolved user_id: ${finalUserId}`);
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      // Wallet refill & credit topup logic
+      const { data: profile } = 
+            await supabaseAdmin.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
+      if (!profile) {
+        console.error(`[FULFILL] Profile not found for resolved user_id: ${finalUserId}`);
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "unresolved_profile" }).eq("payment_id", orderId);
+        }
+        return;
       }
-      return;
-    }
-    
-    const updateData: any = {};
-    let creditsToAdd = 0;
-    
-    if (orderAmount && orderAmount > 0) {
-      creditsToAdd = Math.round(Number(orderAmount));
-    } else if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
-    else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
-    else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
-    else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 75;
-    else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 150;
-    else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 225;
-    else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 412;
-    else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 900;
-    else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
-    else {
-      const match = String(plan_id || '').match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
-      if (match) {
-        creditsToAdd = parseInt(match[1], 10);
-      }
-    }
-
-    if (creditsToAdd > 0) {
-      const addAmt = Number(creditsToAdd);
-      updateData.credits = Number(profile.credits || 0) + addAmt;
-      updateData.wallet_balance = Number(profile.wallet_balance || profile.credits || 0) + addAmt;
-      if (profile.balance !== undefined) {
-        updateData.balance = Number(profile.balance || 0) + addAmt;
-      }
-    } else if (plan_id.startsWith('u') || plan_id.startsWith('unlimited')) {
-      const hoursMap: any = {
-        'u1h': 1, 'unlimited_1h': 1,
-        'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
-        'u1w': 168, 'unlimited_1w': 168,
-        'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
-      };
-      const hours = hoursMap[plan_id as string] || 0;
-      const now = new Date();
-      const start = profile.unlimited_expiry && new Date(profile.unlimited_expiry) > now 
-                  ? new Date(profile.unlimited_expiry) : now;
-      if (hours > 0) {
-        updateData.unlimited_expiry = new Date(start.getTime() + (hours * 3600000)).toISOString();
-      }
-    }
-
-    if (Object.keys(updateData).length > 0) {
-      await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
       
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+      const updateData: any = {};
+      let creditsToAdd = 0;
+      
+      let baseAmount = 0;
+      if (orderAmount && orderAmount > 0) {
+        baseAmount = Math.round(Number(orderAmount));
       } else {
-        await supabaseAdmin.from("payment_claims").insert({
-          payment_id: orderId,
-          user_id: finalUserId,
-          user_email: profile.email || user_email || "N/A",
-          plan_id: plan_id,
-          amount: orderAmount || creditsToAdd,
-          status: "success"
-        });
+        const match = String(plan_id || '').match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
+        if (match) {
+          baseAmount = parseInt(match[1], 10);
+        }
       }
 
-      // Record in wallet_transactions
-      try {
-        await supabaseAdmin.from("wallet_transactions").insert({
-          user_id: finalUserId,
-          amount: Number(orderAmount || creditsToAdd),
-          type: "CREDIT",
-          payment_method: "Cashfree",
-          reference_id: orderId,
-          description: `Recharge via Cashfree (Order ${orderId})`,
-          status: "SUCCESS"
-        });
-      } catch (txErr) {
-        console.error("Failed to insert wallet_transactions log:", txErr);
+      if (baseAmount > 0) {
+        let bonusPercent = 0;
+        if (baseAmount >= 100) {
+          if (baseAmount >= 1000) {
+            bonusPercent = 100;
+          } else {
+            bonusPercent = Math.floor(baseAmount / 100) * 10;
+          }
+        }
+        const bonusAmount = Math.round((baseAmount * bonusPercent) / 100);
+        creditsToAdd = baseAmount + bonusAmount;
+      } else if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
+      else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
+      else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
+      else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 75;
+      else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 150;
+      else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 225;
+      else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 412;
+      else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 900;
+      else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
+      else {
+        const match = String(plan_id || '').match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
+        if (match) {
+          creditsToAdd = parseInt(match[1], 10);
+        }
       }
 
-      // Trigger 5% Referral Bonus to referrer
-      const depositAmt = Number(orderAmount || creditsToAdd || 0);
-      if (depositAmt > 0) {
-        await processReferralDepositBonus(finalUserId, depositAmt);
+      if (creditsToAdd > 0) {
+        const addAmt = Number(creditsToAdd);
+        updateData.credits = Number(profile.credits || 0) + addAmt;
+        updateData.wallet_balance = Number(profile.wallet_balance || profile.credits || 0) + addAmt;
+        if (profile.balance !== undefined) {
+          updateData.balance = Number(profile.balance || 0) + addAmt;
+        }
+      } else if (plan_id.startsWith('u') || plan_id.startsWith('unlimited')) {
+        const hoursMap: any = {
+          'u1h': 1, 'unlimited_1h': 1,
+          'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
+          'u1w': 168, 'unlimited_1w': 168,
+          'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
+        };
+        const hours = hoursMap[plan_id as string] || 0;
+        const now = new Date();
+        const start = profile.unlimited_expiry && new Date(profile.unlimited_expiry) > now 
+                    ? new Date(profile.unlimited_expiry) : now;
+        if (hours > 0) {
+          updateData.unlimited_expiry = new Date(start.getTime() + (hours * 3600000)).toISOString();
+        }
       }
-      console.log(`[FULFILL] Successfully credited ₹${creditsToAdd} / updated plan for user ${finalUserId} (Order ${orderId})`);
+
+      if (Object.keys(updateData).length > 0) {
+        // 1. Update profiles table
+        await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
+        
+        // 2. Keep app_users table perfectly in sync
+        try {
+          if (updateData.credits !== undefined) {
+            await supabaseAdmin.from("app_users").update({ credits: updateData.credits }).eq("id", finalUserId);
+          }
+        } catch (syncErr) {
+          console.warn("[FULFILL] Failed to sync credits to app_users:", syncErr);
+        }
+
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        } else {
+          await supabaseAdmin.from("payment_claims").insert({
+            payment_id: orderId,
+            user_id: finalUserId,
+            user_email: profile.email || user_email || "N/A",
+            plan_id: plan_id,
+            amount: orderAmount || creditsToAdd,
+            status: "success"
+          });
+        }
+
+        // Record in wallet_transactions
+        try {
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: finalUserId,
+            amount: Number(orderAmount || creditsToAdd),
+            type: "CREDIT",
+            payment_method: "Cashfree",
+            reference_id: orderId,
+            description: `Recharge via Cashfree (Order ${orderId})`,
+            status: "SUCCESS"
+          });
+        } catch (txErr) {
+          console.error("Failed to insert wallet_transactions log:", txErr);
+        }
+
+        // Trigger 5% Referral Bonus to referrer
+        const depositAmt = Number(orderAmount || creditsToAdd || 0);
+        if (depositAmt > 0) {
+          await processReferralDepositBonus(finalUserId, depositAmt);
+        }
+        console.log(`[FULFILL] Successfully credited ₹${creditsToAdd} / updated plan for user ${finalUserId} (Order ${orderId})`);
+      } else {
+        // If nothing to update, mark as success anyway to prevent stuck processing
+        if (claim) {
+          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        }
+      }
+    } catch (innerErr) {
+      console.error("[FULFILL] Internal fulfillment error, reverting status to pending:", innerErr);
+      if (claim) {
+        await supabaseAdmin.from("payment_claims").update({ status: "pending" }).eq("payment_id", orderId).eq("status", "processing");
+      }
+      throw innerErr;
     }
   } catch (err) {
     console.error("Fulfillment error:", err);
@@ -5066,8 +5149,8 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     const { user_id, user_email, plan_id, amount, customer_phone, customer_name, return_url } = req.body;
     
     // Strict input validation
-    if (!amount || typeof amount !== 'number' || amount <= 0 || amount > 100000) {
-      return res.status(400).json({ error: "Invalid payment amount" });
+    if (!amount || typeof amount !== 'number' || amount < 50 || amount > 100000) {
+      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹50." });
     }
     if (plan_id !== "pgpay_manual" && plan_id !== "panfind" ) {
       if (!user_id || typeof user_id !== 'string') {
@@ -5192,7 +5275,7 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
 
     if (data.order_status === "PAID") {
       if (supabaseAdmin) {
-        await fulfillOrder(order_id, data.customer_details?.customer_id, data.customer_details?.customer_email);
+        await fulfillOrder(order_id, data.customer_details?.customer_id, data.customer_details?.customer_email, data.customer_details?.customer_phone);
       } else {
         console.log("[TRACEXDATA] Payment verified PAID, but database is not active. Skipping database fulfillment callback.");
       }
@@ -5229,14 +5312,21 @@ app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfre
     const orderId = payload.data?.order?.order_id || payload.orderId || payload.order_id || payload.data?.order_id;
     const customerId = payload.data?.customer_details?.customer_id || payload.customer_id;
     const customerEmail = payload.data?.customer_details?.customer_email || payload.customer_email;
+    const customerPhone = payload.data?.customer_details?.customer_phone || payload.customer_phone || payload.data?.customer_phone || payload.data?.customer_details?.phone || payload.customerPhone;
     
     if (orderId) {
       let isPaid = false;
+      let orderPhoneFallback = customerPhone;
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
         const renderBackendUrl = getRenderBackendUrl();
         const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
         const data: any = await response.json().catch(() => ({}));
-        if (data.order_status === "PAID") isPaid = true;
+        if (data.order_status === "PAID") {
+          isPaid = true;
+          if (data.customer_details?.customer_phone) {
+            orderPhoneFallback = data.customer_details.customer_phone;
+          }
+        }
       } else {
         const response = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
           headers: {
@@ -5246,12 +5336,17 @@ app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfre
           }
         });
         const data: any = await response.json().catch(() => ({}));
-        if (data.order_status === "PAID") isPaid = true;
+        if (data.order_status === "PAID") {
+          isPaid = true;
+          if (data.customer_details?.customer_phone) {
+            orderPhoneFallback = data.customer_details.customer_phone;
+          }
+        }
       }
 
       if (isPaid && supabaseAdmin) {
         console.log(`[CASHFREE_WEBHOOK] Order ${orderId} verified PAID. Fulfilling order...`);
-        await fulfillOrder(orderId, customerId || "guest", customerEmail);
+        await fulfillOrder(orderId, customerId || "guest", customerEmail, orderPhoneFallback);
       }
     }
     return res.status(200).json({ status: "OK", message: "Webhook received and processed" });
@@ -8986,7 +9081,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
         }
 
         if (isPaid) {
-          await fulfillOrder(orderId, user.id);
+          await fulfillOrder(orderId, user.id, user.email, user.phone);
           recoveredCount++;
           recoveredOrders.push(orderId);
         }
@@ -9119,7 +9214,7 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
     }
 
     // 4. Force fulfill sequence!
-    await fulfillOrder(trimmedOrderId, user.id);
+    await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone);
 
     return res.json({
       status: "success",

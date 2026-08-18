@@ -10,6 +10,19 @@ import { getApiBaseUrl } from '../services/api';
 
 const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
 
+export function getRechargeBonus(amount: number) {
+  if (amount < 50) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
+  if (amount < 100) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
+  if (amount >= 1000) {
+    const bonusPercent = 100;
+    const bonusAmount = amount; // 100% bonus
+    return { bonusPercent, bonusAmount, totalAmount: amount + bonusAmount };
+  }
+  const bonusPercent = Math.floor(amount / 100) * 10;
+  const bonusAmount = Math.round((amount * bonusPercent) / 100);
+  return { bonusPercent, bonusAmount, totalAmount: amount + bonusAmount };
+}
+
 export default function BuyCredits() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -130,9 +143,10 @@ export default function BuyCredits() {
       const data = await response.json();
       if (data.order_status === 'PAID') {
         const addedAmount = data.order_amount || selectedAmount;
+        const bonusInfo = getRechargeBonus(addedAmount);
         setPaymentStatus({ 
           status: 'success', 
-          message: `Payment successful! ₹${addedAmount}.00 added to your wallet balance.`
+          message: `Payment successful! ₹${bonusInfo.totalAmount}.00 added to your wallet balance.`
         });
         
         await refreshProfile();
@@ -156,8 +170,8 @@ export default function BuyCredits() {
       return;
     }
 
-    if (!amountToPay || amountToPay < 10) {
-      alert("Please enter a valid amount (minimum ₹10)");
+    if (!amountToPay || amountToPay < 50) {
+      alert("Please enter a valid amount (minimum ₹50)");
       return;
     }
 
@@ -314,6 +328,7 @@ export default function BuyCredits() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {PRESET_AMOUNTS.map((amt) => {
                 const isSelected = selectedAmount === amt && !customAmountInput;
+                const bonusInfo = getRechargeBonus(amt);
                 return (
                   <button
                     key={amt}
@@ -322,13 +337,26 @@ export default function BuyCredits() {
                       setSelectedAmount(amt);
                       setCustomAmountInput('');
                     }}
-                    className={`py-4 px-5 rounded-2xl font-black text-lg transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                    className={`py-3 px-4 rounded-2xl transition-all border cursor-pointer flex flex-col items-center justify-center gap-1.5 relative overflow-hidden ${
                       isSelected
                         ? 'bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-500/25 scale-[1.02]'
                         : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-sky-300 hover:bg-sky-50'
                     }`}
                   >
-                    <span>₹{amt}</span>
+                    <span className="font-black text-xl">₹{amt}</span>
+                    {bonusInfo.bonusPercent > 0 ? (
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        isSelected 
+                          ? 'bg-white/20 text-white border border-white/20' 
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        +{bonusInfo.bonusPercent}% Bonus
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-bold">
+                        {amt === 50 ? 'Min. Recharge' : 'No Bonus'}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -346,9 +374,9 @@ export default function BuyCredits() {
               <input
                 id="buy-credits-custom-amount"
                 type="number"
-                min="10"
+                min="50"
                 max="100000"
-                placeholder="Enter custom amount (e.g. 350)"
+                placeholder="Enter custom amount (minimum ₹50)"
                 value={customAmountInput}
                 onChange={(e) => {
                   setCustomAmountInput(e.target.value);
@@ -361,6 +389,57 @@ export default function BuyCredits() {
             </div>
           </div>
 
+          {/* Offer & Bonus Breakdown Card */}
+          {finalAmount >= 50 && (
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Recharge Offer Details</span>
+                {getRechargeBonus(finalAmount).bonusPercent > 0 ? (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider">
+                    {getRechargeBonus(finalAmount).bonusPercent}% Bonus Active
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider">
+                    No Bonus (Under ₹100)
+                  </span>
+                )}
+              </div>
+              
+              <div className="space-y-2 text-xs font-semibold text-slate-600">
+                <div className="flex justify-between items-center">
+                  <span>Recharge Amount</span>
+                  <span className="font-mono text-slate-900 font-bold">₹{finalAmount}.00</span>
+                </div>
+                
+                {getRechargeBonus(finalAmount).bonusAmount > 0 && (
+                  <div className="flex justify-between items-center text-emerald-600">
+                    <span>Bonus Wallet Cash ({getRechargeBonus(finalAmount).bonusPercent}%)</span>
+                    <span className="font-mono font-bold">+₹{getRechargeBonus(finalAmount).bonusAmount}.00</span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-slate-200 font-extrabold text-sm text-slate-900">
+                  <span>Total Credits Added to Wallet</span>
+                  <span className="font-mono text-sky-600 text-base">₹{getRechargeBonus(finalAmount).totalAmount}.00</span>
+                </div>
+              </div>
+
+              {/* Promo Banner Info */}
+              {finalAmount >= 50 && finalAmount < 100 && (
+                <div className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-100 p-2.5 rounded-xl flex items-center gap-1.5 mt-2">
+                  <AlertCircle size={12} className="shrink-0" />
+                  <span>Tip: Recharge ₹100 or more to unlock up to 100% extra bonus!</span>
+                </div>
+              )}
+              {finalAmount >= 100 && finalAmount < 1000 && (
+                <div className="text-[10px] text-sky-700 font-bold bg-sky-50 border border-sky-100 p-2.5 rounded-xl flex items-center gap-1.5 mt-2">
+                  <AlertCircle size={12} className="shrink-0" />
+                  <span>Tip: Recharge ₹1,000 to get a full 100% bonus (Double your money)!</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Alert Note */}
           <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-sky-900 text-xs font-medium flex items-start gap-3">
             <AlertCircle size={18} className="text-sky-600 shrink-0 mt-0.5" />
@@ -371,7 +450,7 @@ export default function BuyCredits() {
 
           {/* Action Button */}
           <button
-            disabled={isProcessing || !finalAmount || finalAmount < 10}
+            disabled={isProcessing || !finalAmount || finalAmount < 50}
             onClick={() => handleAddFunds(finalAmount)}
             className="w-full py-5 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-black text-base uppercase tracking-wider shadow-lg shadow-sky-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3.5 cursor-pointer"
           >
@@ -383,7 +462,7 @@ export default function BuyCredits() {
             ) : (
               <>
                 <Wallet size={20} />
-                <span>Add ₹{finalAmount || 0}.00 to Wallet</span>
+                <span>Add ₹{getRechargeBonus(finalAmount).totalAmount || 0}.00 to Wallet</span>
               </>
             )}
           </button>
