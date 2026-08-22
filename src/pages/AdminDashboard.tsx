@@ -121,9 +121,10 @@ export default function AdminDashboard() {
   
   const [newUserProfileData, setNewUserProfileData] = useState({
     email: '',
+    phone: '',
     full_name: '',
     credits: 10,
-    wallet_balance: 0,
+    wallet_balance: 10,
     user_discount_percent: 0,
     unlimited_expiry: ''
   });
@@ -568,10 +569,14 @@ export default function AdminDashboard() {
   };
 
   const handleCreateUser = async () => {
-    if (!newUserProfileData.email) {
-      alert("Email is required!");
+    const rawEmail = (newUserProfileData.email || '').trim().toLowerCase();
+    const rawPhone = (newUserProfileData.phone || '').trim().replace(/\D/g, '');
+
+    if (!rawEmail && !rawPhone) {
+      alert("Please provide at least an Email address or Mobile Number!");
       return;
     }
+
     const randId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
@@ -597,8 +602,9 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({
           id: randId,
-          email: newUserProfileData.email.trim().toLowerCase(),
-          full_name: newUserProfileData.full_name?.trim() || newUserProfileData.email.split('@')[0],
+          email: rawEmail || (rawPhone ? `${rawPhone}@tracexdata.com` : ''),
+          phone: rawPhone || undefined,
+          full_name: newUserProfileData.full_name?.trim() || (rawPhone ? `User ${rawPhone.slice(-4)}` : rawEmail.split('@')[0]),
           credits: targetBal,
           wallet_balance: targetBal,
           user_discount_percent: Number(newUserProfileData.user_discount_percent || 0),
@@ -611,6 +617,7 @@ export default function AdminDashboard() {
         setIsAddUserModalOpen(false);
         setNewUserProfileData({
           email: '',
+          phone: '',
           full_name: '',
           credits: 10,
           wallet_balance: 10,
@@ -649,6 +656,7 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({
           email: selectedUser.email,
+          phone: selectedUser.phone || undefined,
           full_name: selectedUser.full_name || '',
           credits: targetBal,
           wallet_balance: targetBal,
@@ -1241,13 +1249,13 @@ export default function AdminDashboard() {
                 type="text"
                 value={searchUserQuery}
                 onChange={(e) => setSearchUserQuery(e.target.value)}
-                placeholder="Search by Email, Referral Code, or Name..."
+                placeholder="Search by Mobile Number, Email, Name, Referral Code, or User ID..."
                 className="w-full h-12 bg-white border border-slate-200 rounded-xl pl-12 pr-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-xs md:text-sm text-slate-900 placeholder:text-slate-400 shadow-xs"
               />
               {searchUserQuery && (
                 <button 
                   onClick={() => setSearchUserQuery('')}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-900 text-xs font-bold bg-slate-100 px-2 py-1 rounded"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-900 text-xs font-bold bg-slate-100 px-2 py-1 rounded cursor-pointer"
                 >
                   Clear
                 </button>
@@ -1256,13 +1264,19 @@ export default function AdminDashboard() {
 
             {(() => {
               const query = (searchUserQuery || '').trim().toLowerCase();
+              const queryDigits = query.replace(/\D/g, '');
               const filteredProfiles = profiles.filter(p => {
                 if (!query) return true;
                 const email = (p.email || '').toLowerCase();
+                const phone = (p.phone || '').replace(/\D/g, '');
                 const id = (p.id || '').toLowerCase();
                 const fullName = (p.full_name || '').toLowerCase();
                 const refCode = (p.referral_code || '').toLowerCase();
-                return email.includes(query) || id.includes(query) || fullName.includes(query) || refCode.includes(query);
+                return email.includes(query) || 
+                       (queryDigits && phone.includes(queryDigits)) || 
+                       id.includes(query) || 
+                       fullName.includes(query) || 
+                       refCode.includes(query);
               });
 
               return (
@@ -1271,7 +1285,8 @@ export default function AdminDashboard() {
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
-                          <th className="px-6 py-4">User Context</th>
+                          <th className="px-6 py-4">User Details</th>
+                          <th className="px-6 py-4">Auth Type</th>
                           <th className="px-6 py-4">Wallet Balance (₹ INR)</th>
                           <th className="px-6 py-4">Discount</th>
                           <th className="px-6 py-4">Unlimited Plan</th>
@@ -1282,7 +1297,7 @@ export default function AdminDashboard() {
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
                         {filteredProfiles.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">
+                            <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">
                               No registered users found
                             </td>
                           </tr>
@@ -1292,16 +1307,40 @@ export default function AdminDashboard() {
                             const isUserAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === (p.email || '').toLowerCase());
                             const userBal = Math.max(Number(p.wallet_balance || 0), Number(p.credits || 0));
                             
+                            // Detect if user is mobile registered
+                            const isMobileUser = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com') && /^\d+@/.test(p.email)));
+                            const displayPhone = p.phone || (p.email && p.email.endsWith('@tracexdata.com') ? p.email.split('@')[0] : null);
+                            
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                                 <td className="px-6 py-4">
                                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                                    <span>{p.full_name || 'No Name'}</span>
+                                    <span>{p.full_name || (displayPhone ? `User ${displayPhone.slice(-4)}` : 'No Name')}</span>
                                     {isUserAdmin && (
                                       <span className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded-full font-bold">Admin</span>
                                     )}
                                   </div>
-                                  <div className="text-[11px] text-slate-500 mt-0.5">{p.email}</div>
+                                  {displayPhone && (
+                                    <div className="text-[11px] font-mono text-indigo-700 font-bold mt-0.5 flex items-center gap-1">
+                                      <span>📱 +91 {displayPhone}</span>
+                                    </div>
+                                  )}
+                                  {p.email && !p.email.endsWith('@tracexdata.com') && (
+                                    <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                                      <span>✉️ {p.email}</span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
+                                  {isMobileUser ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-amber-50 text-amber-700 border border-amber-200 font-bold uppercase tracking-wider">
+                                      📱 Mobile Auth
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold uppercase tracking-wider">
+                                      ✉️ Email Auth
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-6 py-4 font-mono font-black text-emerald-600 text-sm">
                                   ₹{userBal.toFixed(2)}
@@ -1328,17 +1367,18 @@ export default function AdminDashboard() {
                                         setSelectedUser(JSON.parse(JSON.stringify(p)));
                                         setIsEditUserModalOpen(true);
                                       }}
-                                      className="text-indigo-600 hover:text-indigo-800 transition-colors p-2 cursor-pointer"
-                                      title="Edit Profile"
+                                      className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                      title="Edit Profile & Add Funds"
                                     >
-                                      <Edit2 size={15} />
+                                      <Edit2 size={13} />
+                                      <span>Edit / Add Funds</span>
                                     </button>
                                     <button 
-                                      onClick={() => handleDeleteUser(p.id, p.email)}
-                                      className="text-rose-600 hover:text-rose-800 transition-colors p-2 cursor-pointer"
+                                      onClick={() => handleDeleteUser(p.id, p.email || p.phone || 'User')}
+                                      className="text-rose-600 hover:text-rose-800 transition-colors p-1.5 cursor-pointer rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-200"
                                       title="Delete Profile"
                                     >
-                                      <Trash2 size={15} />
+                                      <Trash2 size={14} />
                                     </button>
                                   </div>
                                 </td>
@@ -1856,12 +1896,12 @@ export default function AdminDashboard() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-8 overflow-hidden shadow-2xl z-10 text-slate-900 space-y-6"
+              className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-8 overflow-hidden shadow-2xl z-10 text-slate-900 space-y-5 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex justify-between items-center border-b border-slate-200 pb-4">
                 <div>
                   <h2 className="text-xl font-bold">Register User Profile</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Create a user profile directly in the database.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Create a user profile for mobile numbers or email users.</p>
                 </div>
                 <button onClick={() => setIsAddUserModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
                   <X size={20} />
@@ -1869,15 +1909,31 @@ export default function AdminDashboard() {
               </div>
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-slate-600 font-bold uppercase mb-1">Email ID</label>
-                  <input 
-                    type="email" 
-                    value={newUserProfileData.email}
-                    onChange={(e) => setNewUserProfileData({...newUserProfileData, email: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500"
-                    placeholder="user@example.com"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-indigo-600 font-bold uppercase mb-1">Mobile Number (10 Digits)</label>
+                    <input 
+                      type="tel" 
+                      value={newUserProfileData.phone || ''}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setNewUserProfileData({...newUserProfileData, phone: digits});
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono outline-none focus:border-indigo-500"
+                      placeholder="e.g. 9876543210"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 font-bold uppercase mb-1">Email Address</label>
+                    <input 
+                      type="email" 
+                      value={newUserProfileData.email}
+                      onChange={(e) => setNewUserProfileData({...newUserProfileData, email: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500"
+                      placeholder="user@example.com"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -1886,14 +1942,14 @@ export default function AdminDashboard() {
                     type="text" 
                     value={newUserProfileData.full_name}
                     onChange={(e) => setNewUserProfileData({...newUserProfileData, full_name: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500"
-                    placeholder="e.g. Gaurav Beniwal"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500"
+                    placeholder="e.g. Rahul Sharma"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet Balance (₹ INR)</label>
+                    <label className="block text-emerald-600 font-bold uppercase mb-1">Initial Wallet Balance (₹ INR)</label>
                     <input 
                       type="number" 
                       value={newUserProfileData.wallet_balance}
@@ -1901,8 +1957,22 @@ export default function AdminDashboard() {
                         const val = Number(e.target.value);
                         setNewUserProfileData({...newUserProfileData, wallet_balance: val, credits: val});
                       }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-mono font-bold"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-mono font-bold"
                     />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {[50, 100, 200, 500, 1000].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => {
+                            setNewUserProfileData({ ...newUserProfileData, wallet_balance: amt, credits: amt });
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-emerald-50 text-emerald-700 font-mono text-[10px] border border-slate-200 font-bold cursor-pointer"
+                        >
+                          ₹{amt}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
@@ -1911,7 +1981,7 @@ export default function AdminDashboard() {
                       type="number" 
                       value={newUserProfileData.user_discount_percent}
                       onChange={(e) => setNewUserProfileData({...newUserProfileData, user_discount_percent: Number(e.target.value)})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-mono"
                     />
                   </div>
                 </div>
@@ -1950,7 +2020,9 @@ export default function AdminDashboard() {
               <div className="flex justify-between items-center border-b border-slate-200 pb-4">
                 <div>
                   <h2 className="text-xl font-bold">Edit Profile & Account Balances</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">{selectedUser.email}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {selectedUser.phone ? `📱 +91 ${selectedUser.phone}` : ''} {selectedUser.email && !selectedUser.email.endsWith('@tracexdata.com') ? `• ✉️ ${selectedUser.email}` : ''}
+                  </p>
                 </div>
                 <button onClick={() => setIsEditUserModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
                   <X size={20} />
@@ -1958,6 +2030,32 @@ export default function AdminDashboard() {
               </div>
 
               <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-indigo-600 font-bold uppercase mb-1">Mobile Number</label>
+                    <input 
+                      type="tel" 
+                      value={selectedUser.phone || (selectedUser.email && selectedUser.email.endsWith('@tracexdata.com') ? selectedUser.email.split('@')[0] : '')}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setSelectedUser({...selectedUser, phone: digits});
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono outline-none focus:border-indigo-500"
+                      placeholder="e.g. 9876543210"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 font-bold uppercase mb-1">Email Address</label>
+                    <input 
+                      type="email" 
+                      value={selectedUser.email || ''}
+                      onChange={(e) => setSelectedUser({...selectedUser, email: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-slate-600 font-bold uppercase mb-1">Full Name</label>
                   <input 
@@ -1980,8 +2078,8 @@ export default function AdminDashboard() {
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono font-bold"
                     />
-                    <div className="flex gap-1.5 mt-2">
-                      {[10, 50, 100, 500].map(amt => (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {[50, 100, 200, 500, 1000].map(amt => (
                         <button
                           key={amt}
                           type="button"

@@ -4728,12 +4728,19 @@ app.all("/api/developer_api.php", async (req, res) => {
 
 // --- ORDER FULFILLMENT UPGRADE ---
 
-async function fulfillOrder(orderId: string, userId: string, optionalEmail?: string, optionalPhone?: string) {
-  if (!supabaseAdmin) return;
+async function fulfillOrder(
+  orderId: string, 
+  userId?: string | null, 
+  optionalEmail?: string | null, 
+  optionalPhone?: string | null,
+  explicitAmount?: number | null,
+  explicitPlanId?: string | null
+) {
+  if (!supabaseAdmin && !supabase) return;
+  const db = supabaseAdmin || supabase;
 
   try {
-    let { data: claim, error: claimErr } = 
-          await supabaseAdmin
+    let { data: claim } = await db
       .from("payment_claims")
       .select("*")
       .eq("payment_id", orderId)
@@ -4745,32 +4752,69 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
     }
 
     if (claim) {
-      // Atomic Lock supporting re-entrancy from previous unresolved states
-      const { data: lockResult, error: lockErr } = 
-            await supabaseAdmin
+      await db
         .from("payment_claims")
         .update({ status: "processing" })
-        .eq("payment_id", orderId)
-        .in("status", ["pending", "unresolved_user", "unresolved_profile"])
-        .select();
-
-      if (lockErr || !lockResult || lockResult.length === 0) {
-        console.log(`[RACE CONDITION PREVENTED] Order ${orderId} is already being processed or not in a pending state.`);
-        return;
+        .eq("payment_id", orderId);
+    } else {
+      try {
+        await db.from("payment_claims").insert({
+          payment_id: orderId,
+          user_id: userId || null,
+          user_email: optionalEmail || "N/A",
+          plan_id: explicitPlanId || "wallet_100",
+          amount: explicitAmount || 100,
+          status: "processing"
+        });
+      } catch (insertErr) {
+        // ignore duplicate key
       }
     }
 
-    // Wrap the core fulfillment steps in a try-catch to automatically release the processing lock on failures
+    // Wrap the core fulfillment steps in a try-catch
     try {
-      let plan_id = claim?.plan_id || "wallet_100";
-      let user_email = claim?.user_email || optionalEmail;
-      let orderAmount = claim?.amount || 0;
+      let plan_id = explicitPlanId || claim?.plan_id || "wallet_100";
+      let user_email = optionalEmail || claim?.user_email || "";
+      let customer_phone = optionalPhone || "";
+      let orderAmount = Number(explicitAmount || claim?.amount || 0);
+
+      // If orderAmount is 0 or missing, verify directly with Cashfree API
+      if (orderAmount <= 0) {
+        try {
+          if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            const renderBackendUrl = getRenderBackendUrl();
+            if (renderBackendUrl) {
+              const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
+              const cfData = await cfResp.json();
+              if (cfData && cfData.order_amount) {
+                orderAmount = Number(cfData.order_amount);
+                if (cfData.customer_details?.customer_email && !user_email) user_email = cfData.customer_details.customer_email;
+                if (cfData.customer_details?.customer_phone && !customer_phone) customer_phone = cfData.customer_details.customer_phone;
+              }
+            }
+          } else {
+            const cfResp = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
+              headers: {
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+              }
+            });
+            const cfData: any = await cfResp.json();
+            if (cfData && cfData.order_amount) {
+              orderAmount = Number(cfData.order_amount);
+              if (cfData.customer_details?.customer_email && !user_email) user_email = cfData.customer_details.customer_email;
+              if (cfData.customer_details?.customer_phone && !customer_phone) customer_phone = cfData.customer_details.customer_phone;
+            }
+          }
+        } catch (cfFetchErr) {
+          console.warn("[FULFILL] Could not fetch order details from Cashfree directly:", cfFetchErr);
+        }
+      }
 
       // Handle manual pgpay guest payments
       if (plan_id === "pgpay_manual" || plan_id === "panfind") {
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        }
+        await db.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
         console.log(`[SaaS] Manual Guest Payment fulfilled successfully for ${orderId}`);
         return;
       }
@@ -4778,80 +4822,75 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
       // Handle Gaurav PVT Python Script purchase fulfillment
       if (plan_id === "gaurav_pvt_script") {
         const activatedStatus = `success_activated:${Date.now()}`;
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
-        }
+        await db.from("payment_claims").update({ status: activatedStatus }).eq("payment_id", orderId);
         console.log(`[SaaS] Gaurav PVT Script purchase verified & fulfilled securely: ${orderId}`);
         return;
       }
       
       // Flexible check for ID variants with automatic UUID, Email, and Phone fallbacks
-      let finalUserId = userId;
       const isUuid = (idStr: string | null | undefined) => !!idStr && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
+      let finalUserId: string | null = (userId && isUuid(userId)) ? userId : null;
 
-      if (!isUuid(finalUserId)) {
-        if (isUuid(claim?.user_id)) {
-          finalUserId = claim.user_id;
-          console.log(`[FULFILL] Resolved non-UUID user_id to valid claim user_id: ${finalUserId}`);
-        }
+      if (!finalUserId && isUuid(claim?.user_id)) {
+        finalUserId = claim.user_id;
       }
 
       // Email fallback lookup in profiles and app_users
-      if (!isUuid(finalUserId)) {
-        const emailToFind = user_email || optionalEmail || claim?.user_email;
-        if (emailToFind && emailToFind !== "N/A" && emailToFind.includes("@")) {
-          const cleanEmail = emailToFind.trim().toLowerCase();
-          try {
-            const { data: profByEmail } = await supabaseAdmin.from("profiles").select("id").eq("email", cleanEmail).maybeSingle();
-            if (profByEmail && profByEmail.id) {
-              finalUserId = profByEmail.id;
-              console.log(`[FULFILL] Resolved user_id via email (${cleanEmail}) in profiles to id: ${finalUserId}`);
-            } else {
-              const { data: appByEmail } = await supabaseAdmin.from("app_users").select("id").eq("email", cleanEmail).maybeSingle();
-              if (appByEmail && appByEmail.id) {
-                finalUserId = appByEmail.id;
-                console.log(`[FULFILL] Resolved user_id via email (${cleanEmail}) in app_users to id: ${finalUserId}`);
-              }
+      const emailCandidate = user_email || claim?.user_email;
+      if (!finalUserId && emailCandidate && emailCandidate !== "N/A" && emailCandidate.includes("@")) {
+        const cleanEmail = emailCandidate.trim().toLowerCase();
+        try {
+          const { data: profByEmail } = await db.from("profiles").select("id").eq("email", cleanEmail).maybeSingle();
+          if (profByEmail && profByEmail.id) {
+            finalUserId = profByEmail.id;
+          } else {
+            const { data: appByEmail } = await db.from("app_users").select("id").eq("email", cleanEmail).maybeSingle();
+            if (appByEmail && appByEmail.id) {
+              finalUserId = appByEmail.id;
             }
-          } catch (emailErr) {
-            console.warn("[FULFILL] Email resolution query error:", emailErr);
           }
+        } catch (emailErr) {
+          console.warn("[FULFILL] Email resolution query error:", emailErr);
         }
       }
 
-      // Phone fallback lookup in profiles and app_users (critical for mobile login recharges)
-      if (!isUuid(finalUserId)) {
-        const rawPhone = optionalPhone || 
-                         (user_email && !user_email.includes("@") ? user_email : null) || 
-                         (claim?.user_email && !claim.user_email.includes("@") ? claim.user_email : null);
-        if (rawPhone) {
-          const phoneToFind = rawPhone.replace(/\D/g, "").slice(-10);
-          if (phoneToFind && phoneToFind.length === 10) {
+      // Phone fallback lookup in profiles, app_users, and mobileUsersStore
+      const phoneCandidate = customer_phone || optionalPhone || (emailCandidate && !emailCandidate.includes("@") ? emailCandidate : null);
+      if (phoneCandidate) {
+        const cleanPhone = phoneCandidate.replace(/\D/g, "").slice(-10);
+        if (cleanPhone.length === 10) {
+          if (!finalUserId && mobileUsersStore.has(cleanPhone)) {
+            finalUserId = mobileUsersStore.get(cleanPhone).id;
+          }
+          if (!finalUserId) {
             try {
-              const { data: profByPhone } = await supabaseAdmin.from("profiles").select("id").eq("phone", phoneToFind).maybeSingle();
-              if (profByPhone && profByPhone.id) {
-                finalUserId = profByPhone.id;
-                console.log(`[FULFILL] Resolved user_id via phone (${phoneToFind}) in profiles to id: ${finalUserId}`);
-              } else {
-                const { data: appByPhone } = await supabaseAdmin.from("app_users").select("id").eq("phone", phoneToFind).maybeSingle();
-                if (appByPhone && appByPhone.id) {
-                  finalUserId = appByPhone.id;
-                  console.log(`[FULFILL] Resolved user_id via phone (${phoneToFind}) in app_users to id: ${finalUserId}`);
-                }
+              const { data: appByPhone } = await db.from("app_users").select("id").eq("phone", cleanPhone).maybeSingle();
+              if (appByPhone && appByPhone.id) {
+                finalUserId = appByPhone.id;
               }
-            } catch (phoneErr) {
-              console.warn("[FULFILL] Phone resolution query error:", phoneErr);
-            }
+            } catch (phoneErr) {}
+          }
+          if (!finalUserId) {
+            try {
+              const { data: profByPhoneEmail } = await db.from("profiles").select("id").eq("email", `${cleanPhone}@tracexdata.com`).maybeSingle();
+              if (profByPhoneEmail && profByPhoneEmail.id) {
+                finalUserId = profByPhoneEmail.id;
+              }
+            } catch (phoneErr) {}
+          }
+          if (!finalUserId) {
+            finalUserId = getUuidForPhone(cleanPhone);
           }
         }
       }
 
-      if (!isUuid(finalUserId)) {
-        console.log(`[FULFILL] Could not resolve a valid UUID user_id for order ${orderId}. Setting status to unresolved_user.`);
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "unresolved_user" }).eq("payment_id", orderId);
+      // Fallback: If still no UUID, generate deterministic UUID so payment is NEVER lost
+      if (!finalUserId) {
+        if (emailCandidate && emailCandidate.includes("@")) {
+          finalUserId = getUuidForPhone(emailCandidate.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "user");
+        } else {
+          finalUserId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
         }
-        return;
       }
 
       if (plan_id.startsWith('protect_')) {
@@ -4873,25 +4912,23 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
         if (st === 'email') cleanVal = targetVal.trim().toLowerCase();
 
         try {
-          await supabaseAdmin.from('protected_records').upsert({
+          await db.from('protected_records').upsert({
             user_id: finalUserId || null,
             service_type: st,
             record_value: cleanVal || targetVal
           }, { onConflict: 'service_type,record_value' });
 
           if (st === 'phone' && cleanVal) {
-            await supabaseAdmin.from('protected_numbers').upsert({ phone_number: cleanVal }, { onConflict: 'phone_number' });
+            await db.from('protected_numbers').upsert({ phone_number: cleanVal }, { onConflict: 'phone_number' });
           } else if (st === 'telegram' && targetVal) {
             const cleanTg = targetVal.replace(/^@/, '').trim();
-            await supabaseAdmin.from('protected_telegrams').upsert({ telegram_id: cleanTg }, { onConflict: 'telegram_id' });
+            await db.from('protected_telegrams').upsert({ telegram_id: cleanTg }, { onConflict: 'telegram_id' });
           }
         } catch (e) {
           console.warn("[FULFILL_PROTECT_ERR]", e);
         }
 
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        }
+        await db.from("payment_claims").update({ status: "success", user_id: finalUserId }).eq("payment_id", orderId);
         console.log(`[SaaS] Record protection fulfilled successfully for ${st}:${cleanVal}`);
         return;
       }
@@ -4946,7 +4983,7 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + days);
 
-        await supabaseAdmin.from("api_keys").insert({
+        await db.from("api_keys").insert({
           api_key: apiKey,
           user_id: finalUserId,
           user_email: user_email || "N/A",
@@ -4955,36 +4992,18 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
           expires_at: expiresAt.toISOString()
         });
         
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        } else {
-          await supabaseAdmin.from("payment_claims").insert({
-            payment_id: orderId,
-            user_id: finalUserId,
-            user_email: user_email || "N/A",
-            plan_id: plan_id,
-            amount: orderAmount,
-            status: "success"
-          });
-        }
+        await db.from("payment_claims").update({ status: "success", user_id: finalUserId }).eq("payment_id", orderId);
         console.log(`[SaaS] API Key generated for ${finalUserId} (Plan: ${planName})`);
         return;
       }
 
-      // Wallet refill & credit topup logic
-      const { data: profile } = 
-            await supabaseAdmin.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
-      if (!profile) {
-        console.error(`[FULFILL] Profile not found for resolved user_id: ${finalUserId}`);
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "unresolved_profile" }).eq("payment_id", orderId);
-        }
-        return;
-      }
+      // Wallet refill & tiered bonus credit topup logic
+      let { data: profile } = await db.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
       
-      const updateData: any = {};
-      let creditsToAdd = 0;
-      
+      const cleanPhoneForStore = customer_phone ? customer_phone.replace(/\D/g, "").slice(-10) : "";
+      const emailToUse = profile?.email || user_email || (cleanPhoneForStore ? `${cleanPhoneForStore}@tracexdata.com` : `user_${finalUserId.slice(0, 8)}@tracexdata.online`);
+      const nameToUse = profile?.full_name || (emailToUse ? emailToUse.split("@")[0] : `User ${finalUserId.slice(0, 4)}`);
+
       let baseAmount = 0;
       if (orderAmount && orderAmount > 0) {
         baseAmount = Math.round(Number(orderAmount));
@@ -4995,6 +5014,7 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
         }
       }
 
+      let creditsToAdd = 0;
       if (baseAmount > 0) {
         let bonusPercent = 0;
         if (baseAmount >= 100) {
@@ -5006,107 +5026,90 @@ async function fulfillOrder(orderId: string, userId: string, optionalEmail?: str
         }
         const bonusAmount = Math.round((baseAmount * bonusPercent) / 100);
         creditsToAdd = baseAmount + bonusAmount;
-      } else if (['c10', 'credit_10'].includes(plan_id)) creditsToAdd = 15;
-      else if (['c20', 'credit_20'].includes(plan_id)) creditsToAdd = 30;
-      else if (['c40', 'credit_40'].includes(plan_id)) creditsToAdd = 60;
-      else if (['c50', 'credit_50'].includes(plan_id)) creditsToAdd = 75;
-      else if (['c100', 'credit_100'].includes(plan_id)) creditsToAdd = 150;
-      else if (['c150', 'credit_150'].includes(plan_id)) creditsToAdd = 225;
-      else if (['c250', 'credit_250'].includes(plan_id)) creditsToAdd = 412;
-      else if (['c500', 'credit_500'].includes(plan_id)) creditsToAdd = 900;
-      else if (['c1000', 'credit_1000'].includes(plan_id)) creditsToAdd = 1950;
-      else {
-        const match = String(plan_id || '').match(/^(?:c|credit_|wallet_|recharge_?)(\d+)$/i);
-        if (match) {
-          creditsToAdd = parseInt(match[1], 10);
-        }
-      }
-
-      if (creditsToAdd > 0) {
-        const addAmt = Number(creditsToAdd);
-        updateData.credits = Number(profile.credits || 0) + addAmt;
-        updateData.wallet_balance = Number(profile.wallet_balance || profile.credits || 0) + addAmt;
-        if (profile.balance !== undefined) {
-          updateData.balance = Number(profile.balance || 0) + addAmt;
-        }
-      } else if (plan_id.startsWith('u') || plan_id.startsWith('unlimited')) {
-        const hoursMap: any = {
-          'u1h': 1, 'unlimited_1h': 1,
-          'u1d': 24, 'u24h': 24, 'unlimited_1d': 24, 'unlimited_24h': 24,
-          'u1w': 168, 'unlimited_1w': 168,
-          'u1m': 720, 'unlimited_1m': 720, 'u1m_special200': 720
-        };
-        const hours = hoursMap[plan_id as string] || 0;
-        const now = new Date();
-        const start = profile.unlimited_expiry && new Date(profile.unlimited_expiry) > now 
-                    ? new Date(profile.unlimited_expiry) : now;
-        if (hours > 0) {
-          updateData.unlimited_expiry = new Date(start.getTime() + (hours * 3600000)).toISOString();
-        }
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        // 1. Update profiles table
-        await supabaseAdmin.from("profiles").update(updateData).eq("id", finalUserId);
-        
-        // 2. Keep app_users table perfectly in sync
-        try {
-          if (updateData.credits !== undefined) {
-            await supabaseAdmin.from("app_users").update({ credits: updateData.credits }).eq("id", finalUserId);
-          }
-        } catch (syncErr) {
-          console.warn("[FULFILL] Failed to sync credits to app_users:", syncErr);
-        }
-
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        } else {
-          await supabaseAdmin.from("payment_claims").insert({
-            payment_id: orderId,
-            user_id: finalUserId,
-            user_email: profile.email || user_email || "N/A",
-            plan_id: plan_id,
-            amount: orderAmount || creditsToAdd,
-            status: "success"
-          });
-        }
-
-        // Record in wallet_transactions
-        try {
-          await supabaseAdmin.from("wallet_transactions").insert({
-            user_id: finalUserId,
-            amount: Number(orderAmount || creditsToAdd),
-            type: "CREDIT",
-            payment_method: "Cashfree",
-            reference_id: orderId,
-            description: `Recharge via Cashfree (Order ${orderId})`,
-            status: "SUCCESS"
-          });
-        } catch (txErr) {
-          console.error("Failed to insert wallet_transactions log:", txErr);
-        }
-
-        // Trigger 5% Referral Bonus to referrer
-        const depositAmt = Number(orderAmount || creditsToAdd || 0);
-        if (depositAmt > 0) {
-          await processReferralDepositBonus(finalUserId, depositAmt);
-        }
-        console.log(`[FULFILL] Successfully credited ₹${creditsToAdd} / updated plan for user ${finalUserId} (Order ${orderId})`);
       } else {
-        // If nothing to update, mark as success anyway to prevent stuck processing
-        if (claim) {
-          await supabaseAdmin.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        }
+        creditsToAdd = 100; // default safe fallback
       }
+
+      const existingBalance = profile ? Math.max(Number(profile.wallet_balance || 0), Number(profile.credits || 0)) : 0;
+      const newTotalBalance = existingBalance + creditsToAdd;
+
+      const profileUpsertPayload: any = {
+        id: finalUserId,
+        email: emailToUse,
+        full_name: nameToUse,
+        credits: newTotalBalance,
+        wallet_balance: newTotalBalance,
+        is_free_credit_claimed: true,
+        updated_at: new Date().toISOString()
+      };
+
+      if (profile?.unlimited_expiry) profileUpsertPayload.unlimited_expiry = profile.unlimited_expiry;
+      if (profile?.user_discount_percent) profileUpsertPayload.user_discount_percent = profile.user_discount_percent;
+
+      // Upsert profiles
+      await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" });
+
+      // Upsert app_users
+      await db.from("app_users").upsert({
+        id: finalUserId,
+        email: emailToUse,
+        full_name: nameToUse,
+        credits: newTotalBalance,
+        phone: cleanPhoneForStore || (profile?.phone || "")
+      }, { onConflict: "id" }).catch(() => {});
+
+      // Sync mobileUsersStore if applicable
+      if (cleanPhoneForStore && cleanPhoneForStore.length === 10) {
+        const existingMobile = mobileUsersStore.get(cleanPhoneForStore) || {};
+        mobileUsersStore.set(cleanPhoneForStore, {
+          ...existingMobile,
+          id: finalUserId,
+          phone: cleanPhoneForStore,
+          email: emailToUse,
+          full_name: nameToUse,
+          credits: newTotalBalance,
+          updated_at: new Date().toISOString()
+        });
+        saveMobileUsersStore(mobileUsersStore);
+      }
+
+      // Update payment_claims to success
+      await db.from("payment_claims").update({
+        user_id: finalUserId,
+        user_email: emailToUse,
+        amount: baseAmount || orderAmount || creditsToAdd,
+        status: "success"
+      }).eq("payment_id", orderId);
+
+      // Record in wallet_transactions
+      try {
+        await db.from("wallet_transactions").insert({
+          user_id: finalUserId,
+          amount: creditsToAdd,
+          type: "CREDIT",
+          payment_method: "Cashfree",
+          reference_id: orderId,
+          description: `Wallet Recharge: ₹${baseAmount || creditsToAdd} (Credited: ₹${creditsToAdd})`,
+          status: "SUCCESS",
+          created_at: new Date().toISOString()
+        });
+      } catch (txErr) {
+        console.error("Failed to insert wallet_transactions log:", txErr);
+      }
+
+      // Trigger 5% Referral Bonus to referrer
+      const depositAmt = Number(baseAmount || orderAmount || creditsToAdd || 0);
+      if (depositAmt > 0) {
+        await processReferralDepositBonus(finalUserId, depositAmt);
+      }
+      console.log(`[FULFILL GUARANTEE] Successfully credited ₹${creditsToAdd} (Base: ₹${baseAmount}) to user ${finalUserId} (${emailToUse}) for Order ${orderId}`);
     } catch (innerErr) {
       console.error("[FULFILL] Internal fulfillment error, reverting status to pending:", innerErr);
-      if (claim) {
-        await supabaseAdmin.from("payment_claims").update({ status: "pending" }).eq("payment_id", orderId).eq("status", "processing");
-      }
+      await db.from("payment_claims").update({ status: "pending" }).eq("payment_id", orderId).eq("status", "processing");
       throw innerErr;
     }
   } catch (err) {
-    console.error("Fulfillment error:", err);
+    console.error("Fulfillment critical error:", err);
   }
 }
 
@@ -5250,47 +5253,53 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   }
 
   try {
+    let data: any = null;
 
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
       const renderBackendUrl = getRenderBackendUrl();
-      const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
-      const data = await response.json();
-      return res.status(response.status).json(data);
-    }
-
-    const response = await fetch(`${CASHFREE_BASE_URL}/orders/${order_id}`, {
-      headers: {
-        'x-client-id': CASHFREE_APP_ID,
-        'x-client-secret': CASHFREE_SECRET_KEY,
-        'x-api-version': '2023-08-01'
+      if (renderBackendUrl) {
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
+        data = await response.json();
       }
-    });
-
-    const data: any = await response.json();
-
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.message || "Failed to fetch status" });
+    } else {
+      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${order_id}`, {
+        headers: {
+          'x-client-id': CASHFREE_APP_ID,
+          'x-client-secret': CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01'
+        }
+      });
+      data = await response.json();
     }
 
-    if (data.order_status === "PAID") {
-      if (supabaseAdmin) {
-        await fulfillOrder(order_id, data.customer_details?.customer_id, data.customer_details?.customer_email, data.customer_details?.customer_phone);
-      } else {
-        console.log("[TRACEXDATA] Payment verified PAID, but database is not active. Skipping database fulfillment callback.");
-      }
+    if (!data) {
+      return res.status(500).json({ error: "Unable to retrieve payment status from gateway" });
     }
 
-    if (supabaseAdmin) {
+    if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
+      console.log(`[STATUS CHECK] Order ${order_id} verified PAID! Triggering instant guarantee fulfillment...`);
+      await fulfillOrder(
+        order_id, 
+        data.customer_details?.customer_id, 
+        data.customer_details?.customer_email, 
+        data.customer_details?.customer_phone,
+        data.order_amount,
+        data.plan_id
+      );
+    }
+
+    const db = supabaseAdmin || supabase;
+    if (db) {
       try {
-        const { data: claim } = 
-          await supabaseAdmin
+        const { data: claim } = await db
           .from("payment_claims")
-          .select("plan_id")
+          .select("plan_id, status, amount")
           .eq("payment_id", order_id)
           .maybeSingle();
         if (claim && claim.plan_id) {
           data.plan_id = claim.plan_id;
+          data.claim_status = claim.status;
         }
       } catch (claimsErr) {
         console.error("Failed to query claim for status response enrichment:", claimsErr);
@@ -5313,18 +5322,24 @@ app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfre
     const customerId = payload.data?.customer_details?.customer_id || payload.customer_id;
     const customerEmail = payload.data?.customer_details?.customer_email || payload.customer_email;
     const customerPhone = payload.data?.customer_details?.customer_phone || payload.customer_phone || payload.data?.customer_phone || payload.data?.customer_details?.phone || payload.customerPhone;
+    const orderAmount = payload.data?.order?.order_amount || payload.order_amount || payload.orderAmount;
     
     if (orderId) {
       let isPaid = false;
       let orderPhoneFallback = customerPhone;
+      let resolvedAmount = orderAmount ? Number(orderAmount) : null;
+
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
         const renderBackendUrl = getRenderBackendUrl();
-        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
-        const data: any = await response.json().catch(() => ({}));
-        if (data.order_status === "PAID") {
-          isPaid = true;
-          if (data.customer_details?.customer_phone) {
-            orderPhoneFallback = data.customer_details.customer_phone;
+        if (renderBackendUrl) {
+          const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
+          const data: any = await response.json().catch(() => ({}));
+          if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
+            isPaid = true;
+            if (data.customer_details?.customer_phone) {
+              orderPhoneFallback = data.customer_details.customer_phone;
+            }
+            if (data.order_amount) resolvedAmount = Number(data.order_amount);
           }
         }
       } else {
@@ -5336,17 +5351,18 @@ app.post(["/api/cashfree/webhook", "/api/cashfree/notify", "/api/webhook/cashfre
           }
         });
         const data: any = await response.json().catch(() => ({}));
-        if (data.order_status === "PAID") {
+        if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
           isPaid = true;
           if (data.customer_details?.customer_phone) {
             orderPhoneFallback = data.customer_details.customer_phone;
           }
+          if (data.order_amount) resolvedAmount = Number(data.order_amount);
         }
       }
 
-      if (isPaid && supabaseAdmin) {
-        console.log(`[CASHFREE_WEBHOOK] Order ${orderId} verified PAID. Fulfilling order...`);
-        await fulfillOrder(orderId, customerId || "guest", customerEmail, orderPhoneFallback);
+      if (isPaid) {
+        console.log(`[CASHFREE_WEBHOOK] Order ${orderId} verified PAID. Fulfilling order with amount ₹${resolvedAmount}...`);
+        await fulfillOrder(orderId, customerId || "guest", customerEmail, orderPhoneFallback, resolvedAmount);
       }
     }
     return res.status(200).json({ status: "OK", message: "Webhook received and processed" });
@@ -8166,33 +8182,29 @@ app.delete("/api/admin/user-custom-pricing/:id", verifyAdminToken, async (req, r
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
-    const db = (req as any).adminClient || supabaseAdmin;
+    const db = (req as any).adminClient || supabaseAdmin || supabase;
     let authData: any = null;
     try {
       if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
-        const response = 
-          await supabaseAdmin.auth.admin.listUsers();
+        const response = await supabaseAdmin.auth.admin.listUsers();
         authData = response.data;
         if (response.error) {
           console.warn("Supabase listUsers error:", response.error);
         }
-      } else {
-        console.warn("supabaseAdmin.auth.admin is not available (service role key may be missing).");
       }
     } catch (authErr: any) {
       console.warn("Failed to list users from auth admin API:", authErr.message);
     }
     
     // 1. Fetch profiles table
-    const { data: profileData, error: profileError } = await db
-      .from("profiles")
-      .select("*")
-      .order("email", { ascending: true });
-    
-    if (profileError) {
-      console.error("[GET_ADMIN_PROFILES_ERR]", profileError);
-      return res.status(500).json({ error: profileError.message });
-    }
+    let profileData: any[] = [];
+    try {
+      const { data: profs, error: profileError } = await db
+        .from("profiles")
+        .select("*");
+      if (profs) profileData = profs;
+      if (profileError) console.warn("[GET_ADMIN_PROFILES_ERR]", profileError);
+    } catch (e) {}
 
     // 2. Fetch app_users table
     let appUsersData: any[] = [];
@@ -8208,7 +8220,12 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     const processUserRecord = (record: any) => {
       if (!record) return;
-      const key = (record.email || record.id || "").toLowerCase().trim();
+      const rawPhone = (record.phone || "").replace(/\D/g, "").slice(-10);
+      const cleanEmail = (record.email || "").toLowerCase().trim();
+      const id = record.id;
+
+      // Key by phone or email or id
+      const key = rawPhone ? `phone_${rawPhone}` : (cleanEmail ? `email_${cleanEmail}` : `id_${id}`);
       if (!key) return;
 
       const existing = userMap.get(key) || {};
@@ -8220,13 +8237,18 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       const computedMax = Math.max(exCred, exWal, recCred, recWal);
       const finalBal = computedMax > 0 ? computedMax : 10.00;
 
+      const finalPhone = rawPhone || existing.phone || (cleanEmail.match(/^\d{10}@/) ? cleanEmail.slice(0, 10) : "");
+      const finalEmail = cleanEmail || existing.email || (finalPhone ? `${finalPhone}@tracexdata.com` : "");
+      const finalName = record.full_name || existing.full_name || (finalPhone ? `User ${finalPhone.slice(-4)}` : (finalEmail ? finalEmail.split("@")[0] : "User"));
+      const finalId = record.id || existing.id || (finalPhone ? getUuidForPhone(finalPhone) : (crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}`));
+
       userMap.set(key, {
-        id: record.id || existing.id,
-        email: record.email || existing.email || "",
-        full_name: record.full_name || existing.full_name || (record.email ? record.email.split("@")[0] : "User"),
+        id: finalId,
+        email: finalEmail,
+        phone: finalPhone,
+        full_name: finalName,
         credits: finalBal,
         wallet_balance: finalBal,
-        phone: record.phone || existing.phone || "",
         unlimited_expiry: record.unlimited_expiry || existing.unlimited_expiry || null,
         user_discount_percent: record.user_discount_percent ?? existing.user_discount_percent ?? 0,
         referral_code: record.referral_code || existing.referral_code || "",
@@ -8235,19 +8257,20 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     };
 
     // Merge from profiles table
-    (profileData || []).forEach(processUserRecord);
+    profileData.forEach(processUserRecord);
 
     // Merge from app_users table
-    (appUsersData || []).forEach(processUserRecord);
+    appUsersData.forEach(processUserRecord);
 
     // Merge from Auth admin list
     if (authData && authData.users) {
       for (const authUser of authData.users) {
-        if (!authUser.email) continue;
+        const phone = (authUser.phone || "").replace(/\D/g, "").slice(-10);
         processUserRecord({
           id: authUser.id,
-          email: authUser.email,
-          full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
+          email: authUser.email || (phone ? `${phone}@tracexdata.com` : ""),
+          phone: phone,
+          full_name: authUser.user_metadata?.full_name || (authUser.email ? authUser.email.split("@")[0] : (phone ? `User ${phone.slice(-4)}` : "User")),
           credits: 10.00,
           wallet_balance: 10.00,
           created_at: authUser.created_at
@@ -8257,10 +8280,9 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     // Merge from mobileUsersStore
     for (const [phone, mUser] of mobileUsersStore.entries()) {
-      const emailKey = (mUser.email || `${phone}@tracexdata.com`).toLowerCase().trim();
       processUserRecord({
-        id: mUser.id,
-        email: emailKey,
+        id: mUser.id || getUuidForPhone(phone),
+        email: mUser.email || `${phone}@tracexdata.com`,
         full_name: mUser.full_name || `User ${phone.slice(-4)}`,
         phone: phone,
         credits: mUser.credits !== undefined ? mUser.credits : 10.00,
@@ -8270,30 +8292,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     }
 
     const sanitizedProfiles = Array.from(userMap.values());
-    sanitizedProfiles.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
-
-    // Auto-heal database records asynchronously
-    sanitizedProfiles.forEach(p => {
-      if (p.id && db) {
-        db.from("profiles").upsert({
-          id: p.id,
-          email: p.email,
-          full_name: p.full_name,
-          credits: p.credits,
-          wallet_balance: p.wallet_balance,
-          unlimited_expiry: p.unlimited_expiry,
-          user_discount_percent: p.user_discount_percent
-        }, { onConflict: "id" }).catch(() => {});
-
-        db.from("app_users").upsert({
-          id: p.id,
-          email: p.email,
-          full_name: p.full_name,
-          credits: p.credits,
-          phone: p.phone || ""
-        }, { onConflict: "id" }).catch(() => {});
-      }
-    });
+    sanitizedProfiles.sort((a, b) => (a.email || a.phone || "").localeCompare(b.email || b.phone || ""));
 
     return res.json({ status: "success", data: sanitizedProfiles });
   } catch (err: any) {
@@ -8302,50 +8301,25 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 });
 
 app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
-  const { id, email, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
+  const { id, email, phone, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
+  const cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
+  const cleanEmail = email ? String(email).trim().toLowerCase() : (cleanPhone ? `${cleanPhone}@tracexdata.com` : "");
+
+  if (!cleanEmail && !cleanPhone) {
+    return res.status(400).json({ error: "Either Email or Mobile Number is required." });
   }
 
   try {
-    const db = (req as any).adminClient || supabaseAdmin;
-    const randId = id || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"));
+    const db = (req as any).adminClient || supabaseAdmin || supabase;
+    const randId = id || (cleanPhone ? getUuidForPhone(cleanPhone) : (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5")));
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
-    const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
+    const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 10.00));
+    const nameToUse = full_name?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
 
-    const { data, error } = await db
-      .from("profiles")
-      .insert({
-        id: randId,
-        email: email.trim().toLowerCase(),
-        full_name: full_name?.trim() || email.split("@")[0],
-        credits: targetBalance,
-        wallet_balance: targetBalance,
-        user_discount_percent: Number(user_discount_percent || 0),
-        unlimited_expiry: expiry,
-        is_free_credit_claimed: true,
-        last_weekly_credit_at: new Date().toISOString()
-      })
-      .select();
-
-    if (!error) {
-      // Sync to app_users as well
-      await db.from("app_users").insert({
-        id: randId,
-        email: email.trim().toLowerCase(),
-        full_name: full_name?.trim() || email.split("@")[0],
-        credits: targetBalance
-      }).catch(() => {});
-    }
-
-    if (error) {
-      console.error("[POST_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
-    }
-    const profileObj = (data && data.length > 0) ? data[0] : {
+    const newProfileData: any = {
       id: randId,
-      email: email.trim().toLowerCase(),
-      full_name: full_name?.trim() || email.split("@")[0],
+      email: cleanEmail,
+      full_name: nameToUse,
       credits: targetBalance,
       wallet_balance: targetBalance,
       user_discount_percent: Number(user_discount_percent || 0),
@@ -8353,7 +8327,45 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       is_free_credit_claimed: true,
       last_weekly_credit_at: new Date().toISOString()
     };
-    return res.json({ status: "success", data: { ...profileObj, credits: targetBalance, wallet_balance: targetBalance } });
+
+    if (cleanPhone) {
+      newProfileData.phone = cleanPhone;
+    }
+
+    await db.from("profiles").upsert(newProfileData, { onConflict: "id" });
+
+    // Sync to app_users table
+    await db.from("app_users").upsert({
+      id: randId,
+      email: cleanEmail,
+      phone: cleanPhone,
+      full_name: nameToUse,
+      credits: targetBalance
+    }, { onConflict: "id" }).catch(() => {});
+
+    // Sync to mobileUsersStore if phone provided
+    if (cleanPhone && cleanPhone.length === 10) {
+      mobileUsersStore.set(cleanPhone, {
+        id: randId,
+        phone: cleanPhone,
+        email: cleanEmail,
+        full_name: nameToUse,
+        credits: targetBalance,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      saveMobileUsersStore(mobileUsersStore);
+    }
+
+    return res.json({ 
+      status: "success", 
+      data: { 
+        ...newProfileData, 
+        phone: cleanPhone,
+        credits: targetBalance, 
+        wallet_balance: targetBalance 
+      } 
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
@@ -8361,40 +8373,78 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
 app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
-  const { email, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
+  const { email, phone, full_name, credits, wallet_balance, unlimited_expiry, user_discount_percent } = req.body;
 
   try {
-    const db = (req as any).adminClient || supabaseAdmin;
+    const db = (req as any).adminClient || supabaseAdmin || supabase;
+    const cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
+    const cleanEmail = email ? String(email).trim().toLowerCase() : (cleanPhone ? `${cleanPhone}@tracexdata.com` : "");
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
     const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
+    const nameToUse = full_name?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
 
     const updateObj: any = {
       id: id,
-      email: email,
-      full_name: full_name || "",
+      email: cleanEmail,
+      full_name: nameToUse,
       credits: targetBalance,
       wallet_balance: targetBalance,
       unlimited_expiry: expiry,
       user_discount_percent: Number(user_discount_percent || 0)
     };
 
-    const { data, error } = await db
-      .from("profiles")
-      .upsert(updateObj, { onConflict: 'id' })
-      .select();
+    if (cleanPhone) {
+      updateObj.phone = cleanPhone;
+    }
+
+    await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
 
     // Sync app_users table as well
-    if (!error) {
-      await db.from("app_users").update({ credits: targetBalance }).eq("id", id).catch(() => {});
-      await db.from("app_users").update({ credits: targetBalance }).eq("email", email).catch(() => {});
+    await db.from("app_users").upsert({
+      id: id,
+      email: cleanEmail,
+      phone: cleanPhone,
+      full_name: nameToUse,
+      credits: targetBalance
+    }, { onConflict: 'id' }).catch(() => {});
+
+    // Sync mobileUsersStore
+    if (cleanPhone && cleanPhone.length === 10) {
+      const existing = mobileUsersStore.get(cleanPhone) || {};
+      mobileUsersStore.set(cleanPhone, {
+        ...existing,
+        id: id,
+        phone: cleanPhone,
+        email: cleanEmail,
+        full_name: nameToUse,
+        credits: targetBalance,
+        updated_at: new Date().toISOString()
+      });
+      saveMobileUsersStore(mobileUsersStore);
+    } else {
+      for (const [pKey, mUser] of mobileUsersStore.entries()) {
+        if (mUser.id === id || (cleanEmail && mUser.email === cleanEmail)) {
+          mobileUsersStore.set(pKey, {
+            ...mUser,
+            credits: targetBalance,
+            full_name: nameToUse || mUser.full_name,
+            updated_at: new Date().toISOString()
+          });
+          saveMobileUsersStore(mobileUsersStore);
+          break;
+        }
+      }
     }
 
-    if (error) {
-      console.error("[PUT_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
-    }
-    const profileObj = (data && data.length > 0) ? data[0] : updateObj;
-    return res.json({ status: "success", data: { ...profileObj, credits: targetBalance, wallet_balance: targetBalance } });
+    return res.json({ 
+      status: "success", 
+      data: { 
+        ...updateObj, 
+        phone: cleanPhone,
+        credits: targetBalance, 
+        wallet_balance: targetBalance 
+      } 
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
