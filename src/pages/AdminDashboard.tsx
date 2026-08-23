@@ -6,7 +6,7 @@ import {
   TrendingUp, DollarSign, Clock, Hash,
   ChevronRight, AlertTriangle, ShieldCheck,
   PlusCircle, Edit2, X, Calendar, UserPlus, CreditCard, Eye, Layers, Database, CheckCircle, Globe,
-  Gift, Percent, Tag, Sparkles, Wallet, Copy, Check
+  Gift, Percent, Tag, Sparkles, Wallet, Copy, Check, Smartphone, Zap, Shield
 } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
@@ -105,6 +105,7 @@ export default function AdminDashboard() {
   // Users State
   const [profiles, setProfiles] = useState<any[]>([]);
   const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [userFilterTab, setUserFilterTab] = useState<'all' | 'mobile' | 'web' | 'unlimited' | 'admin'>('all');
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -316,6 +317,35 @@ export default function AdminDashboard() {
     setLoading(false);
     setIsRefreshing(false);
   };
+
+  // Debounced search for user profiles across database tables
+  useEffect(() => {
+    if (!searchUserQuery || searchUserQuery.trim().length < 3) return;
+    const timeout = setTimeout(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles?q=${encodeURIComponent(searchUserQuery.trim())}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const resJson = await response.json();
+        if (response.ok && resJson.status === 'success' && Array.isArray(resJson.data)) {
+          setProfiles(prev => {
+            const map = new Map();
+            prev.forEach(p => map.set(p.id, p));
+            resJson.data.forEach((p: any) => map.set(p.id, p));
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        // Safe silent catch
+      }
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [searchUserQuery]);
 
   const handleGenerateKey = async () => {
     if (!newKeyData.user_email || !newKeyData.user_email.trim()) {
@@ -679,8 +709,91 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteUser = async (id: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete profile for user ${email}?`)) return;
+  const handleQuickCredit = async (targetUser: any, amountToAdd: number) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        alert("Session token not found. Please log in again.");
+        return;
+      }
+
+      const curBal = Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0));
+      const targetBal = curBal + amountToAdd;
+
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${targetUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: targetUser.email,
+          phone: targetUser.phone,
+          full_name: targetUser.full_name,
+          credits: targetBal,
+          wallet_balance: targetBal,
+          user_discount_percent: targetUser.user_discount_percent,
+          unlimited_expiry: targetUser.unlimited_expiry
+        })
+      });
+
+      const resJson = await response.json();
+      if (response.ok && resJson.status === 'success') {
+        fetchData();
+      } else {
+        alert("Failed to recharge wallet: " + (resJson.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Network error: " + err.message);
+    }
+  };
+
+  const handleQuickUnlimited = async (targetUser: any, daysToAdd: number) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        alert("Session token not found. Please log in again.");
+        return;
+      }
+
+      const baseDate = targetUser.unlimited_expiry && new Date(targetUser.unlimited_expiry) > new Date()
+        ? new Date(targetUser.unlimited_expiry)
+        : new Date();
+      baseDate.setDate(baseDate.getDate() + daysToAdd);
+
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${targetUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: targetUser.email,
+          phone: targetUser.phone,
+          full_name: targetUser.full_name,
+          credits: Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0)),
+          wallet_balance: Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0)),
+          user_discount_percent: targetUser.user_discount_percent,
+          unlimited_expiry: baseDate.toISOString()
+        })
+      });
+
+      const resJson = await response.json();
+      if (response.ok && resJson.status === 'success') {
+        fetchData();
+      } else {
+        alert("Failed to grant unlimited plan: " + (resJson.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Network error: " + err.message);
+    }
+  };
+
+  const handleDeleteUser = async (id: string, email: string, phone?: string) => {
+    const identifier = phone ? `+91 ${phone} / ${email}` : email;
+    if (!confirm(`Are you sure you want to delete user ${identifier} across both app_users and profiles tables?`)) return;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -690,7 +803,11 @@ export default function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${id}`, {
+      const queryParams = new URLSearchParams();
+      if (email) queryParams.set('email', email);
+      if (phone) queryParams.set('phone', phone);
+
+      const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${id}?${queryParams.toString()}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -698,7 +815,7 @@ export default function AdminDashboard() {
       const resJson = await response.json();
       if (response.ok && resJson.status === 'success') {
         fetchData();
-        alert("User profile deleted successfully!");
+        alert("User profile deleted successfully across all tables!");
       } else {
         alert("Error deleting user: " + (resJson.error || "Unknown server error"));
       }
@@ -1228,34 +1345,80 @@ export default function AdminDashboard() {
         {/* --- USER MANAGER VIEW --- */}
         {activeTab === 'users' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                <Users size={14} className="text-indigo-600" />
-                Registered Platform Users ({profiles.length})
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                  <Users size={16} className="text-indigo-600" />
+                  Unified User Accounts ({profiles.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Seamlessly search and manage accounts from both <span className="font-semibold text-slate-700 font-mono">app_users</span> (Mobile) and <span className="font-semibold text-slate-700 font-mono">profiles</span> (Web) tables.
+                </p>
+              </div>
               <button 
                 onClick={() => setIsAddUserModalOpen(true)}
-                className="px-4 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs hover:bg-indigo-100 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all flex items-center gap-2 cursor-pointer shadow-sm self-start sm:self-auto"
               >
                 <UserPlus size={14} />
-                Register New Profile
+                Register New User
               </button>
             </div>
 
+            {/* Filter Pills & Quick Category Toggles */}
+            {(() => {
+              const totalCount = profiles.length;
+              const mobileCount = profiles.filter(p => Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com')) || p.is_mobile_app_user)).length;
+              const webCount = profiles.filter(p => Boolean(p.email && !p.email.endsWith('@tracexdata.com'))).length;
+              const unlimitedCount = profiles.filter(p => p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date()).length;
+              const adminCount = profiles.filter(p => ADMIN_EMAILS.some(e => e.toLowerCase() === (p.email || '').toLowerCase())).length;
+
+              return (
+                <div className="flex flex-wrap items-center gap-2 pb-1">
+                  {[
+                    { key: 'all', label: 'All Accounts', count: totalCount, icon: Users, color: 'indigo' },
+                    { key: 'mobile', label: '📱 Mobile (app_users)', count: mobileCount, icon: Smartphone, color: 'purple' },
+                    { key: 'web', label: '✉️ Web (profiles)', count: webCount, icon: Globe, color: 'blue' },
+                    { key: 'unlimited', label: '⚡ Active Unlimited', count: unlimitedCount, icon: Zap, color: 'emerald' },
+                    { key: 'admin', label: '👑 Admins', count: adminCount, icon: Shield, color: 'amber' }
+                  ].map(tab => {
+                    const isActive = userFilterTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setUserFilterTab(tab.key as any)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                          isActive 
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs' 
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {/* Unified Search Bar */}
-            <div className="relative mb-6">
+            <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text"
                 value={searchUserQuery}
                 onChange={(e) => setSearchUserQuery(e.target.value)}
-                placeholder="Search by Mobile Number, Email, Name, Referral Code, or User ID..."
-                className="w-full h-12 bg-white border border-slate-200 rounded-xl pl-12 pr-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-xs md:text-sm text-slate-900 placeholder:text-slate-400 shadow-xs"
+                placeholder="Single Search across Mobile Numbers (+91), Emails, Names, Referral Codes, or User IDs..."
+                className="w-full h-12 bg-white border border-slate-200 rounded-xl pl-12 pr-16 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-xs md:text-sm text-slate-900 placeholder:text-slate-400 shadow-xs font-medium"
               />
               {searchUserQuery && (
                 <button 
                   onClick={() => setSearchUserQuery('')}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-900 text-xs font-bold bg-slate-100 px-2 py-1 rounded cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-900 text-xs font-bold bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
                 >
                   Clear
                 </button>
@@ -1265,18 +1428,38 @@ export default function AdminDashboard() {
             {(() => {
               const query = (searchUserQuery || '').trim().toLowerCase();
               const queryDigits = query.replace(/\D/g, '');
+
               const filteredProfiles = profiles.filter(p => {
+                // Tab filter
+                if (userFilterTab === 'mobile') {
+                  const isMob = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com')) || p.is_mobile_app_user);
+                  if (!isMob) return false;
+                } else if (userFilterTab === 'web') {
+                  const isWeb = Boolean(p.email && !p.email.endsWith('@tracexdata.com'));
+                  if (!isWeb) return false;
+                } else if (userFilterTab === 'unlimited') {
+                  const hasUnl = Boolean(p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date());
+                  if (!hasUnl) return false;
+                } else if (userFilterTab === 'admin') {
+                  const isAdm = ADMIN_EMAILS.some(e => e.toLowerCase() === (p.email || '').toLowerCase());
+                  if (!isAdm) return false;
+                }
+
+                // Query filter
                 if (!query) return true;
                 const email = (p.email || '').toLowerCase();
                 const phone = (p.phone || '').replace(/\D/g, '');
                 const id = (p.id || '').toLowerCase();
                 const fullName = (p.full_name || '').toLowerCase();
                 const refCode = (p.referral_code || '').toLowerCase();
+                const srcLabel = (p.source_label || '').toLowerCase();
+
                 return email.includes(query) || 
                        (queryDigits && phone.includes(queryDigits)) || 
                        id.includes(query) || 
                        fullName.includes(query) || 
-                       refCode.includes(query);
+                       refCode.includes(query) ||
+                       srcLabel.includes(query);
               });
 
               return (
@@ -1285,20 +1468,20 @@ export default function AdminDashboard() {
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
-                          <th className="px-6 py-4">User Details</th>
-                          <th className="px-6 py-4">Auth Type</th>
-                          <th className="px-6 py-4">Wallet Balance (₹ INR)</th>
+                          <th className="px-6 py-4">User Account</th>
+                          <th className="px-6 py-4">Database Source</th>
+                          <th className="px-6 py-4">Wallet Balance</th>
                           <th className="px-6 py-4">Discount</th>
                           <th className="px-6 py-4">Unlimited Plan</th>
                           <th className="px-6 py-4">Referral Code</th>
-                          <th className="px-6 py-4">Actions</th>
+                          <th className="px-6 py-4">Manage & Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
                         {filteredProfiles.length === 0 ? (
                           <tr>
                             <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">
-                              No registered users found
+                              No matching registered users found
                             </td>
                           </tr>
                         ) : (
@@ -1308,8 +1491,9 @@ export default function AdminDashboard() {
                             const userBal = Math.max(Number(p.wallet_balance || 0), Number(p.credits || 0));
                             
                             // Detect if user is mobile registered
-                            const isMobileUser = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com') && /^\d+@/.test(p.email)));
+                            const isMobileUser = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com') && /^\d+@/.test(p.email)) || p.is_mobile_app_user);
                             const displayPhone = p.phone || (p.email && p.email.endsWith('@tracexdata.com') ? p.email.split('@')[0] : null);
+                            const displayEmail = p.email && !p.email.endsWith('@tracexdata.com') ? p.email : null;
                             
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1325,37 +1509,75 @@ export default function AdminDashboard() {
                                       <span>📱 +91 {displayPhone}</span>
                                     </div>
                                   )}
-                                  {p.email && !p.email.endsWith('@tracexdata.com') && (
+                                  {displayEmail && (
                                     <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                                      <span>✉️ {p.email}</span>
+                                      <span>✉️ {displayEmail}</span>
                                     </div>
                                   )}
+                                  <div className="text-[9px] font-mono text-slate-400 mt-0.5 truncate max-w-[180px]" title={p.id}>
+                                    ID: {p.id}
+                                  </div>
                                 </td>
                                 <td className="px-6 py-4">
-                                  {isMobileUser ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-amber-50 text-amber-700 border border-amber-200 font-bold uppercase tracking-wider">
-                                      📱 Mobile Auth
+                                  {isMobileUser && displayEmail ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase tracking-wider">
+                                      ⚡ Unified (Both Tables)
+                                    </span>
+                                  ) : isMobileUser ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-purple-50 text-purple-700 border border-purple-200 font-bold uppercase tracking-wider">
+                                      📱 app_users
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold uppercase tracking-wider">
-                                      ✉️ Email Auth
+                                      ✉️ profiles
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-6 py-4 font-mono font-black text-emerald-600 text-sm">
-                                  ₹{userBal.toFixed(2)}
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-black text-emerald-600 text-sm">
+                                      ₹{userBal.toFixed(2)}
+                                    </span>
+                                    <button
+                                      onClick={() => handleQuickCredit(p, 100)}
+                                      className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold cursor-pointer transition-all"
+                                      title="Instant +₹100 Recharge"
+                                    >
+                                      +₹100
+                                    </button>
+                                  </div>
                                 </td>
                                 <td className="px-6 py-4 font-mono font-bold text-amber-600">
                                   {p.user_discount_percent ? `${p.user_discount_percent}% OFF` : '0%'}
                                 </td>
                                 <td className="px-6 py-4">
-                                  {hasUnlimited ? (
-                                    <span className="inline-flex px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase">
-                                      Expires: {new Date(p.unlimited_expiry!).toLocaleDateString()}
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">No active plan</span>
-                                  )}
+                                  <div className="space-y-1">
+                                    {hasUnlimited ? (
+                                      <span className="inline-flex px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase">
+                                        Expires: {new Date(p.unlimited_expiry!).toLocaleDateString()}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] block">
+                                        No active plan
+                                      </span>
+                                    )}
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => handleQuickUnlimited(p, 15)}
+                                        className="px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-bold cursor-pointer"
+                                        title="Instant +15 Days Unlimited"
+                                      >
+                                        +15D
+                                      </button>
+                                      <button
+                                        onClick={() => handleQuickUnlimited(p, 30)}
+                                        className="px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-bold cursor-pointer"
+                                        title="Instant +30 Days Unlimited"
+                                      >
+                                        +30D
+                                      </button>
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-indigo-600 text-[11px]">
                                   {p.referral_code || 'N/A'}
@@ -1367,16 +1589,16 @@ export default function AdminDashboard() {
                                         setSelectedUser(JSON.parse(JSON.stringify(p)));
                                         setIsEditUserModalOpen(true);
                                       }}
-                                      className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
-                                      title="Edit Profile & Add Funds"
+                                      className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                      title="Edit Profile, Recharge & Set Unlimited Plan"
                                     >
                                       <Edit2 size={13} />
-                                      <span>Edit / Add Funds</span>
+                                      <span>Edit / Manage</span>
                                     </button>
                                     <button 
-                                      onClick={() => handleDeleteUser(p.id, p.email || p.phone || 'User')}
+                                      onClick={() => handleDeleteUser(p.id, p.email || '', p.phone || '')}
                                       className="text-rose-600 hover:text-rose-800 transition-colors p-1.5 cursor-pointer rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-200"
-                                      title="Delete Profile"
+                                      title="Delete Profile across all tables"
                                     >
                                       <Trash2 size={14} />
                                     </button>
@@ -2028,7 +2250,7 @@ export default function AdminDashboard() {
             >
               <div className="flex justify-between items-center border-b border-slate-200 pb-4">
                 <div>
-                  <h2 className="text-xl font-bold">Edit Profile & Account Balances</h2>
+                  <h2 className="text-xl font-bold">Edit Profile & Balances</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {selectedUser.phone ? `📱 +91 ${selectedUser.phone}` : ''} {selectedUser.email && !selectedUser.email.endsWith('@tracexdata.com') ? `• ✉️ ${selectedUser.email}` : ''}
                   </p>
@@ -2036,6 +2258,13 @@ export default function AdminDashboard() {
                 <button onClick={() => setIsEditUserModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
                   <X size={20} />
                 </button>
+              </div>
+
+              <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center gap-2.5 text-[11px] text-indigo-900 font-medium">
+                <Shield size={16} className="text-indigo-600 shrink-0" />
+                <span>
+                  Updates automatically sync across both <strong className="font-mono text-indigo-700">app_users</strong> (Mobile) and <strong className="font-mono text-indigo-700">profiles</strong> (Web) database tables.
+                </span>
               </div>
 
               <div className="space-y-4 text-xs">

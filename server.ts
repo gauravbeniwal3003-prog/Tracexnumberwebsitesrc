@@ -7778,55 +7778,116 @@ app.delete("/api/admin/user-custom-pricing/:id", verifyAdminToken, async (req, r
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
     const db = (req as any).adminClient || supabaseAdmin || supabase;
+    const searchTerm = req.query.q ? String(req.query.q).trim() : "";
+    const searchDigits = searchTerm.replace(/\D/g, "");
 
-    // Helper to safely execute query without throwing if table doesn't exist
-    const safeTableQuery = async (queryPromise: Promise<any>): Promise<any[]> => {
+    // Helper to safely execute paginated queries to retrieve ALL records without 1000-row cap
+    const fetchAllTableRows = async (tableName: string, selectFields = "*"): Promise<any[]> => {
+      if (!db) return [];
+      const allRows: any[] = [];
+      const pageSize = 1000;
+      let page = 0;
+      const maxPages = 50; // Fetch up to 50,000 rows
+
       try {
-        const response = await queryPromise;
-        if (response && response.data && Array.isArray(response.data)) {
-          return response.data;
+        while (page < maxPages) {
+          const from = page * pageSize;
+          const to = from + pageSize - 1;
+          const { data, error } = await db
+            .from(tableName)
+            .select(selectFields)
+            .range(from, to);
+
+          if (error || !data || !Array.isArray(data) || data.length === 0) {
+            break;
+          }
+
+          allRows.push(...data);
+          if (data.length < pageSize) {
+            break;
+          }
+          page++;
         }
-        return [];
       } catch (e) {
-        return [];
+        // Safe fallback
       }
+      return allRows;
+    };
+
+    // Helper for direct targeted search query on a table
+    const searchTableRows = async (tableName: string, term: string): Promise<any[]> => {
+      if (!db || !term) return [];
+      const results: any[] = [];
+      try {
+        const digits = term.replace(/\D/g, "");
+        if (digits.length >= 3) {
+          const { data: pData } = await db.from(tableName).select("*").ilike("phone", `%${digits}%`).limit(200);
+          if (pData && Array.isArray(pData)) results.push(...pData);
+        }
+        const { data: eData } = await db.from(tableName).select("*").ilike("email", `%${term}%`).limit(200);
+        if (eData && Array.isArray(eData)) results.push(...eData);
+        const { data: nData } = await db.from(tableName).select("*").ilike("full_name", `%${term}%`).limit(200);
+        if (nData && Array.isArray(nData)) results.push(...nData);
+        // Also search by ID if valid UUID or substring
+        if (term.length >= 4) {
+          const { data: iData } = await db.from(tableName).select("*").ilike("id", `%${term}%`).limit(50);
+          if (iData && Array.isArray(iData)) results.push(...iData);
+        }
+      } catch (e) {
+        // ignore
+      }
+      return results;
     };
 
     let authUsers: any[] = [];
     try {
       if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
-        const response = await supabaseAdmin.auth.admin.listUsers();
-        if (response && response.data && response.data.users) {
-          authUsers = response.data.users;
+        let authPage = 1;
+        while (authPage <= 50) {
+          const response = await supabaseAdmin.auth.admin.listUsers({
+            page: authPage,
+            perPage: 1000
+          });
+          if (response && response.data && Array.isArray(response.data.users) && response.data.users.length > 0) {
+            authUsers.push(...response.data.users);
+            if (response.data.users.length < 1000) break;
+            authPage++;
+          } else {
+            break;
+          }
         }
       }
     } catch (authErr: any) {
       console.warn("Failed to list users from auth admin API:", authErr.message);
     }
 
-    // Query all possible tables in parallel
+    // Query all user sources in parallel
     const [
       profilesData,
       appUsersData,
       usersData,
       mobileUsersData,
       userProfilesData,
+      targetedProfiles,
+      targetedAppUsers,
       paymentClaimsData,
       walletTxData,
       serviceRecordsData,
       searchHistoryData,
       apiKeysData
     ] = await Promise.all([
-      safeTableQuery(db.from("profiles").select("*")),
-      safeTableQuery(db.from("app_users").select("*")),
-      safeTableQuery(db.from("users").select("*")),
-      safeTableQuery(db.from("mobile_users").select("*")),
-      safeTableQuery(db.from("user_profiles").select("*")),
-      safeTableQuery(db.from("payment_claims").select("*").order("created_at", { ascending: false }).limit(1000)),
-      safeTableQuery(db.from("wallet_transactions").select("*").order("created_at", { ascending: false }).limit(1000)),
-      safeTableQuery(db.from("service_records").select("user_id, user_email, phone, created_at").limit(500)),
-      safeTableQuery(db.from("search_history").select("user_id, phone, created_at").limit(500)),
-      safeTableQuery(db.from("api_keys").select("user_id, user_email, name, created_at").limit(500))
+      fetchAllTableRows("profiles"),
+      fetchAllTableRows("app_users"),
+      fetchAllTableRows("users"),
+      fetchAllTableRows("mobile_users"),
+      fetchAllTableRows("user_profiles"),
+      searchTerm ? searchTableRows("profiles", searchTerm) : Promise.resolve([]),
+      searchTerm ? searchTableRows("app_users", searchTerm) : Promise.resolve([]),
+      fetchAllTableRows("payment_claims", "payment_id, user_id, user_email, amount, status, created_at"),
+      fetchAllTableRows("wallet_transactions", "user_email, amount, type, status, created_at"),
+      fetchAllTableRows("service_records", "user_id, user_email, phone, created_at"),
+      fetchAllTableRows("search_history", "user_id, phone, created_at"),
+      fetchAllTableRows("api_keys", "user_id, user_email, name, created_at")
     ]);
 
     // Unified indexing & resolution engine
@@ -7875,7 +7936,7 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       return "";
     };
 
-    const processUserRecord = (record: any) => {
+    const processUserRecord = (record: any, sourceName = "profiles") => {
       if (!record) return;
       const rawPhone = extractPhone(record);
       const rawEmail = (record.email || record.user_email || record.customer_email || "").toLowerCase().trim();
@@ -7896,8 +7957,8 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       }
 
       const recCred = Number(
-        record.credits !== undefined ? record.credits : 
-        (record.wallet_balance !== undefined ? record.wallet_balance : 
+        record.wallet_balance !== undefined ? record.wallet_balance : 
+        (record.credits !== undefined ? record.credits : 
         (record.balance !== undefined ? record.balance : 
         (record.amount !== undefined && record.status === "success" ? record.amount : 0)))
       );
@@ -7919,11 +7980,15 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
           unlimited_expiry: record.unlimited_expiry || null,
           user_discount_percent: Number(record.user_discount_percent || 0),
           referral_code: record.referral_code || "",
+          sources: [sourceName],
           created_at: record.created_at || new Date().toISOString()
         };
 
         allUsers.push(targetUser);
       } else {
+        if (!targetUser.sources) targetUser.sources = [];
+        if (!targetUser.sources.includes(sourceName)) targetUser.sources.push(sourceName);
+
         // Merge & reconcile with existing profile
         if (rawPhone && !targetUser.phone) {
           targetUser.phone = rawPhone;
@@ -7966,14 +8031,16 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     };
 
     // 1. Process Core User Tables
-    profilesData.forEach(processUserRecord);
-    appUsersData.forEach(processUserRecord);
-    usersData.forEach(processUserRecord);
-    mobileUsersData.forEach(processUserRecord);
-    userProfilesData.forEach(processUserRecord);
+    profilesData.forEach(r => processUserRecord(r, "profiles"));
+    appUsersData.forEach(r => processUserRecord(r, "app_users"));
+    usersData.forEach(r => processUserRecord(r, "users"));
+    mobileUsersData.forEach(r => processUserRecord(r, "mobile_users"));
+    userProfilesData.forEach(r => processUserRecord(r, "user_profiles"));
+    targetedProfiles.forEach(r => processUserRecord(r, "profiles"));
+    targetedAppUsers.forEach(r => processUserRecord(r, "app_users"));
 
     // 2. Process Auth Users
-    authUsers.forEach(processUserRecord);
+    authUsers.forEach(r => processUserRecord(r, "auth"));
 
     // 3. Process In-Memory / Local Storage Mobile Users
     for (const [phone, mUser] of mobileUsersStore.entries()) {
@@ -7985,18 +8052,18 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         credits: mUser.credits !== undefined ? mUser.credits : 10.00,
         wallet_balance: mUser.credits !== undefined ? mUser.credits : 10.00,
         created_at: mUser.created_at || new Date().toISOString()
-      });
+      }, "app_users");
     }
 
     // 4. Process Payment Claims, Transactions, & Records (to catch any users who recharged or transacted with phone)
-    paymentClaimsData.forEach(processUserRecord);
-    walletTxData.forEach(processUserRecord);
-    serviceRecordsData.forEach(processUserRecord);
-    searchHistoryData.forEach(processUserRecord);
-    apiKeysData.forEach(processUserRecord);
+    paymentClaimsData.forEach(r => processUserRecord(r, "payment_claims"));
+    walletTxData.forEach(r => processUserRecord(r, "wallet_transactions"));
+    serviceRecordsData.forEach(r => processUserRecord(r, "service_records"));
+    searchHistoryData.forEach(r => processUserRecord(r, "search_history"));
+    apiKeysData.forEach(r => processUserRecord(r, "api_keys"));
 
     // Final clean-up: ensure each profile has standardized phone & display properties
-    const sanitizedProfiles = allUsers.map(u => {
+    let sanitizedProfiles = allUsers.map(u => {
       let finalPhone = u.phone;
       if (!finalPhone && u.email && u.email.endsWith("@tracexdata.com")) {
         const prefix = u.email.split("@")[0];
@@ -8004,15 +8071,45 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
           finalPhone = prefix;
         }
       }
+
+      const sources: string[] = u.sources || [];
+      const hasAppUsers = sources.includes("app_users") || Boolean(finalPhone);
+      const hasProfiles = sources.includes("profiles") || (u.email && !u.email.endsWith("@tracexdata.com"));
+      
+      let sourceLabel = "Unified";
+      if (hasAppUsers && hasProfiles) sourceLabel = "Unified (Both Tables)";
+      else if (hasAppUsers) sourceLabel = "Mobile App (app_users)";
+      else sourceLabel = "Web Portal (profiles)";
+
       return {
         ...u,
-        phone: finalPhone || ""
+        phone: finalPhone || "",
+        source_label: sourceLabel,
+        is_mobile_app_user: Boolean(hasAppUsers),
+        is_web_profile_user: Boolean(hasProfiles)
       };
     });
 
+    // If a search term was specified, filter or prioritize matching records
+    if (searchTerm) {
+      const qLower = searchTerm.toLowerCase();
+      sanitizedProfiles = sanitizedProfiles.filter(p => {
+        const pEmail = (p.email || "").toLowerCase();
+        const pPhone = (p.phone || "").replace(/\D/g, "");
+        const pName = (p.full_name || "").toLowerCase();
+        const pId = (p.id || "").toLowerCase();
+        const pRef = (p.referral_code || "").toLowerCase();
+        return pEmail.includes(qLower) || 
+               (searchDigits && pPhone.includes(searchDigits)) || 
+               pName.includes(qLower) || 
+               pId.includes(qLower) || 
+               pRef.includes(qLower);
+      });
+    }
+
     sanitizedProfiles.sort((a, b) => (a.email || a.phone || "").localeCompare(b.email || b.phone || ""));
 
-    return res.json({ status: "success", data: sanitizedProfiles });
+    return res.json({ status: "success", count: sanitizedProfiles.length, data: sanitizedProfiles });
   } catch (err: any) {
     console.error("[GET_ADMIN_PROFILES_FATAL]", err);
     return res.status(500).json({ error: err.message || "Internal Server Error" });
@@ -8034,35 +8131,63 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
     const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 10.00));
     const nameToUse = full_name?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
+    const nowIso = new Date().toISOString();
 
+    // 1. Create in Supabase Auth if available
+    try {
+      if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
+        await supabaseAdmin.auth.admin.createUser({
+          id: randId,
+          email: cleanEmail,
+          email_confirm: true,
+          user_metadata: {
+            full_name: nameToUse,
+            phone: cleanPhone,
+            mobile_user: Boolean(cleanPhone)
+          }
+        });
+      }
+    } catch (authErr: any) {
+      // ignore if user already exists in auth
+    }
+
+    // 2. Upsert into profiles table
     const newProfileData: any = {
       id: randId,
       email: cleanEmail,
       full_name: nameToUse,
+      phone: cleanPhone || undefined,
       credits: targetBalance,
       wallet_balance: targetBalance,
       user_discount_percent: Number(user_discount_percent || 0),
       unlimited_expiry: expiry,
       is_free_credit_claimed: true,
-      last_weekly_credit_at: new Date().toISOString()
+      last_weekly_credit_at: nowIso,
+      created_at: nowIso,
+      updated_at: nowIso
     };
 
-    if (cleanPhone) {
-      newProfileData.phone = cleanPhone;
+    const { error: profErr } = await db.from("profiles").upsert(newProfileData, { onConflict: "id" });
+    if (profErr) {
+      // Fallback without phone column if schema lacks phone
+      delete newProfileData.phone;
+      await db.from("profiles").upsert(newProfileData, { onConflict: "id" }).catch(() => {});
     }
 
-    await db.from("profiles").upsert(newProfileData, { onConflict: "id" });
-
-    // Sync to app_users table
+    // 3. Upsert into app_users table
     await db.from("app_users").upsert({
       id: randId,
       email: cleanEmail,
-      phone: cleanPhone,
+      phone: cleanPhone || undefined,
       full_name: nameToUse,
-      credits: targetBalance
+      credits: targetBalance,
+      wallet_balance: targetBalance,
+      unlimited_expiry: expiry,
+      user_discount_percent: Number(user_discount_percent || 0),
+      updated_at: nowIso
     }, { onConflict: "id" }).catch(() => {});
 
-    // Sync to mobileUsersStore if phone provided
+    // 4. Sync to mobileUsersStore if phone provided
     if (cleanPhone && cleanPhone.length === 10) {
       mobileUsersStore.set(cleanPhone, {
         id: randId,
@@ -8070,10 +8195,27 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         email: cleanEmail,
         full_name: nameToUse,
         credits: targetBalance,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: nowIso,
+        updated_at: nowIso
       });
       saveMobileUsersStore(mobileUsersStore);
+    }
+
+    // 5. Ensure default API key exists
+    try {
+      const keyVal = generate8DigitApiKey();
+      await db.from("api_keys").insert([{
+        user_id: randId,
+        user_email: cleanEmail,
+        api_key: keyVal,
+        name: cleanPhone ? "Default Mobile API Key" : "Default API Key",
+        plan_name: "Starter Trial Plan",
+        request_limit: 100,
+        is_active: true,
+        created_at: nowIso
+      }]).catch(() => {});
+    } catch (e) {
+      // ignore
     }
 
     return res.json({ 
@@ -8101,6 +8243,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
     const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
     const nameToUse = full_name?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
+    const nowIso = new Date().toISOString();
 
     const updateObj: any = {
       id: id,
@@ -8109,25 +8252,105 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       credits: targetBalance,
       wallet_balance: targetBalance,
       unlimited_expiry: expiry,
-      user_discount_percent: Number(user_discount_percent || 0)
+      user_discount_percent: Number(user_discount_percent || 0),
+      updated_at: nowIso
     };
 
     if (cleanPhone) {
       updateObj.phone = cleanPhone;
     }
 
-    await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
+    // 1. Update in profiles table (by id, and also sync by email/phone)
+    try {
+      const { error: profErr } = await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
+      if (profErr) {
+        delete updateObj.phone;
+        await db.from("profiles").upsert(updateObj, { onConflict: 'id' }).catch(() => {});
+      }
+      if (cleanEmail && !cleanEmail.endsWith("@tracexdata.com")) {
+        await db.from("profiles").update({
+          full_name: nameToUse,
+          credits: targetBalance,
+          wallet_balance: targetBalance,
+          unlimited_expiry: expiry,
+          user_discount_percent: Number(user_discount_percent || 0),
+          updated_at: nowIso
+        }).eq("email", cleanEmail).catch(() => {});
+      }
+      if (cleanPhone) {
+        await db.from("profiles").update({
+          full_name: nameToUse,
+          credits: targetBalance,
+          wallet_balance: targetBalance,
+          unlimited_expiry: expiry,
+          user_discount_percent: Number(user_discount_percent || 0),
+          updated_at: nowIso
+        }).eq("phone", cleanPhone).catch(() => {});
+      }
+    } catch (profCatch) {
+      console.warn("Profiles table update warning:", profCatch);
+    }
 
-    // Sync app_users table as well
-    await db.from("app_users").upsert({
-      id: id,
-      email: cleanEmail,
-      phone: cleanPhone,
-      full_name: nameToUse,
-      credits: targetBalance
-    }, { onConflict: 'id' }).catch(() => {});
+    // 2. Sync app_users table (by id, and also sync by phone)
+    try {
+      const appUserObj: any = {
+        id: id,
+        full_name: nameToUse,
+        phone: cleanPhone || undefined,
+        credits: targetBalance,
+        wallet_balance: targetBalance,
+        unlimited_expiry: expiry,
+        user_discount_percent: Number(user_discount_percent || 0),
+        updated_at: nowIso
+      };
+      if (cleanEmail) appUserObj.email = cleanEmail;
 
-    // Sync mobileUsersStore
+      const { error: appErr } = await db.from("app_users").upsert(appUserObj, { onConflict: 'id' });
+      if (appErr && cleanPhone) {
+        // Try direct update by phone
+        await db.from("app_users").update({
+          full_name: nameToUse,
+          credits: targetBalance,
+          wallet_balance: targetBalance,
+          unlimited_expiry: expiry,
+          updated_at: nowIso
+        }).eq("phone", cleanPhone).catch(() => {});
+      }
+      if (cleanPhone) {
+        await db.from("app_users").update({
+          full_name: nameToUse,
+          credits: targetBalance,
+          wallet_balance: targetBalance,
+          unlimited_expiry: expiry,
+          updated_at: nowIso
+        }).eq("phone", cleanPhone).catch(() => {});
+      }
+    } catch (appCatch) {
+      // Safe fallback with core columns if app_users schema is minimal
+      if (cleanPhone) {
+        await db.from("app_users").update({
+          full_name: nameToUse,
+          credits: targetBalance
+        }).eq("phone", cleanPhone).catch(() => {});
+      }
+    }
+
+    // 3. Update Supabase Auth user metadata if available
+    try {
+      if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
+        await supabaseAdmin.auth.admin.updateUserById(id, {
+          user_metadata: {
+            full_name: nameToUse,
+            phone: cleanPhone,
+            mobile_user: Boolean(cleanPhone)
+          }
+        });
+      }
+    } catch (authErr: any) {
+      // ignore
+    }
+
+    // 4. Sync mobileUsersStore
     if (cleanPhone && cleanPhone.length === 10) {
       const existing = mobileUsersStore.get(cleanPhone) || {};
       mobileUsersStore.set(cleanPhone, {
@@ -8137,7 +8360,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
         email: cleanEmail,
         full_name: nameToUse,
         credits: targetBalance,
-        updated_at: new Date().toISOString()
+        updated_at: nowIso
       });
       saveMobileUsersStore(mobileUsersStore);
     } else {
@@ -8147,7 +8370,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
             ...mUser,
             credits: targetBalance,
             full_name: nameToUse || mUser.full_name,
-            updated_at: new Date().toISOString()
+            updated_at: nowIso
           });
           saveMobileUsersStore(mobileUsersStore);
           break;
@@ -8171,30 +8394,45 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
 app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
   const { id } = req.params;
+  const targetPhone = req.query.phone ? String(req.query.phone).replace(/\D/g, "").slice(-10) : "";
+  const targetEmail = req.query.email ? String(req.query.email).trim().toLowerCase() : "";
 
   try {
-    const db = (req as any).adminClient || supabaseAdmin;
+    const db = (req as any).adminClient || supabaseAdmin || supabase;
+    
+    // 1. Delete from Supabase Auth
     try {
       if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
-        
-          await supabaseAdmin.auth.admin.deleteUser(id);
-      } else {
-        console.warn("supabaseAdmin.auth.admin is not available to delete user.");
+        await supabaseAdmin.auth.admin.deleteUser(id);
       }
     } catch (e) {
       console.warn("Could not delete user from auth admin API:", e);
     }
     
-    const { error } = await db
-      .from("profiles")
-      .delete()
-      .eq("id", id);
+    // 2. Delete from profiles
+    await db.from("profiles").delete().eq("id", id).catch(() => {});
+    if (targetEmail) await db.from("profiles").delete().eq("email", targetEmail).catch(() => {});
+    if (targetPhone) await db.from("profiles").delete().eq("phone", targetPhone).catch(() => {});
 
-    if (error) {
-      console.error("[DELETE_ADMIN_PROFILE_ERR]", error);
-      return res.status(500).json({ error: error.message });
+    // 3. Delete from app_users
+    await db.from("app_users").delete().eq("id", id).catch(() => {});
+    if (targetPhone) await db.from("app_users").delete().eq("phone", targetPhone).catch(() => {});
+    if (targetEmail) await db.from("app_users").delete().eq("email", targetEmail).catch(() => {});
+
+    // 4. Delete from mobileUsersStore
+    for (const [pKey, mUser] of mobileUsersStore.entries()) {
+      if (mUser.id === id || pKey === id || (targetPhone && pKey === targetPhone) || (targetEmail && mUser.email === targetEmail)) {
+        mobileUsersStore.delete(pKey);
+        saveMobileUsersStore(mobileUsersStore);
+        break;
+      }
     }
-    return res.json({ status: "success", message: "User profile deleted successfully" });
+
+    // 5. Clean up associated API keys & custom pricing
+    await db.from("api_keys").delete().eq("user_id", id).catch(() => {});
+    await db.from("user_custom_pricing").delete().eq("user_id", id).catch(() => {});
+
+    return res.json({ status: "success", message: "User profile deleted successfully across all systems." });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }

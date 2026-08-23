@@ -10,15 +10,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 2. PROFILES TABLE (Core User Accounts & Balances)
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email text UNIQUE,
     full_name text,
     phone text,
-    credits numeric(12,2) DEFAULT 0.00,
-    wallet_balance numeric(12,2) DEFAULT 0.00,
+    credits numeric(12,2) DEFAULT 10.00,
+    wallet_balance numeric(12,2) DEFAULT 10.00,
     unlimited_expiry timestamp with time zone,
     plan_type text DEFAULT 'FREE',
-    referral_code text UNIQUE,
+    referral_code text,
     referred_by text,
     user_discount_percent numeric(5,2) DEFAULT 0.00,
     is_admin boolean DEFAULT false,
@@ -29,20 +29,32 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Ensure all required columns exist in profiles (for existing databases)
 DO $$ 
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='wallet_balance') THEN
-        ALTER TABLE public.profiles ADD COLUMN wallet_balance numeric(12,2) DEFAULT 0.00;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='phone') THEN
+        ALTER TABLE public.profiles ADD COLUMN phone text;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='referral_code') THEN
-        ALTER TABLE public.profiles ADD COLUMN referral_code text UNIQUE;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='wallet_balance') THEN
+        ALTER TABLE public.profiles ADD COLUMN wallet_balance numeric(12,2) DEFAULT 10.00;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='referred_by') THEN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='referral_code') THEN
+        ALTER TABLE public.profiles ADD COLUMN referral_code text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='referred_by') THEN
         ALTER TABLE public.profiles ADD COLUMN referred_by text;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='user_discount_percent') THEN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='user_discount_percent') THEN
         ALTER TABLE public.profiles ADD COLUMN user_discount_percent numeric(5,2) DEFAULT 0.00;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='is_admin') THEN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='is_admin') THEN
         ALTER TABLE public.profiles ADD COLUMN is_admin boolean DEFAULT false;
+    END IF;
+    -- Remove strict foreign key constraint if it prevents mobile users from being created directly
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_schema = 'public' 
+        AND table_name = 'profiles' 
+        AND constraint_name = 'profiles_id_fkey'
+    ) THEN
+        ALTER TABLE public.profiles DROP CONSTRAINT profiles_id_fkey;
     END IF;
 END $$;
 
@@ -53,13 +65,26 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     email text,
     password_hash text,
     full_name text,
-    credits numeric(12,2) DEFAULT 1470.00,
-    wallet_balance numeric(12,2) DEFAULT 1470.00,
+    credits numeric(12,2) DEFAULT 10.00,
+    wallet_balance numeric(12,2) DEFAULT 10.00,
+    unlimited_expiry timestamp with time zone,
+    user_discount_percent numeric(5,2) DEFAULT 0.00,
     referred_by text,
     referral_code text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
+
+-- Ensure columns exist in app_users
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='app_users' AND column_name='unlimited_expiry') THEN
+        ALTER TABLE public.app_users ADD COLUMN unlimited_expiry timestamp with time zone;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='app_users' AND column_name='user_discount_percent') THEN
+        ALTER TABLE public.app_users ADD COLUMN user_discount_percent numeric(5,2) DEFAULT 0.00;
+    END IF;
+END $$;
 
 -- 4. REFERRALS TABLE
 CREATE TABLE IF NOT EXISTS public.referrals (
@@ -133,15 +158,12 @@ CREATE TABLE IF NOT EXISTS public.api_services (
 -- Seed default API services if empty
 INSERT INTO public.api_services (service_key, service_name, base_price, category, provider_url)
 VALUES 
-    ('phone', 'Mobile Number OSINT Lookup', 1.00, 'MOBILE', 'https://exploitsindia.site/anish-private-api/number.php?exploits={query}'),
-    ('aadhaar', 'Aadhaar Card Intelligence', 1.00, 'IDENTITY', 'https://exploitsindia.site/anish-private-api/aadhar.php?exploits={query}'),
-    ('aadhaar_to_pan', 'Aadhaar to PAN Find Service', 150.00, 'FINANCIAL', 'https://techvishalboss.com/panfind/api.php?api_key=c8117598aafa71238a4bf8377087b0ff&aadhaar_number={query}'),
-    ('pancard', 'PAN Card Complete Details', 1.00, 'FINANCIAL', 'https://exploitsindia.site/osint-api/pancard.php?exploits={query}'),
-    ('ifsc', 'Bank IFSC Details Lookup', 1.00, 'BANKING', 'https://exploitsindia.site/osint-api/ifsc.php?exploits={query}'),
-    ('vehicle', 'Vehicle RC Information', 1.00, 'VEHICLE', 'https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_BCFC1E32&service=vehicle&rc={query}'),
-    ('veh_owner_num', 'Vehicle Owner Number Lookup', 1.00, 'VEHICLE', 'http://uersxinfo.in/api?key=498wlpajf&type=veh_numm&term={query}'),
-    ('email', 'Email OSINT Intelligence', 1.00, 'DIGITAL', 'http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}'),
-    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'http://uersxinfo.in/api?key=498wlpajf&type=uers&term={query}'),
+    ('phone', 'Mobile Number OSINT Lookup', 1.00, 'MOBILE', 'https://exploitsindia.site/osintcallerbot/number.php?exploits={query}'),
+    ('aadhaar', 'Aadhaar Card Intelligence', 1.00, 'IDENTITY', 'https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}'),
+    ('ifsc', 'Bank IFSC Details Lookup', 1.00, 'BANKING', 'https://ifsc.razorpay.com/{query}'),
+    ('vehicle', 'Vehicle RC Information', 1.00, 'VEHICLE', 'https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}'),
+    ('email', 'Email OSINT Intelligence', 1.00, 'DIGITAL', 'https://exploitsindia.site/osintcallerbot/email.php?exploits={query}'),
+    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}'),
     ('family', 'Ration Card / Family Tree Lookup', 1.00, 'GOVT', 'https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}')
 ON CONFLICT (service_key) DO UPDATE 
 SET service_name = EXCLUDED.service_name;
