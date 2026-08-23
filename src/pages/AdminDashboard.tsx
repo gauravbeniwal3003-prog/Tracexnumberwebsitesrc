@@ -1822,9 +1822,18 @@ export default function AdminDashboard() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none focus:border-indigo-500"
                   >
                     <option value="">-- Select User Account --</option>
-                    {profiles.map(p => (
-                      <option key={p.id} value={p.id}>{p.email} ({p.full_name || 'No Name'})</option>
-                    ))}
+                    {profiles.map(p => {
+                      const displayPhone = p.phone || (p.email && p.email.endsWith('@tracexdata.com') ? p.email.split('@')[0] : null);
+                      const displayEmail = p.email && !p.email.endsWith('@tracexdata.com') ? p.email : '';
+                      const label = [
+                        displayPhone ? `📱 +91 ${displayPhone}` : '',
+                        displayEmail ? `✉️ ${displayEmail}` : '',
+                        `(${p.full_name || (displayPhone ? `User ${displayPhone.slice(-4)}` : 'User')})`
+                      ].filter(Boolean).join(' ');
+                      return (
+                        <option key={p.id} value={p.id}>{label}</option>
+                      );
+                    })}
                   </select>
                 </div>
 

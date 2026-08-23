@@ -2815,15 +2815,15 @@ app.all("/api/support-lookup", async (req, res) => {
     });
   }
 
-  // Explicitly exclude Aadhaar to PAN lookup from free public route
-  if (serviceParam === 'aadhaar_to_pan' || serviceParam === 'pan_find') {
-    return res.status(200).json({
+  // Explicitly permanently deactivate Aadhaar to PAN and PAN to Name & DOB lookups
+  if (['aadhaar_to_pan', 'pan_find', 'panfind', 'pancard', 'pan', 'pan_to_name_dob'].includes(serviceParam)) {
+    return res.status(410).json({
       status: false,
-      error: "Aadhaar to PAN lookup is excluded from free public search."
+      error: "This service (Aadhaar to PAN / PAN to Name & DOB) has been permanently discontinued and deactivated."
     });
   }
 
-  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'veh_owner_num', 'email'];
+  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'veh_owner_num', 'email'];
   const service = allowedServices.includes(serviceParam) ? serviceParam : 'phone';
   const cleanedQuery = queryParam.trim();
 
@@ -3015,7 +3015,14 @@ app.get("/api/user-lookup", async (req, res) => {
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   
   const { service, query } = req.query;
-  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'pancard', 'aadhaar_to_pan', 'veh_owner_num', 'email'];
+  if (['pancard', 'pan', 'pan_to_name_dob', 'aadhaar_to_pan', 'panfind', 'pan_find'].includes(String(service))) {
+    return res.status(410).json({
+      status: "error",
+      error_type: "service_discontinued",
+      message: "This service (Aadhaar to PAN / PAN to Name & DOB) has been permanently discontinued and deactivated."
+    });
+  }
+  const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'veh_owner_num', 'email'];
   if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
     return res.status(200).json({ 
       status: "error",
@@ -3633,10 +3640,18 @@ app.all("/api/lookup", async (req, res) => {
       targetQuery = String(queryParam).trim();
     }
 
+    if (lookupType === 'aadhaar_to_pan' || lookupType === 'pancard' || lookupType === 'pan' || service === 'aadhaar_to_pan' || service === 'pancard' || service === 'pan' || service === 'pan_to_name_dob') {
+      return res.status(410).json({
+        status: "error",
+        error_type: "service_discontinued",
+        message: "This service (Aadhaar to PAN / PAN to Name & DOB) has been permanently discontinued and deactivated."
+      });
+    }
+
     // Normalize and clean queries depending on lookup service
     if (lookupType === 'bnk') {
       targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    } else if (lookupType === 'adhr' || lookupType === 'rasion' || lookupType === 'aadhaar_to_pan') {
+    } else if (lookupType === 'adhr' || lookupType === 'rasion') {
       targetQuery = targetQuery.replace(/[^0-9]/g, '');
     } else if (lookupType === 'vehicle' || lookupType === 'veh_owner_num') {
       targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
@@ -6955,240 +6970,20 @@ app.get("/api/email", async (req, res) => {
   }
 });
 
-// PAN / PN Card Lookup API Middleware Proxy
+// PAN / PN Card Lookup API Middleware Proxy - PERMANENTLY DEACTIVATED
 app.get("/api/pancard", async (req, res) => {
-  const { query, pan, pn, pancard, exploits } = req.query;
-  const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
-  let targetQuery = String(query || pan || pn || pancard || exploits || "").trim();
-  const startTime = Date.now();
-
-  // Removed wildcard CORS
-  res.setHeader('Content-Type', 'application/json');
-
-  if (!targetQuery) {
-    return res.status(400).json({ status: "error", message: "PN/PAN Card query parameter is required" });
-  }
-
-  // Clean
-  targetQuery = targetQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-
-  if (targetQuery.length < 5) {
-    return res.status(400).json({ status: "error", message: "Invalid Query: PN/PAN plate number must be at least 5 characters long" });
-  }
-
-  let keyRecord: any = null;
-
-  try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ status: "error", message: "Engine Offline: Internal connection failure" });
-    }
-
-    const isMaster = checkIsMasterKey(key);
-
-    if (isMaster) {
-      keyRecord = {
-        id: "master",
-        plan_name: "Internal Master API",
-        expires_at: new Date(Date.now() + 365*24*3600000).toISOString(),
-        status: "active",
-        requests_used: 0,
-        request_limit: null
-      };
-    } else {
-      if (!key) return res.status(401).json({ status: "error", message: "API key is required" });
-
-      const { data: keyRecords, error: keyErr } = 
-          await supabaseAdmin
-        .from("api_keys")
-        .select("*")
-        .eq("api_key", key);
-
-      keyRecord = keyRecords?.[0];
-
-      if (keyErr || !keyRecord) {
-        return res.status(401).json({ status: "error", message: "Access Denied: Invalid or unauthorized API key" });
-      }
-
-      const now = new Date();
-      const expiryDate = keyRecord.expires_at ? new Date(keyRecord.expires_at) : null;
-      if ((expiryDate && expiryDate < now) || keyRecord.status !== 'active') {
-        return res.status(403).json({ 
-          status: "error", 
-          message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "/buy-api"
-        });
-      }
-
-      const requestsUsed = keyRecord.requests_used || 0;
-      const requestLimit = keyRecord.request_limit;
-
-      if (requestLimit !== null && requestsUsed >= requestLimit) {
-        return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
-      }
-
-      // All API keys allowed
-      const isAllowed = true;
-    }
-
-    const balanceCheck = await checkAccountApiBalance(keyRecord, isMaster, 'pancard');
-    if (!balanceCheck.authorized) {
-      return res.status(403).json(balanceCheck.errorResponse);
-    }
-
-    // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'pancard', targetQuery, balanceCheck, keyRecord);
-
-    const api_url = getProviderUrl('pancard', targetQuery);
-    const response = await fetch(api_url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
-    if (!response.ok) {
-       await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
-    }
-
-    const text = await response.text();
-    const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier)/gi, "");
-    const lowerText = cleanedText.toLowerCase();
-
-    if (lowerText.includes("no result") || lowerText.includes("no records found") || lowerText.includes("error") || !text.trim() || lowerText.includes("unknown")) {
-       await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
-    }
-
-    let parsedData: any;
-    try {
-      parsedData = JSON.parse(cleanedText);
-    } catch (e) {
-      parsedData = parsePlainTextLookup(cleanedText, 'pan');
-    }
-
-    const cleanedData = cleanBrandingObject(parsedData);
-
-    // Update log search history with final payload for account owner
-    await logSearchHistory(req, 'pancard', targetQuery, "success", supabaseAdmin, cleanedData, userId, userEmail);
-
-    // Record telemetry for successful search
-    if (!isMaster && keyRecord?.id) {
-      
-          await supabaseAdmin.from("api_keys").update({ 
-        requests_used: (keyRecord.requests_used || 0) + 1,
-        last_used_at: new Date().toISOString()
-      }).eq("id", keyRecord.id);
-    }
-
-    await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "success", Date.now() - startTime);
-
-    return res.json({ status: "success", results: cleanedData });
-  } catch (err: any) {
-    console.error("PAN/PN Card Proxy error:", err);
-    await logApiRequest(keyRecord?.id || null, `PANCARD: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-    return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
-  }
+  return res.status(410).json({ 
+    status: "error", 
+    message: "This service (PAN to Name & DOB) has been permanently discontinued and deactivated." 
+  });
 });
 
-// PAN Find secure payment lookup endpoint
+// PAN Find secure payment lookup endpoint - PERMANENTLY DEACTIVATED
 app.get("/api/panfind", async (req, res) => {
-  const { order_id, aadhaar_number } = req.query;
-  if (!order_id || !aadhaar_number) {
-    return res.status(400).json({ error: "Missing required query parameters: order_id and aadhaar_number" });
-  }
-
-  const targetAadhaar = String(aadhaar_number).trim();
-  if (!/^\d{12}$/.test(targetAadhaar)) {
-    return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
-  }
-
-  try {
-    if (!supabaseAdmin) {
-      return res.status(500).json({ error: "Backend not configured" });
-    }
-
-    // 0. IDOR / Replay Attack Prevention
-    // Check if this order_id was already consumed in payment_claims table
-    const { data: claim, error: claimErr } = 
-          await supabaseAdmin
-      .from("payment_claims")
-      .select("*")
-      .eq("payment_id", order_id)
-      .single();
-      
-    if (claimErr || !claim) {
-      return res.status(404).json({ error: "Order not found in database. Cannot verify payment." });
-    }
-    
-    if (claim.status === "consumed") {
-      return res.status(403).json({ error: "This payment has already been consumed. Please generate a new order." });
-    }
-
-    let order_status = "";
-    
-    // 1. Verify payment status with Cashfree
-    if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      const renderBackendUrl = getRenderBackendUrl();
-      const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
-      const data: any = await response.json();
-      order_status = data.order_status;
-    } else {
-      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${order_id}`, {
-        headers: {
-          'x-client-id': CASHFREE_APP_ID,
-          'x-client-secret': CASHFREE_SECRET_KEY,
-          'x-api-version': '2023-08-01'
-        }
-      });
-      const data: any = await response.json();
-      order_status = data.order_status;
-    }
-
-    if (order_status !== "PAID") {
-      return res.status(402).json({ error: "Payment verification failed. Please complete the Rs. 150 payment." });
-    }
-
-    // Mark as consumed immediately to prevent race conditions (re-entrancy)
-    // Atomic consumption
-    const { data: consumeResult, error: consumeErr } = 
-          await supabaseAdmin
-      .from("payment_claims")
-      .update({ status: "consumed" })
-      .eq("payment_id", order_id)
-      .neq("status", "consumed")
-      .select();
-
-    if (consumeErr || !consumeResult || consumeResult.length === 0) {
-      return res.status(403).json({ error: "This payment was already consumed or could not be locked." });
-    }
-
-    // 2. Execute target API lookup
-    const api_url = getProviderUrl('aadhaar_to_pan', targetAadhaar);
-    
-    const apiResponse = await fetch(api_url);
-    if (!apiResponse.ok) {
-      return res.status(502).json({ error: "External verification gateway offline. Please contact support." });
-    }
-
-    const rawText = await apiResponse.text();
-    let apiData: any;
-    try {
-      apiData = JSON.parse(rawText);
-    } catch (e) {
-      apiData = { error: "Failed to parse search output", raw: rawText };
-    }
-
-    // 3. Remove "developer": "@techvishalboss" from the response object
-    if (apiData && typeof apiData === "object") {
-      delete apiData.developer;
-    }
-
-    return res.json(apiData);
-  } catch (error: any) {
-    console.error("PAN Find error:", error);
-    return res.status(500).json({ error: "Internal server error during processing lookup" });
-  }
+  return res.status(410).json({ 
+    status: "error", 
+    error: "This service (Aadhaar to PAN) has been permanently discontinued and deactivated." 
+  });
 });
 
 // ============================================================================
@@ -7201,9 +6996,6 @@ const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
   aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-  aadhaar_to_pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
-  pancard: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
-  pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
   ifsc: "https://ifsc.razorpay.com/{query}",
   bnk: "https://ifsc.razorpay.com/{query}",
   vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
@@ -7226,6 +7018,10 @@ function initProviderConfigs() {
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       const raw = fs.readFileSync(CONFIG_FILE_PATH, "utf-8");
       const parsed = JSON.parse(raw);
+      delete parsed.aadhaar_to_pan;
+      delete parsed.pancard;
+      delete parsed.pan;
+      delete parsed.panfind;
       PROVIDER_CONFIGS = { ...DEFAULT_PROVIDER_CONFIGS, ...parsed };
       console.log("[TRACEXDATA] Loaded dynamic provider API configs from local store.");
     } else {
@@ -7259,7 +7055,10 @@ async function loadProviderConfigsFromDatabase() {
     if (data && Array.isArray(data)) {
       for (const row of data) {
         if (row.service_key && row.provider_url) {
-          dbConfigs[row.service_key.trim()] = row.provider_url.trim();
+          const k = row.service_key.trim();
+          if (!['aadhaar_to_pan', 'pancard', 'pan', 'panfind', 'pan_to_name_dob'].includes(k)) {
+            dbConfigs[k] = row.provider_url.trim();
+          }
         }
       }
     }
@@ -7275,16 +7074,13 @@ async function loadProviderConfigsFromDatabase() {
       telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
       ifsc: "https://ifsc.razorpay.com/{query}",
       bnk: "https://ifsc.razorpay.com/{query}",
-      pancard: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
-      pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=pan_to_name_dob&query={query}",
-      aadhaar_to_pan: "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
       family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
     };
 
     for (const [key, targetUrl] of Object.entries(targetConfigs)) {
       dbConfigs[key] = targetUrl;
       if (SUPABASE_SERVICE_ROLE_KEY && supabaseAdmin) {
-        if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss")) {
+        if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss") || dbConfigs[key].includes("digisevapoint")) {
           try {
             const { error: upsertErr } = 
           await supabaseAdmin
@@ -7309,15 +7105,21 @@ async function loadProviderConfigsFromDatabase() {
     }
 
     // Update global PROVIDER_CONFIGS with all database configurations
+    delete dbConfigs.aadhaar_to_pan;
+    delete dbConfigs.pancard;
+    delete dbConfigs.pan;
+    delete dbConfigs.panfind;
     PROVIDER_CONFIGS = { ...PROVIDER_CONFIGS, ...dbConfigs };
+    delete PROVIDER_CONFIGS.aadhaar_to_pan;
+    delete PROVIDER_CONFIGS.pancard;
+    delete PROVIDER_CONFIGS.pan;
+    delete PROVIDER_CONFIGS.panfind;
     
     // Mirror aliases
     if (dbConfigs.aadhaar) PROVIDER_CONFIGS.adhr = dbConfigs.aadhaar;
     if (dbConfigs.adhr) PROVIDER_CONFIGS.aadhaar = dbConfigs.adhr;
     if (dbConfigs.ifsc) PROVIDER_CONFIGS.bnk = dbConfigs.ifsc;
     if (dbConfigs.bnk) PROVIDER_CONFIGS.ifsc = dbConfigs.bnk;
-    if (dbConfigs.pancard) PROVIDER_CONFIGS.pan = dbConfigs.pancard;
-    if (dbConfigs.pan) PROVIDER_CONFIGS.pancard = dbConfigs.pan;
 
     // Save synced state to local file as cache
     try {
@@ -7840,219 +7642,12 @@ app.all(["/api/admin/provider-configs", "/api/provider-configs"], async (req, re
   }
 });
 
-// Secure credits-based Aadhaar-to-PAN lookup
+// Secure credits-based Aadhaar-to-PAN lookup - PERMANENTLY DEACTIVATED
 app.post("/api/aadhaar-to-pan", async (req, res) => {
-  const { aadhaar_number } = req.body;
-  const authHeader = req.headers.authorization;
-
-  if (!aadhaar_number) {
-    return res.status(400).json({ error: "Aadhaar number is required" });
-  }
-
-  const targetAadhaar = String(aadhaar_number).trim();
-  if (!/^\d{12}$/.test(targetAadhaar)) {
-    return res.status(400).json({ error: "Aadhaar number must be exactly 12 digits" });
-  }
-
-  // Safety bypass for dummy/test Aadhaar numbers to prevent charges
-  const isDummy = /^(0+|1+|2+|3+|4+|5+|6+|7+|8+|9+|123456789012)/.test(targetAadhaar) || targetAadhaar.startsWith("9999");
-  if (isDummy) {
-    return res.json({
-      status: "success",
-      pan_found: true,
-      pan: "ABCDE1234F",
-      credits_deducted: 0,
-      results: {
-        aadhaar_number: targetAadhaar,
-        pan_number: "ABCDE1234F",
-        full_name: "TEST USER",
-        status: "SUCCESS"
-      },
-      cached: true
-    });
-  }
-
-  let user: any = {
-    id: "00000000-0000-0000-0000-000000000000",
-    email: "fallback_test_user@example.com",
-    phone: "9999999999",
-    user_metadata: { full_name: "Test User Fallback" }
-  };
-  const isGuest = false;
-
-  if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    if (token && token !== "null" && token !== "undefined") {
-      try {
-        const userData = await getUserFromToken(token);
-        if (userData) {
-          user = userData;
-        }
-      } catch (err) {
-        console.warn("Aadhaar to PAN auth warning, using fallback:", err);
-      }
-    }
-  }
-
-  try {
-    // 2. First, check if result is already cached in the database (Bypass charging user completely)
-    let cachedRecord: any = null;
-    if (supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from("aadhaar_pan_results")
-          .select("*")
-          .eq("aadhaar_number", targetAadhaar)
-          .maybeSingle();
-
-        if (!error && data) {
-          cachedRecord = data;
-        }
-      } catch (cacheErr) {
-        console.warn("Aadhaar to PAN database cache check failed:", cacheErr);
-      }
-    }
-
-    if (cachedRecord && cachedRecord.pan_number && cachedRecord.raw_data) {
-      // Return cached result immediately (charges 0 credits!)
-      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "success", supabaseAdmin, cachedRecord.raw_data, user?.id, user?.email);
-      return res.json({
-        status: "success",
-        pan_found: true,
-        pan: cachedRecord.pan_number,
-        credits_deducted: 0,
-        results: scrubAllBranding(cachedRecord.raw_data),
-        cached: true
-      });
-    }
-
-    // Verify and deduct credits
-    const isFallbackUser = user?.id === "00000000-0000-0000-0000-000000000000" || user?.email === "fallback_test_user@example.com";
-    const isAdmin = checkIsAdmin(user?.email) || isFallbackUser;
-    if (user && supabaseAdmin && !isAdmin) {
-      const { data: profile, error: profileErr } = await supabaseAdmin.from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (profileErr || !profile) {
-        return res.status(404).json({ error: "Profile record not found" });
-      }
-
-      const currentCredits = Number(profile.credits || 0);
-      const cost = await getEffectiveServicePrice('aadhaar_to_pan', user.id, user.email);
-
-      if (currentCredits < cost) {
-        return res.status(403).json({ error: `Insufficient credits. You need at least ₹${cost} credits to perform Aadhaar to PAN lookup. Note: Aadhaar to PAN is not included in unlimited plans.` });
-      }
-
-      // Deduct credits atomically with safety fallback
-      let rpcSuccess = false;
-      let rpcError: any = null;
-      try {
-        const rpcResult = 
-          await supabaseAdmin.rpc("deduct_credits", {
-            user_id: user.id,
-            amount: cost
-        });
-        rpcSuccess = rpcResult.data;
-        rpcError = rpcResult.error;
-      } catch (e: any) {
-        rpcError = e;
-      }
-
-      if (rpcError) {
-        console.warn("[DEDUCT_CREDITS_RPC_FAIL] Aadhaar-to-PAN RPC failed or missing, falling back to manual update:", rpcError);
-        const { error: updateErr } = await supabaseAdmin.from("profiles")
-          .update({ credits: currentCredits - cost })
-          .eq("id", user.id);
-
-        if (updateErr) {
-          return res.status(500).json({ error: "Failed to deduct credits. Please try again." });
-        }
-      } else if (rpcSuccess === false) {
-          return res.status(403).json({ error: "Insufficient credits. You need at least 150 credits." });
-      }
-
-      // Log search history upfront to guarantee instant DB recording (< 50ms)
-      await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, "PROCESSING", supabaseAdmin, { status: "PROCESSING", aadhaar_number: targetAadhaar }, user?.id, user?.email);
-    }
-
-    // 5. Query External PAN Find API via Dynamic Provider URL
-    const api_url = getProviderUrl('aadhaar_to_pan', targetAadhaar);
-    
-    let apiData: any = null;
-    let panFound = false;
-    let retrievedPan = "";
-
-    try {
-      const apiResponse = await fetch(api_url);
-      if (apiResponse.ok) {
-        const rawText = await apiResponse.text();
-        try {
-          apiData = JSON.parse(rawText);
-          if (apiData && typeof apiData === "object") {
-            // Scrub branding keys
-            apiData = scrubAllBranding(apiData);
-            retrievedPan = String(apiData.full_pan_number || apiData.pan_number || apiData.pan || "").trim();
-            if (retrievedPan && retrievedPan.length >= 5 && !retrievedPan.toLowerCase().includes("not found")) {
-              panFound = true;
-            }
-          }
-        } catch (e) {
-          console.error("Failed to parse external API response:", rawText);
-        }
-      }
-    } catch (apiErr) {
-      console.error("External PAN Find request failed:", apiErr);
-    }
-
-    // 6. Log search to persistent history
-    const searchStatus = panFound ? "success" : "not_found";
-    await logSearchHistory(req, "aadhaar_to_pan", targetAadhaar, searchStatus, supabaseAdmin, apiData, user?.id, user?.email);
-
-    if (!panFound || checkIsNoRecordFound(apiData)) {
-      if (user && user.email) {
-        await autoRefundUserCredits(user.email, 150, "Aadhaar to PAN", targetAadhaar, supabaseAdmin);
-      }
-      return res.json({
-        status: "failed",
-        pan_found: false,
-        message: "No PAN number found for this Aadhaar number. 150 credits have been safely refunded to your wallet.",
-        credits_deducted: 0,
-        refunded: true,
-        results: null
-      });
-    }
-
-    // 7. Store successful result in database public.aadhaar_pan_results
-    const scrubbedApiData = scrubAllBranding(apiData || {});
-    if (supabaseAdmin) {
-      try {
-        
-          await supabaseAdmin.from("aadhaar_pan_results").insert({
-          aadhaar_number: targetAadhaar,
-          pan_number: retrievedPan,
-          raw_data: scrubbedApiData
-        });
-      } catch (dbInsertErr) {
-        console.error("Failed to insert successful Aadhaar to PAN result into DB cache:", dbInsertErr);
-      }
-    }
-
-    // 8. Return successful search payload
-    return res.json({
-      status: "success",
-      pan_found: true,
-      pan: retrievedPan,
-      credits_deducted: isGuest ? 0 : 150,
-      results: scrubbedApiData
-    });
-
-  } catch (err: any) {
-    console.error("Aadhaar to PAN API general error:", err);
-    return res.status(500).json({ error: "Internal server error during processing Aadhaar to PAN lookup" });
-  }
+  return res.status(410).json({ 
+    status: "failed", 
+    error: "This service (Aadhaar to PAN) has been permanently discontinued and deactivated." 
+  });
 });
 
 // --- ADMIN SYSTEM USER MANAGEMENT ENDPOINTS ---
@@ -8183,102 +7778,204 @@ app.delete("/api/admin/user-custom-pricing/:id", verifyAdminToken, async (req, r
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
     const db = (req as any).adminClient || supabaseAdmin || supabase;
-    let authData: any = null;
+
+    // Helper to safely execute query without throwing if table doesn't exist
+    const safeTableQuery = async (queryPromise: Promise<any>): Promise<any[]> => {
+      try {
+        const response = await queryPromise;
+        if (response && response.data && Array.isArray(response.data)) {
+          return response.data;
+        }
+        return [];
+      } catch (e) {
+        return [];
+      }
+    };
+
+    let authUsers: any[] = [];
     try {
       if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
         const response = await supabaseAdmin.auth.admin.listUsers();
-        authData = response.data;
-        if (response.error) {
-          console.warn("Supabase listUsers error:", response.error);
+        if (response && response.data && response.data.users) {
+          authUsers = response.data.users;
         }
       }
     } catch (authErr: any) {
       console.warn("Failed to list users from auth admin API:", authErr.message);
     }
-    
-    // 1. Fetch profiles table
-    let profileData: any[] = [];
-    try {
-      const { data: profs, error: profileError } = await db
-        .from("profiles")
-        .select("*");
-      if (profs) profileData = profs;
-      if (profileError) console.warn("[GET_ADMIN_PROFILES_ERR]", profileError);
-    } catch (e) {}
 
-    // 2. Fetch app_users table
-    let appUsersData: any[] = [];
-    try {
-      const { data: auData } = await db.from("app_users").select("*");
-      if (auData) appUsersData = auData;
-    } catch (e) {
-      console.warn("Failed to fetch app_users in admin endpoint:", e);
-    }
+    // Query all possible tables in parallel
+    const [
+      profilesData,
+      appUsersData,
+      usersData,
+      mobileUsersData,
+      userProfilesData,
+      paymentClaimsData,
+      walletTxData,
+      serviceRecordsData,
+      searchHistoryData,
+      apiKeysData
+    ] = await Promise.all([
+      safeTableQuery(db.from("profiles").select("*")),
+      safeTableQuery(db.from("app_users").select("*")),
+      safeTableQuery(db.from("users").select("*")),
+      safeTableQuery(db.from("mobile_users").select("*")),
+      safeTableQuery(db.from("user_profiles").select("*")),
+      safeTableQuery(db.from("payment_claims").select("*").order("created_at", { ascending: false }).limit(1000)),
+      safeTableQuery(db.from("wallet_transactions").select("*").order("created_at", { ascending: false }).limit(1000)),
+      safeTableQuery(db.from("service_records").select("user_id, user_email, phone, created_at").limit(500)),
+      safeTableQuery(db.from("search_history").select("user_id, phone, created_at").limit(500)),
+      safeTableQuery(db.from("api_keys").select("user_id, user_email, name, created_at").limit(500))
+    ]);
 
-    // Build unified map of users
-    const userMap = new Map<string, any>();
+    // Unified indexing & resolution engine
+    const phoneIndex = new Map<string, any>();
+    const emailIndex = new Map<string, any>();
+    const idIndex = new Map<string, any>();
+    const allUsers: any[] = [];
+
+    const extractPhone = (rec: any): string => {
+      if (!rec) return "";
+      const candidate = 
+        rec.phone || 
+        rec.mobile || 
+        rec.phone_number || 
+        rec.mobile_no || 
+        rec.mobile_number || 
+        rec.contact || 
+        rec.contact_no || 
+        rec.contact_number || 
+        rec.customer_phone || 
+        rec.customer_mobile || 
+        rec.phone_no || 
+        rec.user_phone || 
+        rec.caller_phone || 
+        rec.user_mobile ||
+        "";
+      
+      const cleaned = String(candidate).replace(/\D/g, "");
+      if (cleaned.length >= 10) {
+        return cleaned.slice(-10);
+      }
+
+      // Check email for 10 digit phone like 9876543210@tracexdata.com or 9876543210@...
+      const email = (rec.email || rec.user_email || rec.customer_email || "").toLowerCase().trim();
+      const emailMatch = email.match(/^(\d{10})@/);
+      if (emailMatch) {
+        return emailMatch[1];
+      }
+
+      // Check nested metadata
+      if (rec.user_metadata) {
+        const metaCandidate = extractPhone(rec.user_metadata);
+        if (metaCandidate) return metaCandidate;
+      }
+
+      return "";
+    };
 
     const processUserRecord = (record: any) => {
       if (!record) return;
-      const rawPhone = (record.phone || "").replace(/\D/g, "").slice(-10);
-      const cleanEmail = (record.email || "").toLowerCase().trim();
-      const id = record.id;
+      const rawPhone = extractPhone(record);
+      const rawEmail = (record.email || record.user_email || record.customer_email || "").toLowerCase().trim();
+      const rawId = String(record.id || record.user_id || record.customer_id || "").trim();
 
-      // Key by phone or email or id
-      const key = rawPhone ? `phone_${rawPhone}` : (cleanEmail ? `email_${cleanEmail}` : `id_${id}`);
-      if (!key) return;
+      if (!rawPhone && !rawEmail && !rawId) return;
 
-      const existing = userMap.get(key) || {};
-      const exCred = Number(existing.credits || 0);
-      const exWal = Number(existing.wallet_balance || 0);
-      const recCred = Number(record.credits || 0);
-      const recWal = Number(record.wallet_balance || 0);
+      // Check if user already indexed
+      let targetUser = 
+        (rawPhone && phoneIndex.get(rawPhone)) || 
+        (rawEmail && emailIndex.get(rawEmail)) || 
+        (rawId && idIndex.get(rawId)) || 
+        null;
 
-      const computedMax = Math.max(exCred, exWal, recCred, recWal);
-      const finalBal = computedMax > 0 ? computedMax : 10.00;
+      if (!targetUser && rawPhone) {
+        const phoneUuid = getUuidForPhone(rawPhone);
+        targetUser = idIndex.get(phoneUuid) || null;
+      }
 
-      const finalPhone = rawPhone || existing.phone || (cleanEmail.match(/^\d{10}@/) ? cleanEmail.slice(0, 10) : "");
-      const finalEmail = cleanEmail || existing.email || (finalPhone ? `${finalPhone}@tracexdata.com` : "");
-      const finalName = record.full_name || existing.full_name || (finalPhone ? `User ${finalPhone.slice(-4)}` : (finalEmail ? finalEmail.split("@")[0] : "User"));
-      const finalId = record.id || existing.id || (finalPhone ? getUuidForPhone(finalPhone) : (crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}`));
+      const recCred = Number(
+        record.credits !== undefined ? record.credits : 
+        (record.wallet_balance !== undefined ? record.wallet_balance : 
+        (record.balance !== undefined ? record.balance : 
+        (record.amount !== undefined && record.status === "success" ? record.amount : 0)))
+      );
 
-      userMap.set(key, {
-        id: finalId,
-        email: finalEmail,
-        phone: finalPhone,
-        full_name: finalName,
-        credits: finalBal,
-        wallet_balance: finalBal,
-        unlimited_expiry: record.unlimited_expiry || existing.unlimited_expiry || null,
-        user_discount_percent: record.user_discount_percent ?? existing.user_discount_percent ?? 0,
-        referral_code: record.referral_code || existing.referral_code || "",
-        created_at: record.created_at || existing.created_at || new Date().toISOString()
-      });
+      if (!targetUser) {
+        const finalPhone = rawPhone || (rawEmail.match(/^(\d{10})@/) ? rawEmail.slice(0, 10) : "");
+        const finalEmail = rawEmail || (finalPhone ? `${finalPhone}@tracexdata.com` : "");
+        const finalName = record.full_name || record.name || record.customer_name || record.user_metadata?.full_name || (finalPhone ? `User ${finalPhone.slice(-4)}` : (finalEmail ? finalEmail.split("@")[0] : "User"));
+        const finalId = rawId || (finalPhone ? getUuidForPhone(finalPhone) : (crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`));
+        const finalBal = recCred > 0 ? recCred : 10.00;
+
+        targetUser = {
+          id: finalId,
+          email: finalEmail,
+          phone: finalPhone,
+          full_name: finalName,
+          credits: finalBal,
+          wallet_balance: finalBal,
+          unlimited_expiry: record.unlimited_expiry || null,
+          user_discount_percent: Number(record.user_discount_percent || 0),
+          referral_code: record.referral_code || "",
+          created_at: record.created_at || new Date().toISOString()
+        };
+
+        allUsers.push(targetUser);
+      } else {
+        // Merge & reconcile with existing profile
+        if (rawPhone && !targetUser.phone) {
+          targetUser.phone = rawPhone;
+        }
+        if (rawEmail && (!targetUser.email || targetUser.email.endsWith("@tracexdata.com") || targetUser.email.endsWith("@tracexdata.online"))) {
+          targetUser.email = rawEmail;
+        }
+        if (record.full_name || record.name || record.customer_name) {
+          const candidateName = record.full_name || record.name || record.customer_name;
+          if (!targetUser.full_name || targetUser.full_name.startsWith("User ") || targetUser.full_name === "User") {
+            targetUser.full_name = candidateName;
+          }
+        }
+        if (recCred > 0) {
+          targetUser.credits = Math.max(Number(targetUser.credits || 0), recCred);
+          targetUser.wallet_balance = Math.max(Number(targetUser.wallet_balance || 0), recCred);
+        }
+        if (record.unlimited_expiry && !targetUser.unlimited_expiry) {
+          targetUser.unlimited_expiry = record.unlimited_expiry;
+        }
+        if (record.user_discount_percent && Number(record.user_discount_percent) > Number(targetUser.user_discount_percent || 0)) {
+          targetUser.user_discount_percent = Number(record.user_discount_percent);
+        }
+        if (record.referral_code && !targetUser.referral_code) {
+          targetUser.referral_code = record.referral_code;
+        }
+        if (record.created_at && (!targetUser.created_at || new Date(record.created_at) < new Date(targetUser.created_at))) {
+          targetUser.created_at = record.created_at;
+        }
+      }
+
+      // Re-index keys
+      if (targetUser.phone) phoneIndex.set(targetUser.phone, targetUser);
+      if (rawPhone) phoneIndex.set(rawPhone, targetUser);
+      if (targetUser.email) emailIndex.set(targetUser.email.toLowerCase().trim(), targetUser);
+      if (rawEmail) emailIndex.set(rawEmail.toLowerCase().trim(), targetUser);
+      if (targetUser.id) idIndex.set(targetUser.id, targetUser);
+      if (rawId) idIndex.set(rawId, targetUser);
+      if (targetUser.phone) idIndex.set(getUuidForPhone(targetUser.phone), targetUser);
     };
 
-    // Merge from profiles table
-    profileData.forEach(processUserRecord);
-
-    // Merge from app_users table
+    // 1. Process Core User Tables
+    profilesData.forEach(processUserRecord);
     appUsersData.forEach(processUserRecord);
+    usersData.forEach(processUserRecord);
+    mobileUsersData.forEach(processUserRecord);
+    userProfilesData.forEach(processUserRecord);
 
-    // Merge from Auth admin list
-    if (authData && authData.users) {
-      for (const authUser of authData.users) {
-        const phone = (authUser.phone || "").replace(/\D/g, "").slice(-10);
-        processUserRecord({
-          id: authUser.id,
-          email: authUser.email || (phone ? `${phone}@tracexdata.com` : ""),
-          phone: phone,
-          full_name: authUser.user_metadata?.full_name || (authUser.email ? authUser.email.split("@")[0] : (phone ? `User ${phone.slice(-4)}` : "User")),
-          credits: 10.00,
-          wallet_balance: 10.00,
-          created_at: authUser.created_at
-        });
-      }
-    }
+    // 2. Process Auth Users
+    authUsers.forEach(processUserRecord);
 
-    // Merge from mobileUsersStore
+    // 3. Process In-Memory / Local Storage Mobile Users
     for (const [phone, mUser] of mobileUsersStore.entries()) {
       processUserRecord({
         id: mUser.id || getUuidForPhone(phone),
@@ -8291,11 +7988,33 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       });
     }
 
-    const sanitizedProfiles = Array.from(userMap.values());
+    // 4. Process Payment Claims, Transactions, & Records (to catch any users who recharged or transacted with phone)
+    paymentClaimsData.forEach(processUserRecord);
+    walletTxData.forEach(processUserRecord);
+    serviceRecordsData.forEach(processUserRecord);
+    searchHistoryData.forEach(processUserRecord);
+    apiKeysData.forEach(processUserRecord);
+
+    // Final clean-up: ensure each profile has standardized phone & display properties
+    const sanitizedProfiles = allUsers.map(u => {
+      let finalPhone = u.phone;
+      if (!finalPhone && u.email && u.email.endsWith("@tracexdata.com")) {
+        const prefix = u.email.split("@")[0];
+        if (/^\d{10}$/.test(prefix)) {
+          finalPhone = prefix;
+        }
+      }
+      return {
+        ...u,
+        phone: finalPhone || ""
+      };
+    });
+
     sanitizedProfiles.sort((a, b) => (a.email || a.phone || "").localeCompare(b.email || b.phone || ""));
 
     return res.json({ status: "success", data: sanitizedProfiles });
   } catch (err: any) {
+    console.error("[GET_ADMIN_PROFILES_FATAL]", err);
     return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
