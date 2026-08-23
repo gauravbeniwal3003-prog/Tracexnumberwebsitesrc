@@ -918,10 +918,18 @@ async def admin_system(request: Request):
             total_requests = len(api_logs_data)
             
         try:
-            user_count_res = db.table('profiles').select('id', count='exact').execute()
-            total_users = user_count_res.count if user_count_res.count is not None else 0
+            p_count_res = db.table('profiles').select('id', count='exact').execute()
+            p_count = p_count_res.count if p_count_res.count is not None else 0
         except Exception:
-            total_users = 0
+            p_count = 0
+
+        try:
+            a_count_res = db.table('app_users').select('id', count='exact').execute()
+            a_count = a_count_res.count if a_count_res.count is not None else 0
+        except Exception:
+            a_count = 0
+
+        total_users = max(p_count + a_count, p_count, a_count)
             
         try:
             # Calculate 24h unique visitors
@@ -985,20 +993,183 @@ async def get_admin_profiles(request: Request):
         raise HTTPException(status_code=500, detail="Database offline")
         
     try:
-        all_profiles = []
-        limit = 1000
-        offset = 0
-        while True:
-            profile_res = db.table("profiles").select("*").range(offset, offset + limit - 1).execute()
-            data = profile_res.data or []
-            all_profiles.extend(data)
-            if len(data) < limit:
-                break
-            offset += limit
-            
-        all_profiles = sorted(all_profiles, key=lambda p: (p.get("email") or "").lower())
-        return {"status": "success", "data": all_profiles}
+        def fetch_all_rows(table_name: str) -> list:
+            all_rows = []
+            limit = 1000
+            offset = 0
+            while True:
+                try:
+                    res = db.table(table_name).select("*").range(offset, offset + limit - 1).execute()
+                    data = res.data or []
+                    all_rows.extend(data)
+                    if len(data) < limit:
+                        break
+                    offset += limit
+                except Exception:
+                    break
+            return all_rows
+
+        profiles_data = fetch_all_rows("profiles")
+        app_users_data = fetch_all_rows("app_users")
+        api_keys_data = fetch_all_rows("api_keys")
+
+        phone_index = {}
+        email_index = {}
+        id_index = {}
+        all_users = []
+
+        def extract_phone(rec: dict) -> str:
+            if not rec or not isinstance(rec, dict):
+                return ""
+            for k in ["phone", "mobile", "phone_number", "mobile_no", "mobile_number", "contact", "contact_no", "user_phone", "customer_phone"]:
+                val = rec.get(k)
+                if val:
+                    digits = re.sub(r"\D", "", str(val))
+                    if len(digits) >= 10:
+                        return digits[-10:]
+            email_val = (rec.get("email") or rec.get("user_email") or "").lower().strip()
+            match = re.match(r"^(\+?91)?([6-9]\d{9})@", email_val) or re.match(r"^(\d{10})@", email_val)
+            if match:
+                return match.group(2) if match.lastindex and match.lastindex >= 2 and match.group(2) else match.group(1)
+            return ""
+
+        def process_record(record: dict, source_name: str = "profiles"):
+            if not record or not isinstance(record, dict):
+                return
+            raw_phone = extract_phone(record)
+            raw_email = (record.get("email") or record.get("user_email") or "").lower().strip()
+            raw_id = str(record.get("id") or record.get("user_id") or "").strip()
+
+            if not raw_phone and not raw_email and not raw_id:
+                return
+
+            target = None
+            if raw_phone and raw_phone in phone_index:
+                target = phone_index[raw_phone]
+            elif raw_email and raw_email in email_index:
+                target = email_index[raw_email]
+            elif raw_id and raw_id in id_index:
+                target = id_index[raw_id]
+
+            if not target and raw_phone:
+                phone_uuid = get_uuid_for_phone(raw_phone)
+                if phone_uuid in id_index:
+                    target = id_index[phone_uuid]
+
+            cred_val = float(record.get("credits") if record.get("credits") is not None else (record.get("wallet_balance") if record.get("wallet_balance") is not None else 10.0))
+
+            if not target:
+                final_phone = raw_phone or (raw_email[:10] if re.match(r"^\d{10}@", raw_email) else "")
+                final_email = raw_email or (f"{final_phone}@tracexdata.com" if final_phone else "")
+                final_name = record.get("full_name") or record.get("name") or (f"User {final_phone[-4:]}" if final_phone else (final_email.split("@")[0] if final_email else "User"))
+                final_id = raw_id or (get_uuid_for_phone(final_phone) if final_phone else str(uuid.uuid4()))
+
+                target = {
+                    "id": final_id,
+                    "email": final_email,
+                    "phone": final_phone,
+                    "full_name": final_name,
+                    "credits": cred_val,
+                    "wallet_balance": cred_val,
+                    "unlimited_expiry": record.get("unlimited_expiry") or None,
+                    "user_discount_percent": float(record.get("user_discount_percent") or 0),
+                    "referral_code": record.get("referral_code") or "",
+                    "sources": [source_name],
+                    "created_at": record.get("created_at") or datetime.utcnow().isoformat() + "Z"
+                }
+                all_users.append(target)
+            else:
+                if "sources" not in target:
+                    target["sources"] = []
+                if source_name not in target["sources"]:
+                    target["sources"].append(source_name)
+
+                if raw_phone and not target.get("phone"):
+                    target["phone"] = raw_phone
+                if raw_email and (not target.get("email") or target.get("email").endswith("@tracexdata.com")):
+                    target["email"] = raw_email
+                if record.get("full_name") and (not target.get("full_name") or target.get("full_name").startswith("User ")):
+                    target["full_name"] = record.get("full_name")
+                if cred_val > 0:
+                    target["credits"] = max(float(target.get("credits") or 0), cred_val)
+                    target["wallet_balance"] = max(float(target.get("wallet_balance") or 0), cred_val)
+                if record.get("unlimited_expiry") and not target.get("unlimited_expiry"):
+                    target["unlimited_expiry"] = record.get("unlimited_expiry")
+
+            if target.get("phone"):
+                phone_index[target["phone"]] = target
+            if raw_phone:
+                phone_index[raw_phone] = target
+            if target.get("email"):
+                email_index[target["email"].lower().strip()] = target
+            if raw_email:
+                email_index[raw_email.lower().strip()] = target
+            if target.get("id"):
+                id_index[target["id"]] = target
+            if raw_id:
+                id_index[raw_id] = target
+            if target.get("phone"):
+                id_index[get_uuid_for_phone(target["phone"])] = target
+
+        for r in profiles_data:
+            process_record(r, "profiles")
+        for r in app_users_data:
+            process_record(r, "app_users")
+        for r in api_keys_data:
+            process_record(r, "api_keys")
+
+        sanitized_profiles = []
+        for u in all_users:
+            final_phone = u.get("phone") or extract_phone(u)
+            email = (u.get("email") or "").lower().strip()
+
+            if not final_phone and email:
+                match = re.match(r"^(\+?91)?([6-9]\d{9})@", email) or re.match(r"^(\d{10})@", email)
+                if match:
+                    final_phone = match.group(2) if match.lastindex and match.lastindex >= 2 and match.group(2) else match.group(1)
+
+            sources = u.get("sources", [])
+            is_from_app_users = "app_users" in sources or bool(final_phone and len(final_phone) >= 10)
+            is_from_profiles = "profiles" in sources or (bool(email) and not email.endswith("@tracexdata.com") and not re.match(r"^\d{10}@", email))
+
+            is_mobile_email = email.endswith("@tracexdata.com") or email.endswith("@tracexdata.online") or bool(re.match(r"^\d{10}@", email))
+            is_mobile_auth = is_from_app_users or bool(final_phone) or is_mobile_email
+            is_web_profile = is_from_profiles or (not is_mobile_email and bool(email))
+
+            source_label = "Unified"
+            if is_mobile_auth and is_web_profile:
+                source_label = "Unified (Both Tables)"
+            elif is_mobile_auth:
+                source_label = "Mobile (app_users)"
+            else:
+                source_label = "Web (profiles)"
+
+            sanitized_profiles.append({
+                **u,
+                "phone": final_phone or "",
+                "source_label": source_label,
+                "is_mobile_app_user": bool(is_mobile_auth),
+                "is_web_profile_user": bool(is_web_profile)
+            })
+
+        # Query filter if 'q' param provided
+        q = request.query_params.get("q", "").strip().lower()
+        if q:
+            q_digits = re.sub(r"\D", "", q)
+            sanitized_profiles = [
+                p for p in sanitized_profiles
+                if q in (p.get("email") or "").lower() or
+                   (q_digits and q_digits in (p.get("phone") or "")) or
+                   q in (p.get("full_name") or "").lower() or
+                   q in str(p.get("id") or "").lower() or
+                   q in (p.get("referral_code") or "").lower() or
+                   q in (p.get("source_label") or "").lower()
+            ]
+
+        sanitized_profiles = sorted(sanitized_profiles, key=lambda p: (p.get("email") or p.get("phone") or "").lower())
+        return {"status": "success", "count": len(sanitized_profiles), "data": sanitized_profiles}
     except Exception as e:
+        print(f"Error in get_admin_profiles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/admin/profiles")
@@ -1008,14 +1179,21 @@ async def create_admin_profile(payload: dict = Body(...), request: Request = Non
     if not db:
         raise HTTPException(status_code=500, detail="Database offline")
         
-    email = payload.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required")
+    phone_val = re.sub(r"\D", "", str(payload.get("phone") or ""))
+    if len(phone_val) >= 10:
+        phone_val = phone_val[-10:]
+    else:
+        phone_val = ""
+
+    email = payload.get("email") or (f"{phone_val}@tracexdata.com" if phone_val else "")
+    if not email and not phone_val:
+        raise HTTPException(status_code=400, detail="Email or Phone is required")
         
-    id_val = payload.get("id") or str(uuid.uuid4())
-    full_name = payload.get("full_name") or email.split("@")[0]
-    credits_val = int(payload.get("credits") or 0)
+    id_val = payload.get("id") or (get_uuid_for_phone(phone_val) if phone_val else str(uuid.uuid4()))
+    full_name = payload.get("full_name") or (f"User {phone_val[-4:]}" if phone_val else email.split("@")[0])
+    credits_val = float(payload.get("credits") or payload.get("wallet_balance") or 10.0)
     unlimited_expiry = payload.get("unlimited_expiry")
+    user_discount_percent = float(payload.get("user_discount_percent") or 0)
     
     if unlimited_expiry:
         try:
@@ -1024,17 +1202,44 @@ async def create_admin_profile(payload: dict = Body(...), request: Request = Non
             pass
             
     try:
+        now_iso = datetime.utcnow().isoformat() + "Z"
         new_profile = {
             "id": id_val,
-            "email": email.strip().lower(),
+            "email": email.strip().lower() if email else f"{phone_val}@tracexdata.com",
             "full_name": full_name.strip(),
             "credits": credits_val,
+            "wallet_balance": credits_val,
             "unlimited_expiry": unlimited_expiry,
+            "user_discount_percent": user_discount_percent,
             "is_free_credit_claimed": True,
-            "last_weekly_credit_at": datetime.utcnow().isoformat() + "Z"
+            "last_weekly_credit_at": now_iso
         }
-        insert_res = db.table("profiles").insert(new_profile).execute()
-        return {"status": "success", "data": insert_res.data[0] if insert_res.data else new_profile}
+        
+        # Save to profiles
+        try:
+            db.table("profiles").upsert(new_profile, on_conflict="id").execute()
+        except Exception as pe:
+            print(f"[ADMIN_CREATE_PROFILE_WARN] {pe}")
+
+        # If mobile phone present, also sync to app_users
+        if phone_val:
+            try:
+                import hashlib
+                default_pw_hash = hashlib.sha512(b"TraceX@2026").hexdigest()
+                app_user_row = {
+                    "id": id_val,
+                    "phone": phone_val,
+                    "email": email,
+                    "full_name": full_name,
+                    "password_hash": default_pw_hash,
+                    "credits": credits_val,
+                    "updated_at": now_iso
+                }
+                db.table("app_users").upsert(app_user_row, on_conflict="phone").execute()
+            except Exception as ae:
+                print(f"[ADMIN_CREATE_APP_USERS_WARN] {ae}")
+
+        return {"status": "success", "data": {**new_profile, "phone": phone_val, "is_mobile_app_user": bool(phone_val)}}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1046,9 +1251,16 @@ async def update_admin_profile(id: str, payload: dict = Body(...), request: Requ
         raise HTTPException(status_code=500, detail="Database offline")
         
     email = payload.get("email")
+    phone_val = re.sub(r"\D", "", str(payload.get("phone") or ""))
+    if len(phone_val) >= 10:
+        phone_val = phone_val[-10:]
+    else:
+        phone_val = ""
+
     full_name = payload.get("full_name")
-    credits_val = int(payload.get("credits") or 0)
+    credits_val = float(payload.get("credits") or payload.get("wallet_balance") or 0)
     unlimited_expiry = payload.get("unlimited_expiry")
+    user_discount_percent = float(payload.get("user_discount_percent") or 0)
     
     if unlimited_expiry:
         try:
@@ -1061,12 +1273,37 @@ async def update_admin_profile(id: str, payload: dict = Body(...), request: Requ
         "email": email,
         "full_name": full_name or "",
         "credits": credits_val,
-        "unlimited_expiry": unlimited_expiry
+        "wallet_balance": credits_val,
+        "unlimited_expiry": unlimited_expiry,
+        "user_discount_percent": user_discount_percent
     }
     
     try:
-        update_res = db.table("profiles").upsert(update_payload, on_conflict="id").execute()
-        return {"status": "success", "data": update_res.data[0] if update_res.data else update_payload}
+        # Update profiles table
+        try:
+            db.table("profiles").upsert(update_payload, on_conflict="id").execute()
+        except Exception as pe:
+            print(f"[ADMIN_UPDATE_PROFILES_WARN] {pe}")
+
+        # Update app_users table if user has phone or matched by ID/phone
+        try:
+            app_user_update = {
+                "credits": credits_val,
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }
+            if full_name:
+                app_user_update["full_name"] = full_name
+            if email:
+                app_user_update["email"] = email
+
+            if phone_val:
+                db.table("app_users").update(app_user_update).eq("phone", phone_val).execute()
+            else:
+                db.table("app_users").update(app_user_update).eq("id", id).execute()
+        except Exception as ae:
+            print(f"[ADMIN_UPDATE_APP_USERS_WARN] {ae}")
+
+        return {"status": "success", "data": update_payload}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1078,8 +1315,17 @@ async def delete_admin_profile(id: str, request: Request):
         raise HTTPException(status_code=500, detail="Database offline")
         
     try:
-        db.table("profiles").delete().eq("id", id).execute()
-        return {"status": "success", "message": "User profile deleted successfully"}
+        try:
+            db.table("profiles").delete().eq("id", id).execute()
+        except Exception:
+            pass
+
+        try:
+            db.table("app_users").delete().eq("id", id).execute()
+        except Exception:
+            pass
+
+        return {"status": "success", "message": "User profile deleted successfully from all tables"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

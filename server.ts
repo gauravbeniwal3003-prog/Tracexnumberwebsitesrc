@@ -8987,6 +8987,7 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
       activeKeysRes,
       totalLogsRes,
       userCountRes,
+      appUsersCountRes,
       revenueRes
     ] = await Promise.all([
       safeQuery(db.from('api_keys').select('*').order('created_at', { ascending: false }).limit(100)),
@@ -8996,6 +8997,7 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
       safeQuery(db.from('api_keys').select('*', { count: 'exact', head: true }).eq('status', 'active'), { count: 0 }),
       safeQuery(db.from('api_logs').select('*', { count: 'exact', head: true }), { count: 0 }),
       safeQuery(db.from('profiles').select('*', { count: 'exact', head: true }), { count: 0 }),
+      safeQuery(db.from('app_users').select('*', { count: 'exact', head: true }), { count: 0 }),
       safeQuery(db.from('api_keys').select('plan_name'), { data: [] })
     ]);
 
@@ -9004,7 +9006,7 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
     const totalKeysCount = totalKeysRes?.count || 0;
     const activeKeysCount = activeKeysRes?.count || 0;
     const totalLogsCount = totalLogsRes?.count || 0;
-    const userCount = userCountRes?.count || 0;
+    const userCount = Math.max((userCountRes?.count || 0) + (appUsersCountRes?.count || 0), userCountRes?.count || 0, appUsersCountRes?.count || 0);
     const revenueData = revenueRes?.data || [];
 
     let apiLogs = [];
