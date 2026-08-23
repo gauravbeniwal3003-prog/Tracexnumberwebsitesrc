@@ -1366,9 +1366,30 @@ export default function AdminDashboard() {
 
             {/* Filter Pills & Quick Category Toggles */}
             {(() => {
+              const isMobileAccount = (p: any): boolean => {
+                if (!p) return false;
+                if (p.is_mobile_app_user) return true;
+                if (p.phone && String(p.phone).replace(/\D/g, '').length >= 10) return true;
+                if (Array.isArray(p.sources) && (p.sources.includes('app_users') || p.sources.includes('mobile_users'))) return true;
+                if (p.source_label && (p.source_label.toLowerCase().includes('app_users') || p.source_label.toLowerCase().includes('mobile'))) return true;
+                const email = (p.email || '').toLowerCase().trim();
+                if (email.endsWith('@tracexdata.com') || email.endsWith('@tracexdata.online')) return true;
+                if (/^(\+?91)?([6-9]\d{9})@/.test(email) || /^\d{10}@/.test(email)) return true;
+                return false;
+              };
+
+              const isWebAccount = (p: any): boolean => {
+                if (!p) return false;
+                if (p.is_web_profile_user) return true;
+                if (Array.isArray(p.sources) && (p.sources.includes('profiles') || p.sources.includes('user_profiles'))) return true;
+                const email = (p.email || '').toLowerCase().trim();
+                if (email && !email.endsWith('@tracexdata.com') && !email.endsWith('@tracexdata.online') && !/^\d{10}@/.test(email)) return true;
+                return false;
+              };
+
               const totalCount = profiles.length;
-              const mobileCount = profiles.filter(p => Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com')) || p.is_mobile_app_user)).length;
-              const webCount = profiles.filter(p => Boolean(p.email && !p.email.endsWith('@tracexdata.com'))).length;
+              const mobileCount = profiles.filter(isMobileAccount).length;
+              const webCount = profiles.filter(isWebAccount).length;
               const unlimitedCount = profiles.filter(p => p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date()).length;
               const adminCount = profiles.filter(p => ADMIN_EMAILS.some(e => e.toLowerCase() === (p.email || '').toLowerCase())).length;
 
@@ -1426,17 +1447,36 @@ export default function AdminDashboard() {
             </div>
 
             {(() => {
+              const isMobileAccount = (p: any): boolean => {
+                if (!p) return false;
+                if (p.is_mobile_app_user) return true;
+                if (p.phone && String(p.phone).replace(/\D/g, '').length >= 10) return true;
+                if (Array.isArray(p.sources) && (p.sources.includes('app_users') || p.sources.includes('mobile_users'))) return true;
+                if (p.source_label && (p.source_label.toLowerCase().includes('app_users') || p.source_label.toLowerCase().includes('mobile'))) return true;
+                const email = (p.email || '').toLowerCase().trim();
+                if (email.endsWith('@tracexdata.com') || email.endsWith('@tracexdata.online')) return true;
+                if (/^(\+?91)?([6-9]\d{9})@/.test(email) || /^\d{10}@/.test(email)) return true;
+                return false;
+              };
+
+              const isWebAccount = (p: any): boolean => {
+                if (!p) return false;
+                if (p.is_web_profile_user) return true;
+                if (Array.isArray(p.sources) && (p.sources.includes('profiles') || p.sources.includes('user_profiles'))) return true;
+                const email = (p.email || '').toLowerCase().trim();
+                if (email && !email.endsWith('@tracexdata.com') && !email.endsWith('@tracexdata.online') && !/^\d{10}@/.test(email)) return true;
+                return false;
+              };
+
               const query = (searchUserQuery || '').trim().toLowerCase();
               const queryDigits = query.replace(/\D/g, '');
 
               const filteredProfiles = profiles.filter(p => {
                 // Tab filter
                 if (userFilterTab === 'mobile') {
-                  const isMob = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com')) || p.is_mobile_app_user);
-                  if (!isMob) return false;
+                  if (!isMobileAccount(p)) return false;
                 } else if (userFilterTab === 'web') {
-                  const isWeb = Boolean(p.email && !p.email.endsWith('@tracexdata.com'));
-                  if (!isWeb) return false;
+                  if (!isWebAccount(p)) return false;
                 } else if (userFilterTab === 'unlimited') {
                   const hasUnl = Boolean(p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date());
                   if (!hasUnl) return false;
@@ -1490,16 +1530,28 @@ export default function AdminDashboard() {
                             const isUserAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === (p.email || '').toLowerCase());
                             const userBal = Math.max(Number(p.wallet_balance || 0), Number(p.credits || 0));
                             
-                            // Detect if user is mobile registered
-                            const isMobileUser = Boolean(p.phone || (p.email && p.email.endsWith('@tracexdata.com') && /^\d+@/.test(p.email)) || p.is_mobile_app_user);
-                            const displayPhone = p.phone || (p.email && p.email.endsWith('@tracexdata.com') ? p.email.split('@')[0] : null);
-                            const displayEmail = p.email && !p.email.endsWith('@tracexdata.com') ? p.email : null;
+                            // Detect mobile registered details
+                            const isMobile = isMobileAccount(p);
+                            const isWeb = isWebAccount(p);
+
+                            let displayPhone = p.phone || '';
+                            if (!displayPhone && p.email) {
+                              const match = p.email.match(/^(\+?91)?([6-9]\d{9})@/) || p.email.match(/^([6-9]\d{9})@/) || p.email.match(/^(\d{10})@/);
+                              if (match) displayPhone = match[2] || match[1];
+                            }
+                            if (displayPhone) {
+                              displayPhone = displayPhone.replace(/\D/g, '').slice(-10);
+                            }
+
+                            const rawEmail = p.email || '';
+                            const isVirtualMobileEmail = rawEmail.endsWith('@tracexdata.com') || rawEmail.endsWith('@tracexdata.online') || /^\d{10}@/.test(rawEmail);
+                            const displayEmail = (!isVirtualMobileEmail && rawEmail) ? rawEmail : null;
                             
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                                 <td className="px-6 py-4">
                                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                                    <span>{p.full_name || (displayPhone ? `User ${displayPhone.slice(-4)}` : 'No Name')}</span>
+                                    <span>{p.full_name || (displayPhone ? `User ${displayPhone.slice(-4)}` : (displayEmail ? displayEmail.split('@')[0] : 'User'))}</span>
                                     {isUserAdmin && (
                                       <span className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded-full font-bold">Admin</span>
                                     )}
@@ -1519,17 +1571,17 @@ export default function AdminDashboard() {
                                   </div>
                                 </td>
                                 <td className="px-6 py-4">
-                                  {isMobileUser && displayEmail ? (
+                                  {isMobile && isWeb && displayEmail ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold uppercase tracking-wider">
                                       ⚡ Unified (Both Tables)
                                     </span>
-                                  ) : isMobileUser ? (
+                                  ) : isMobile ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-purple-50 text-purple-700 border border-purple-200 font-bold uppercase tracking-wider">
-                                      📱 app_users
+                                      📱 app_users (Mobile)
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold uppercase tracking-wider">
-                                      ✉️ profiles
+                                      ✉️ profiles (Web)
                                     </span>
                                   )}
                                 </td>

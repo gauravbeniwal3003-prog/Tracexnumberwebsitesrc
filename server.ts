@@ -7664,7 +7664,7 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
   }
 
   try {
-    if (!supabaseAdmin) {
+    if (!supabaseAdmin && !supabase) {
       return res.status(500).json({ error: "Engine Offline: Database driver missing" });
     }
 
@@ -7681,7 +7681,8 @@ const verifyAdminToken = async (req: express.Request, res: express.Response, nex
     }
 
     (req as any).adminUser = user;
-    (req as any).adminClient = supabaseAdmin; // Secure service-role client for authorized administrative procedures
+    (req as any).userClient = client;
+    (req as any).adminClient = supabaseAdmin || client || supabase;
     next();
   } catch (err) {
     console.error("[ADMIN_MIDDLEWARE_FAIL]", err);
@@ -7777,64 +7778,79 @@ app.delete("/api/admin/user-custom-pricing/:id", verifyAdminToken, async (req, r
 
 app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
   try {
-    const db = (req as any).adminClient || supabaseAdmin || supabase;
+    const primaryDb = (req as any).adminClient || supabaseAdmin || supabase;
+    const userClient = (req as any).userClient;
+    const clientsToTry = [primaryDb, userClient, supabaseAdmin, supabase].filter(Boolean);
+
     const searchTerm = req.query.q ? String(req.query.q).trim() : "";
     const searchDigits = searchTerm.replace(/\D/g, "");
 
-    // Helper to safely execute paginated queries to retrieve ALL records without 1000-row cap
+    // Helper to safely execute paginated queries across all available clients to retrieve ALL records
     const fetchAllTableRows = async (tableName: string, selectFields = "*"): Promise<any[]> => {
-      if (!db) return [];
       const allRows: any[] = [];
       const pageSize = 1000;
-      let page = 0;
       const maxPages = 50; // Fetch up to 50,000 rows
 
-      try {
-        while (page < maxPages) {
-          const from = page * pageSize;
-          const to = from + pageSize - 1;
-          const { data, error } = await db
-            .from(tableName)
-            .select(selectFields)
-            .range(from, to);
+      for (const clientDb of clientsToTry) {
+        try {
+          let page = 0;
+          const tempRows: any[] = [];
+          while (page < maxPages) {
+            const from = page * pageSize;
+            const to = from + pageSize - 1;
+            const { data, error } = await clientDb
+              .from(tableName)
+              .select(selectFields)
+              .range(from, to);
 
-          if (error || !data || !Array.isArray(data) || data.length === 0) {
-            break;
+            if (error) {
+              break;
+            }
+            if (!data || !Array.isArray(data) || data.length === 0) {
+              break;
+            }
+
+            tempRows.push(...data);
+            if (data.length < pageSize) {
+              break;
+            }
+            page++;
           }
 
-          allRows.push(...data);
-          if (data.length < pageSize) {
-            break;
+          if (tempRows.length > 0) {
+            allRows.push(...tempRows);
+            break; // Found records with this client
           }
-          page++;
+        } catch (e) {
+          // try next client
         }
-      } catch (e) {
-        // Safe fallback
       }
       return allRows;
     };
 
     // Helper for direct targeted search query on a table
     const searchTableRows = async (tableName: string, term: string): Promise<any[]> => {
-      if (!db || !term) return [];
+      if (!term) return [];
       const results: any[] = [];
-      try {
-        const digits = term.replace(/\D/g, "");
-        if (digits.length >= 3) {
-          const { data: pData } = await db.from(tableName).select("*").ilike("phone", `%${digits}%`).limit(200);
-          if (pData && Array.isArray(pData)) results.push(...pData);
+      for (const clientDb of clientsToTry) {
+        try {
+          const digits = term.replace(/\D/g, "");
+          if (digits.length >= 3) {
+            const { data: pData } = await clientDb.from(tableName).select("*").ilike("phone", `%${digits}%`).limit(200);
+            if (pData && Array.isArray(pData)) results.push(...pData);
+          }
+          const { data: eData } = await clientDb.from(tableName).select("*").ilike("email", `%${term}%`).limit(200);
+          if (eData && Array.isArray(eData)) results.push(...eData);
+          const { data: nData } = await clientDb.from(tableName).select("*").ilike("full_name", `%${term}%`).limit(200);
+          if (nData && Array.isArray(nData)) results.push(...nData);
+          if (term.length >= 4) {
+            const { data: iData } = await clientDb.from(tableName).select("*").ilike("id", `%${term}%`).limit(50);
+            if (iData && Array.isArray(iData)) results.push(...iData);
+          }
+          if (results.length > 0) break;
+        } catch (e) {
+          // ignore
         }
-        const { data: eData } = await db.from(tableName).select("*").ilike("email", `%${term}%`).limit(200);
-        if (eData && Array.isArray(eData)) results.push(...eData);
-        const { data: nData } = await db.from(tableName).select("*").ilike("full_name", `%${term}%`).limit(200);
-        if (nData && Array.isArray(nData)) results.push(...nData);
-        // Also search by ID if valid UUID or substring
-        if (term.length >= 4) {
-          const { data: iData } = await db.from(tableName).select("*").ilike("id", `%${term}%`).limit(50);
-          if (iData && Array.isArray(iData)) results.push(...iData);
-        }
-      } catch (e) {
-        // ignore
       }
       return results;
     };
@@ -7920,16 +7936,20 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         return cleaned.slice(-10);
       }
 
-      // Check email for 10 digit phone like 9876543210@tracexdata.com or 9876543210@...
+      // Check email for 10-12 digit mobile format
       const email = (rec.email || rec.user_email || rec.customer_email || "").toLowerCase().trim();
-      const emailMatch = email.match(/^(\d{10})@/);
-      if (emailMatch) {
-        return emailMatch[1];
+      const emailPhoneMatch = email.match(/^(\+?91)?([6-9]\d{9})@/) || email.match(/^([6-9]\d{9})@/) || email.match(/^(\d{10})@/);
+      if (emailPhoneMatch) {
+        return emailPhoneMatch[2] || emailPhoneMatch[1];
       }
 
       // Check nested metadata
       if (rec.user_metadata) {
         const metaCandidate = extractPhone(rec.user_metadata);
+        if (metaCandidate) return metaCandidate;
+      }
+      if (rec.raw_user_meta_data) {
+        const metaCandidate = extractPhone(rec.raw_user_meta_data);
         if (metaCandidate) return metaCandidate;
       }
 
@@ -8064,29 +8084,41 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
 
     // Final clean-up: ensure each profile has standardized phone & display properties
     let sanitizedProfiles = allUsers.map(u => {
-      let finalPhone = u.phone;
-      if (!finalPhone && u.email && u.email.endsWith("@tracexdata.com")) {
-        const prefix = u.email.split("@")[0];
-        if (/^\d{10}$/.test(prefix)) {
-          finalPhone = prefix;
+      let finalPhone = u.phone || extractPhone(u);
+      const email = (u.email || "").toLowerCase().trim();
+
+      if (!finalPhone && email) {
+        const phoneMatch = email.match(/^(\+?91)?([6-9]\d{9})@/) || email.match(/^([6-9]\d{9})@/) || email.match(/^(\d{10})@/);
+        if (phoneMatch) {
+          finalPhone = phoneMatch[2] || phoneMatch[1];
         }
       }
 
       const sources: string[] = u.sources || [];
-      const hasAppUsers = sources.includes("app_users") || Boolean(finalPhone);
-      const hasProfiles = sources.includes("profiles") || (u.email && !u.email.endsWith("@tracexdata.com"));
+      const isFromAppUsers = sources.includes("app_users") || sources.includes("mobile_users") || sources.includes("data_mobile_users");
+      const isFromProfiles = sources.includes("profiles") || sources.includes("user_profiles");
       
+      const hasPhone = Boolean(finalPhone && finalPhone.length >= 10);
+      const isMobileEmail = email.endsWith("@tracexdata.com") || email.endsWith("@tracexdata.online") || /^\d{10}@/.test(email);
+
+      const isMobileAuthUser = isFromAppUsers || hasPhone || isMobileEmail;
+      const isWebProfileUser = isFromProfiles || (!isMobileEmail && Boolean(email));
+
       let sourceLabel = "Unified";
-      if (hasAppUsers && hasProfiles) sourceLabel = "Unified (Both Tables)";
-      else if (hasAppUsers) sourceLabel = "Mobile App (app_users)";
-      else sourceLabel = "Web Portal (profiles)";
+      if (isMobileAuthUser && isWebProfileUser) {
+        sourceLabel = "Unified (Both Tables)";
+      } else if (isMobileAuthUser) {
+        sourceLabel = "Mobile (app_users)";
+      } else {
+        sourceLabel = "Web (profiles)";
+      }
 
       return {
         ...u,
         phone: finalPhone || "",
         source_label: sourceLabel,
-        is_mobile_app_user: Boolean(hasAppUsers),
-        is_web_profile_user: Boolean(hasProfiles)
+        is_mobile_app_user: Boolean(isMobileAuthUser),
+        is_web_profile_user: Boolean(isWebProfileUser)
       };
     });
 
@@ -8099,15 +8131,20 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         const pName = (p.full_name || "").toLowerCase();
         const pId = (p.id || "").toLowerCase();
         const pRef = (p.referral_code || "").toLowerCase();
+        const pSource = (p.source_label || "").toLowerCase();
         return pEmail.includes(qLower) || 
                (searchDigits && pPhone.includes(searchDigits)) || 
                pName.includes(qLower) || 
                pId.includes(qLower) || 
-               pRef.includes(qLower);
+               pRef.includes(qLower) ||
+               pSource.includes(qLower);
       });
     }
 
-    sanitizedProfiles.sort((a, b) => (a.email || a.phone || "").localeCompare(b.email || b.phone || ""));
+    sanitizedProfiles.sort((a, b) => {
+      // Prioritize mobile users first if requested or sort by recency/email
+      return (a.email || a.phone || "").localeCompare(b.email || b.phone || "");
+    });
 
     return res.json({ status: "success", count: sanitizedProfiles.length, data: sanitizedProfiles });
   } catch (err: any) {
