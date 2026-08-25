@@ -2226,7 +2226,7 @@ app.get("/api/wallet/history", async (req, res) => {
       supabaseAdmin
         .from("payment_claims")
         .select("*")
-        .or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
+        .eq("user_id", userId)
         .gte("created_at", threeDaysAgo)
         .order("created_at", { ascending: false })
     ]);
@@ -4911,25 +4911,7 @@ async function fulfillOrder(
   activeFulfillments.add(orderId);
 
   try {
-    // 1. Guard check: Check if wallet_transactions already has SUCCESS entry for this orderId
-    try {
-      const { data: existingTx } = await db
-        .from("wallet_transactions")
-        .select("id")
-        .eq("reference_id", orderId)
-        .eq("status", "SUCCESS")
-        .limit(1)
-        .maybeSingle();
-
-      if (existingTx) {
-        console.log(`[FULFILL_GUARD] Order ${orderId} is already credited in wallet_transactions (${existingTx.id}). Updating claims status to success.`);
-        await db.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
-        recentPendingOrders.delete(orderId);
-        return;
-      }
-    } catch (txGuardErr) {
-      console.warn("[FULFILL_GUARD_WARN] Error checking existing wallet_transactions:", txGuardErr);
-    }
+    // 1. Guard check using payment_claims is handled below.
 
     let { data: claim } = await db
       .from("payment_claims")
@@ -4953,7 +4935,6 @@ async function fulfillOrder(
         await db.from("payment_claims").insert({
           payment_id: orderId,
           user_id: userId || null,
-          user_email: optionalEmail || "N/A",
           plan_id: explicitPlanId || "wallet_100",
           amount: explicitAmount || 100,
           status: "processing"
@@ -5307,7 +5288,6 @@ async function fulfillOrder(
       // Update payment_claims to success
       await db.from("payment_claims").update({
         user_id: finalUserId,
-        user_email: emailToUse,
         amount: baseAmount || orderAmount || creditsToAdd,
         status: "success",
         updated_at: new Date().toISOString()
@@ -5320,11 +5300,8 @@ async function fulfillOrder(
           user_email: emailToUse,
           amount: creditsToAdd,
           balance_after: newTotalBalance,
-          type: "CREDIT",
-          payment_method: "Cashfree",
-          reference_id: orderId,
-          description: `Wallet Recharge: ₹${baseAmount || creditsToAdd} (Credited: ₹${creditsToAdd})`,
-          status: "SUCCESS",
+          type: "Credit",
+          service_name: "Cashfree",
           created_at: new Date().toISOString()
         });
       } catch (txErr) {
@@ -5392,7 +5369,7 @@ async function runBackgroundPaymentReconciliation() {
         const twoDaysAgoIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
         const { data: dbPending, error: pErr } = await db
           .from("payment_claims")
-          .select("payment_id, user_id, user_email, plan_id, amount, status, created_at")
+          .select("payment_id, user_id, plan_id, amount, status, created_at")
           .in("status", ["pending", "processing"])
           .gte("created_at", twoDaysAgoIso)
           .order("created_at", { ascending: false })
@@ -5404,7 +5381,7 @@ async function runBackgroundPaymentReconciliation() {
               ordersToCheck.push({
                 orderId: row.payment_id,
                 userId: row.user_id,
-                userEmail: row.user_email,
+                userEmail: "",
                 amount: row.amount,
                 planId: row.plan_id
               });
@@ -5549,6 +5526,15 @@ app.post("/api/cashfree/create-order", async (req, res) => {
 
     const orderId = `order_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
+    // Determine the server base URL dynamically (works across dev, preview, production)
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const host = req.get('host') || 'tracedata.online';
+    const serverBaseUrl = `${protocol}://${host}`;
+
+    // Point return_url to the server-side callback so the server handles fulfillment before user redirect
+    const originalReturnUrl = return_url || `${serverBaseUrl}/pricing?order_id={order_id}`;
+    const backendReturnUrl = `${serverBaseUrl}/api/cashfree/return?order_id={order_id}&redirect_to=${encodeURIComponent(originalReturnUrl)}`;
+
     const cfPayload = {
       order_id: orderId,
       order_amount: Number(amount),
@@ -5559,7 +5545,7 @@ app.post("/api/cashfree/create-order", async (req, res) => {
         customer_phone: customer_phone || "9999999999"
       },
       order_meta: {
-        return_url: return_url || `?order_id={order_id}`
+        return_url: backendReturnUrl
       }
     };
 
@@ -5591,7 +5577,6 @@ app.post("/api/cashfree/create-order", async (req, res) => {
         await supabaseAdmin.from("payment_claims").insert({
           payment_id: orderId,
           user_id: dbUserId,
-          user_email: dbUserEmail,
           plan_id: plan_id,
           amount: Number(amount),
           status: "pending"
@@ -5688,6 +5673,84 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
   } catch (error) {
     console.error("Status Check Error:", error);
     res.status(500).json({ error: "Failed to verify status" });
+  }
+});
+
+// --- NEW BACKEND RETURN URL HANDLER (RENDER-DRIVEN PAYMENT REDIRECT) ---
+app.get("/api/cashfree/return", async (req, res) => {
+  const { order_id, redirect_to } = req.query;
+
+  if (!order_id || typeof order_id !== "string" || order_id.trim().length === 0) {
+    return res.status(400).send("Invalid request: Missing order_id parameter");
+  }
+
+  const orderId = order_id.trim();
+  console.log(`[BACKEND_RETURN] Received browser redirect return for order: ${orderId}`);
+
+  try {
+    let data: any = null;
+
+    if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+      console.log("[BACKEND_RETURN] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
+      const renderBackendUrl = getRenderBackendUrl();
+      if (renderBackendUrl) {
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
+        data = await response.json().catch(() => null);
+      }
+    } else {
+      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
+        headers: {
+          'x-client-id': CASHFREE_APP_ID,
+          'x-client-secret': CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01'
+        }
+      });
+      data = await response.json().catch(() => null);
+    }
+
+    if (!data) {
+      console.error("[BACKEND_RETURN] Could not verify order status with Cashfree.");
+    } else if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
+      console.log(`[BACKEND_RETURN] Order ${orderId} verified PAID! Triggering instant guarantee fulfillment...`);
+      await fulfillOrder(
+        orderId, 
+        data.customer_details?.customer_id, 
+        data.customer_details?.customer_email, 
+        data.customer_details?.customer_phone,
+        data.order_amount,
+        data.plan_id
+      );
+    } else {
+      console.log(`[BACKEND_RETURN] Order status for ${orderId} is ${data.order_status}.`);
+    }
+
+    // Determine target redirect url
+    let targetRedirect = "/pricing";
+    if (redirect_to && typeof redirect_to === "string") {
+      targetRedirect = decodeURIComponent(redirect_to);
+    }
+
+    // Replace the {order_id} placeholder if present
+    targetRedirect = targetRedirect.replace("{order_id}", orderId);
+
+    // Append payment status parameter
+    const paymentStatus = (data && (data.order_status === "PAID" || data.order_status === "SUCCESS")) ? "success" : "failed";
+    if (targetRedirect.includes("?")) {
+      targetRedirect += `&payment_status=${paymentStatus}`;
+    } else {
+      targetRedirect += `?payment_status=${paymentStatus}`;
+    }
+
+    console.log(`[BACKEND_RETURN] Redirecting browser back to: ${targetRedirect}`);
+    return res.redirect(targetRedirect);
+
+  } catch (error) {
+    console.error("[BACKEND_RETURN_CRITICAL_ERROR]:", error);
+    let fallbackRedirect = "/pricing";
+    if (redirect_to && typeof redirect_to === "string") {
+      fallbackRedirect = decodeURIComponent(redirect_to).replace("{order_id}", orderId);
+    }
+    return res.redirect(fallbackRedirect);
   }
 });
 
@@ -8262,8 +8325,8 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
       fetchAllTableRows("user_profiles"),
       searchTerm ? searchTableRows("profiles", searchTerm) : Promise.resolve([]),
       searchTerm ? searchTableRows("app_users", searchTerm) : Promise.resolve([]),
-      fetchAllTableRows("payment_claims", "payment_id, user_id, user_email, amount, status, created_at"),
-      fetchAllTableRows("wallet_transactions", "user_email, amount, type, status, created_at"),
+      fetchAllTableRows("payment_claims", "payment_id, user_id, amount, status, created_at"),
+      fetchAllTableRows("wallet_transactions", "user_email, amount, type, created_at"),
       fetchAllTableRows("service_records", "user_id, user_email, phone, created_at"),
       fetchAllTableRows("search_history", "user_id, phone, created_at"),
       fetchAllTableRows("api_keys", "user_id, user_email, name, created_at")
@@ -9461,11 +9524,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
       return res.status(401).json({ error: "Session has expired or is invalid" });
     }
 
-    const cleanPhone = (user.phone || "").replace(/\D/g, "").slice(-10);
-    const filterClauses = [`user_id.eq.${user.id}`];
-    if (user.email) filterClauses.push(`user_email.eq.${user.email}`);
-    if (cleanPhone) filterClauses.push(`user_email.eq.${cleanPhone}@tracexdata.com`);
-
+    const cleanPhone = user.phone ? user.phone.replace(/\D/g, "").slice(-10) : "";
     const pendingClaimsList: Array<any> = [];
 
     // Grab all 'pending' payment claims from DB that belong to this user
@@ -9473,7 +9532,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
       const { data: dbPending, error: claimsErr } = await db
         .from("payment_claims")
         .select("*")
-        .or(filterClauses.join(","))
+        .eq("user_id", user.id)
         .in("status", ["pending", "processing"]);
 
       if (!claimsErr && Array.isArray(dbPending)) {

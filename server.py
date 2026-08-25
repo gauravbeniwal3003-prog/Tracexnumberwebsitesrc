@@ -268,16 +268,7 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
     active_fulfillments.add(order_id)
 
     try:
-        # Check if wallet_transactions already has SUCCESS entry for this order_id
-        try:
-            tx_check = db.table("wallet_transactions").select("id").eq("reference_id", order_id).eq("status", "SUCCESS").limit(1).execute()
-            if tx_check.data:
-                print(f"[FULFILL_GUARD] Order {order_id} already has SUCCESS wallet_transaction. Updating claims status.")
-                db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
-                recent_pending_orders.pop(order_id, None)
-                return
-        except Exception as tx_guard_err:
-            pass
+        # Guard check using payment_claims is handled below.
 
         # Check if already fulfilled in payment_claims
         claim_query = db.table("payment_claims").select("*").eq("payment_id", order_id).execute()
@@ -577,14 +568,27 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                 "phone": app_user_phone,
                 "updated_at": datetime.utcnow().isoformat() + "Z"
             }
-            db.table("app_users").upsert(app_user_payload, on_conflict="id").execute()
+            try:
+                db.table("app_users").upsert(app_user_payload, on_conflict="id").execute()
+            except Exception as au_err:
+                try:
+                    db.table("app_users").update({
+                        "credits": update_data.get("credits", 10.0),
+                        "wallet_balance": update_data.get("wallet_balance", 10.0),
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    }).eq("id", final_user_id).execute()
+                except Exception:
+                    pass
             
             if email_to_use and "@" in email_to_use:
-                db.table("app_users").update({
-                    "credits": update_data.get("credits", 10.0),
-                    "wallet_balance": update_data.get("wallet_balance", 10.0),
-                    "updated_at": datetime.utcnow().isoformat() + "Z"
-                }).eq("email", email_to_use).execute()
+                try:
+                    db.table("app_users").update({
+                        "credits": update_data.get("credits", 10.0),
+                        "wallet_balance": update_data.get("wallet_balance", 10.0),
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    }).eq("email", email_to_use).execute()
+                except Exception:
+                    pass
 
             # Record in wallet_transactions
             try:
@@ -593,11 +597,8 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                     "user_email": email_to_use,
                     "amount": credits_to_add,
                     "balance_after": update_data.get("wallet_balance", 10.0),
-                    "type": "CREDIT",
-                    "payment_method": "Cashfree",
-                    "reference_id": order_id,
-                    "description": f"Wallet Recharge: ₹{base_amt} (Credited: ₹{credits_to_add})",
-                    "status": "SUCCESS",
+                    "type": "Credit",
+                    "service_name": "Cashfree",
                     "created_at": datetime.utcnow().isoformat() + "Z"
                 }).execute()
             except Exception as tx_err:
@@ -647,14 +648,14 @@ async def run_background_payment_reconciliation():
             if db:
                 try:
                     two_days_ago_iso = (datetime.utcnow() - timedelta(days=2)).isoformat()
-                    res = db.table("payment_claims").select("payment_id, user_id, user_email, plan_id, amount, status, created_at").in_("status", ["pending", "processing"]).gte("created_at", two_days_ago_iso).order("created_at", desc=True).limit(25).execute()
+                    res = db.table("payment_claims").select("payment_id, user_id, plan_id, amount, status, created_at").in_("status", ["pending", "processing"]).gte("created_at", two_days_ago_iso).order("created_at", desc=True).limit(25).execute()
                     if res.data:
                         for row in res.data:
                             if not any(o["order_id"] == row["payment_id"] for o in orders_to_check):
                                 orders_to_check.append({
                                     "order_id": row["payment_id"],
                                     "user_id": row["user_id"],
-                                    "email": row.get("user_email"),
+                                    "email": None,
                                     "phone": None,
                                     "amount": row.get("amount"),
                                     "plan_id": row.get("plan_id")
