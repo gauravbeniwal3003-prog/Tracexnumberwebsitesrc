@@ -4813,7 +4813,18 @@ app.all("/api/developer_api.php", async (req, res) => {
   return req.app._router.handle(req, res, () => {});
 });
 
-// --- ORDER FULFILLMENT UPGRADE ---
+// --- ORDER FULFILLMENT & AUTO-RECONCILIATION ENGINE ---
+
+const activeFulfillments = new Set<string>();
+const recentPendingOrders = new Map<string, {
+  orderId: string;
+  userId?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  amount?: number;
+  planId?: string;
+  createdAt: number;
+}>();
 
 async function fulfillOrder(
   orderId: string, 
@@ -4826,15 +4837,43 @@ async function fulfillOrder(
   if (!supabaseAdmin && !supabase) return;
   const db = supabaseAdmin || supabase;
 
+  // Strict atomic lock per orderId to prevent concurrent double credit
+  if (activeFulfillments.has(orderId)) {
+    console.log(`[FULFILL_LOCK] Order ${orderId} is currently being fulfilled by another process. Skipping duplicate trigger.`);
+    return;
+  }
+  activeFulfillments.add(orderId);
+
   try {
+    // 1. Guard check: Check if wallet_transactions already has SUCCESS entry for this orderId
+    try {
+      const { data: existingTx } = await db
+        .from("wallet_transactions")
+        .select("id")
+        .eq("reference_id", orderId)
+        .eq("status", "SUCCESS")
+        .limit(1)
+        .maybeSingle();
+
+      if (existingTx) {
+        console.log(`[FULFILL_GUARD] Order ${orderId} is already credited in wallet_transactions (${existingTx.id}). Updating claims status to success.`);
+        await db.from("payment_claims").update({ status: "success" }).eq("payment_id", orderId);
+        recentPendingOrders.delete(orderId);
+        return;
+      }
+    } catch (txGuardErr) {
+      console.warn("[FULFILL_GUARD_WARN] Error checking existing wallet_transactions:", txGuardErr);
+    }
+
     let { data: claim } = await db
       .from("payment_claims")
       .select("*")
       .eq("payment_id", orderId)
       .maybeSingle();
 
-    if (claim && (claim.status === "success" || claim.status === "consumed")) {
+    if (claim && (claim.status === "success" || claim.status === "consumed" || String(claim.status).startsWith("success_"))) {
       console.log(`[FULFILL] Order ${orderId} already completed with status: ${claim.status}`);
+      recentPendingOrders.delete(orderId);
       return;
     }
 
@@ -5197,8 +5236,141 @@ async function fulfillOrder(
     }
   } catch (err) {
     console.error("Fulfillment critical error:", err);
+  } finally {
+    activeFulfillments.delete(orderId);
   }
 }
+
+// Background Payment Auto-Reconciliation Engine
+let isAutoReconciliationRunning = false;
+
+async function runBackgroundPaymentReconciliation() {
+  if (isAutoReconciliationRunning) return;
+  isAutoReconciliationRunning = true;
+
+  try {
+    const db = supabaseAdmin || supabase;
+    const ordersToCheck: Array<{
+      orderId: string;
+      userId?: string | null;
+      userEmail?: string | null;
+      userPhone?: string | null;
+      amount?: number | null;
+      planId?: string | null;
+    }> = [];
+
+    // 1. Gather recent pending orders from in-memory ring
+    const now = Date.now();
+    const cutoff48h = now - 48 * 60 * 60 * 1000;
+
+    for (const [oid, item] of recentPendingOrders.entries()) {
+      if (item.createdAt < cutoff48h) {
+        recentPendingOrders.delete(oid);
+      } else {
+        ordersToCheck.push({
+          orderId: item.orderId,
+          userId: item.userId,
+          userEmail: item.email,
+          userPhone: item.phone,
+          amount: item.amount,
+          planId: item.planId
+        });
+      }
+    }
+
+    // 2. Query database for pending or stuck processing payment claims created in the last 48 hours
+    if (db) {
+      try {
+        const twoDaysAgoIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        const { data: dbPending, error: pErr } = await db
+          .from("payment_claims")
+          .select("payment_id, user_id, user_email, plan_id, amount, status, created_at")
+          .in("status", ["pending", "processing"])
+          .gte("created_at", twoDaysAgoIso)
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+        if (!pErr && Array.isArray(dbPending)) {
+          for (const row of dbPending) {
+            if (!ordersToCheck.some(o => o.orderId === row.payment_id)) {
+              ordersToCheck.push({
+                orderId: row.payment_id,
+                userId: row.user_id,
+                userEmail: row.user_email,
+                amount: row.amount,
+                planId: row.plan_id
+              });
+            }
+          }
+        }
+      } catch (dbQueryErr) {
+        // silent database query error
+      }
+    }
+
+    if (ordersToCheck.length > 0) {
+      for (const order of ordersToCheck) {
+        if (activeFulfillments.has(order.orderId)) continue;
+
+        try {
+          let gatewayData: any = null;
+
+          if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            const renderBackendUrl = getRenderBackendUrl();
+            if (renderBackendUrl) {
+              const resp = await fetch(`${renderBackendUrl}/api/cashfree/status/${order.orderId}`);
+              if (resp.ok) gatewayData = await resp.json().catch(() => null);
+            }
+          } else {
+            const resp = await fetch(`${CASHFREE_BASE_URL}/orders/${order.orderId}`, {
+              headers: {
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+              }
+            });
+            if (resp.ok) gatewayData = await resp.json().catch(() => null);
+          }
+
+          if (gatewayData) {
+            const orderStatus = gatewayData.order_status;
+            if (orderStatus === "PAID" || orderStatus === "SUCCESS") {
+              console.log(`[SMART_AUTO_RECONCILE] Verified PAID transaction ${order.orderId}! Fulfilling automatically...`);
+              await fulfillOrder(
+                order.orderId,
+                order.userId || gatewayData.customer_details?.customer_id,
+                order.userEmail || gatewayData.customer_details?.customer_email,
+                order.userPhone || gatewayData.customer_details?.customer_phone,
+                gatewayData.order_amount || order.amount,
+                order.planId || gatewayData.plan_id
+              );
+              recentPendingOrders.delete(order.orderId);
+            } else if (orderStatus === "EXPIRED" || orderStatus === "CANCELLED" || orderStatus === "TERMINATED") {
+              recentPendingOrders.delete(order.orderId);
+              if (db) {
+                await db.from("payment_claims").update({ status: orderStatus.toLowerCase() }).eq("payment_id", order.orderId).eq("status", "pending").catch(() => {});
+              }
+            }
+          }
+
+          // Gentle delay to avoid hitting gateway rate limits
+          await new Promise(r => setTimeout(r, 300));
+        } catch (checkErr) {
+          console.warn(`[SMART_AUTO_RECONCILE] Error checking order ${order.orderId}:`, checkErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[SMART_AUTO_RECONCILE] Worker error:", err);
+  } finally {
+    isAutoReconciliationRunning = false;
+  }
+}
+
+// Start recurring background auto-reconciliation every 60 seconds
+setInterval(runBackgroundPaymentReconciliation, 60 * 1000);
+// Also run a sweep shortly after startup
+setTimeout(runBackgroundPaymentReconciliation, 10 * 1000);
 
 // Cashfree Routes
 
@@ -5322,6 +5494,17 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     } else {
       console.log("[TRACEXDATA] Database offline or unconfigured. Proceeding with order creation without state logging.");
     }
+
+    // Always record in-memory pending ring buffer for guaranteed auto-reconciliation
+    recentPendingOrders.set(orderId, {
+      orderId: orderId,
+      userId: (user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id)) ? user_id : (authenticatedUserId || null),
+      email: user_email || authenticatedUserEmail || null,
+      phone: customer_phone || null,
+      amount: Number(amount),
+      planId: plan_id,
+      createdAt: Date.now()
+    });
 
     const envMode = CASHFREE_BASE_URL.includes("sandbox") ? "sandbox" : "production";
     res.json({ ...data, cf_mode: envMode });
@@ -9145,6 +9328,16 @@ app.get("/api/admin/system", verifyAdminToken, async (req, res) => {
 
 // --- CLIENT AUTHENTICATED PAYMENT RECONCILIATION API ---
 
+app.post("/api/cashfree/auto-check-pending", async (req, res) => {
+  try {
+    // Manually trigger background sweep asynchronously
+    runBackgroundPaymentReconciliation().catch(err => console.error("[MANUAL_SWEEP_ERR]", err));
+    return res.json({ status: "success", message: "Background payment auto-reconciliation sweep triggered." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to trigger auto reconciliation" });
+  }
+});
+
 app.post("/api/cashfree/reconcile-user", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -9152,9 +9345,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
   }
 
   const token = authHeader.replace("Bearer ", "");
-  if (!supabaseAdmin) {
-    return res.status(500).json({ error: "Database offline" });
-  }
+  const db = supabaseAdmin || supabase;
 
   try {
     const user = await getUserFromToken(token);
@@ -9162,20 +9353,44 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
       return res.status(401).json({ error: "Session has expired or is invalid" });
     }
 
-    // Grab all 'pending' payment claims that belong to this user (by user_id or user_email)
-    const { data: pendingClaims, error: claimsErr } = 
-          await supabaseAdmin
-      .from("payment_claims")
-      .select("*")
-      .or(`user_id.eq.${user.id},user_email.eq.${user.email}`)
-      .eq("status", "pending");
+    const cleanPhone = (user.phone || "").replace(/\D/g, "").slice(-10);
+    const filterClauses = [`user_id.eq.${user.id}`];
+    if (user.email) filterClauses.push(`user_email.eq.${user.email}`);
+    if (cleanPhone) filterClauses.push(`user_email.eq.${cleanPhone}@tracexdata.com`);
 
-    if (claimsErr) {
-      console.error("[RECONCILE_USER_CLAIMS_ERR]", claimsErr);
-      return res.status(500).json({ error: "Internal Server Error" });
+    const pendingClaimsList: Array<any> = [];
+
+    // Grab all 'pending' payment claims from DB that belong to this user
+    if (db) {
+      const { data: dbPending, error: claimsErr } = await db
+        .from("payment_claims")
+        .select("*")
+        .or(filterClauses.join(","))
+        .in("status", ["pending", "processing"]);
+
+      if (!claimsErr && Array.isArray(dbPending)) {
+        pendingClaimsList.push(...dbPending);
+      }
     }
 
-    if (!pendingClaims || pendingClaims.length === 0) {
+    // Also include from in-memory pending ring
+    for (const [oid, item] of recentPendingOrders.entries()) {
+      const matches = item.userId === user.id || 
+                      (item.email && item.email === user.email) || 
+                      (cleanPhone && item.phone && item.phone.includes(cleanPhone));
+      if (matches && !pendingClaimsList.some(c => c.payment_id === oid)) {
+        pendingClaimsList.push({
+          payment_id: item.orderId,
+          user_id: user.id,
+          user_email: user.email,
+          plan_id: item.planId,
+          amount: item.amount,
+          status: "pending"
+        });
+      }
+    }
+
+    if (pendingClaimsList.length === 0) {
       return res.json({ status: "success", recoveredCount: 0, message: "No pending claims require reconciliation." });
     }
 
@@ -9183,17 +9398,22 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
     const recoveredOrders = [];
 
     // Check with Cashfree API for each pending claim
-    for (const claim of pendingClaims) {
+    for (const claim of pendingClaimsList) {
       const orderId = claim.payment_id;
       try {
         let isPaid = false;
+        let orderAmount = claim.amount;
+        let planId = claim.plan_id;
         
         if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
           const renderBackendUrl = getRenderBackendUrl();
-          const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
-          const cfData = await cfResp.json();
-          if (cfResp.ok && cfData.order_status === "PAID") {
-            isPaid = true;
+          if (renderBackendUrl) {
+            const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
+            const cfData = await cfResp.json();
+            if (cfResp.ok && (cfData.order_status === "PAID" || cfData.order_status === "SUCCESS")) {
+              isPaid = true;
+              orderAmount = cfData.order_amount || orderAmount;
+            }
           }
         } else {
           const cfResp = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
@@ -9204,15 +9424,17 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
             }
           });
           const cfData: any = await cfResp.json();
-          if (cfResp.ok && cfData.order_status === "PAID") {
+          if (cfResp.ok && (cfData.order_status === "PAID" || cfData.order_status === "SUCCESS")) {
             isPaid = true;
+            orderAmount = cfData.order_amount || orderAmount;
           }
         }
 
         if (isPaid) {
-          await fulfillOrder(orderId, user.id, user.email, user.phone);
+          await fulfillOrder(orderId, user.id, user.email, user.phone, orderAmount, planId);
           recoveredCount++;
           recoveredOrders.push(orderId);
+          recentPendingOrders.delete(orderId);
         }
       } catch (checkErr) {
         console.error(`[RECONCILE_SYS_ERR] Order status fetch error on ${orderId}:`, checkErr);
@@ -9224,7 +9446,7 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
       recoveredCount,
       recoveredOrders,
       message: recoveredCount > 0 
-        ? `Checked pending ledger matching profile. Automatically claimed and posted ${recoveredCount} paid order(s).` 
+        ? `Checked pending transactions. Automatically claimed and posted ₹${recoveredOrders.length} paid order(s).` 
         : "Reconciliation sweep done. No newly paid transactions found."
     });
   } catch (err: any) {

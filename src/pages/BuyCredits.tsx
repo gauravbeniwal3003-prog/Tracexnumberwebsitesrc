@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wallet, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, IndianRupee, Plus, ArrowLeft } from 'lucide-react';
+import { Wallet, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, IndianRupee, Plus, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 import HeaderNavbar from '../components/HeaderNavbar';
 import { supabase } from '../services/supabase.ts';
-import { getApiBaseUrl } from '../services/api';
+import { getApiBaseUrl, getAuthToken } from '../services/api';
 
 const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
 
@@ -31,6 +31,7 @@ export default function BuyCredits() {
   const [selectedAmount, setSelectedAmount] = useState<number>(100);
   const [customAmountInput, setCustomAmountInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAutoReconciling, setIsAutoReconciling] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<{ status: 'idle' | 'success' | 'failed', message?: string }>({ status: 'idle' });
 
   // Self-Healing Verification State
@@ -38,37 +39,62 @@ export default function BuyCredits() {
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimResult, setClaimResult] = useState<{ status: 'idle' | 'success' | 'failed', message: string }>({ status: 'idle', message: '' });
 
-  useEffect(() => {
-    const runAutoReconciliation = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
+  const runAutoReconciliation = async (silent = true) => {
+    try {
+      if (!silent) setIsAutoReconciling(true);
+      const token = await getAuthToken();
+      if (!token) return;
 
-        const response = await fetch(`${getApiBaseUrl()}/api/cashfree/reconcile-user`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.recoveredCount > 0) {
-            setPaymentStatus({
-              status: 'success',
-              message: `Smart Fix: Located ${result.recoveredCount} paid order(s). Balance updated!`
-            });
-            await refreshProfile();
+      const response = await fetch(`${getApiBaseUrl()}/api/cashfree/reconcile-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.recoveredCount > 0) {
+          setPaymentStatus({
+            status: 'success',
+            message: `Smart Auto-Recovery: Found ${result.recoveredCount} verified paid transaction(s). Balance updated successfully!`
+          });
+          localStorage.removeItem('tracex_last_pending_order');
+          await refreshProfile();
+        } else if (!silent) {
+          setPaymentStatus({
+            status: 'success',
+            message: `All recent payments are already up to date.`
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Auto reconciliation error:", err);
+    } finally {
+      if (!silent) setIsAutoReconciling(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      runAutoReconciliation(true);
+    }
+
+    // Check if there was an in-flight pending order from this device
+    try {
+      const savedPending = localStorage.getItem('tracex_last_pending_order');
+      if (savedPending) {
+        const parsed = JSON.parse(savedPending);
+        if (parsed?.orderId) {
+          const ageHours = (Date.now() - (parsed.createdAt || 0)) / (1000 * 3600);
+          if (ageHours < 48) {
+            checkPaymentStatus(parsed.orderId);
+          } else {
+            localStorage.removeItem('tracex_last_pending_order');
           }
         }
-      } catch (err) {
-        console.error("Auto reconciliation error:", err);
       }
-    };
-
-    if (user) {
-      runAutoReconciliation();
-    }
+    } catch (e) {}
   }, [user]);
 
   const handleClaimManual = async (e: React.FormEvent) => {
@@ -85,8 +111,8 @@ export default function BuyCredits() {
     try {
       setClaimLoading(true);
       setClaimResult({ status: 'idle', message: '' });
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const token = await getAuthToken();
+      if (!token) {
         throw new Error("No login session found. Please sign in again.");
       }
 
@@ -94,7 +120,7 @@ export default function BuyCredits() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ order_id: claimOrderId.trim() })
       });
@@ -103,6 +129,7 @@ export default function BuyCredits() {
       if (response.ok && resJson.status === 'success') {
         setClaimResult({ status: 'success', message: resJson.message });
         setClaimOrderId('');
+        localStorage.removeItem('tracex_last_pending_order');
         await refreshProfile();
       } else {
         setClaimResult({ status: 'failed', message: resJson.error || 'Verification failed.' });
@@ -141,13 +168,14 @@ export default function BuyCredits() {
       }
 
       const data = await response.json();
-      if (data.order_status === 'PAID') {
+      if (data.order_status === 'PAID' || data.order_status === 'SUCCESS') {
         const addedAmount = data.order_amount || selectedAmount;
         const bonusInfo = getRechargeBonus(addedAmount);
         setPaymentStatus({ 
           status: 'success', 
           message: `Payment successful! ₹${bonusInfo.totalAmount}.00 added to your wallet balance.`
         });
+        localStorage.removeItem('tracex_last_pending_order');
         
         await refreshProfile();
         setTimeout(async () => {
@@ -179,8 +207,7 @@ export default function BuyCredits() {
     const backendUrl = getApiBaseUrl();
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token || '';
+      const token = await getAuthToken();
       const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/create-order`, {
         method: 'POST',
         headers: {
@@ -216,6 +243,18 @@ export default function BuyCredits() {
 
       if (!orderData.payment_session_id) {
         throw new Error('Payment session could not be created.');
+      }
+
+      // Save pending order locally for guaranteed auto-reconciliation
+      if (orderData.order_id) {
+        try {
+          localStorage.setItem('tracex_last_pending_order', JSON.stringify({
+            orderId: orderData.order_id,
+            amount: amountToPay,
+            planId: `wallet_${amountToPay}`,
+            createdAt: Date.now()
+          }));
+        } catch (e) {}
       }
 
       if (!window.Cashfree) {
@@ -481,37 +520,51 @@ export default function BuyCredits() {
               </p>
             </div>
 
-            <form onSubmit={handleClaimManual} className="w-full md:w-auto flex-grow max-w-sm flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={claimOrderId}
-                  onChange={(e) => setClaimOrderId(e.target.value)}
-                  placeholder="Order ID (e.g. order_12345)"
-                  className="flex-grow h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 outline-none text-xs font-mono text-slate-900 focus:border-sky-500 focus:bg-white transition-all"
-                  disabled={claimLoading}
-                />
+            <div className="w-full md:w-auto flex-grow max-w-md flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <button
-                  type="submit"
-                  disabled={claimLoading}
-                  className="h-11 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                  type="button"
+                  onClick={() => runAutoReconciliation(false)}
+                  disabled={isAutoReconciling || !user}
+                  className="px-4 py-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  {claimLoading ? <Loader2 size={14} className="animate-spin" /> : 'Claim'}
+                  <RefreshCw size={14} className={isAutoReconciling ? "animate-spin text-sky-600" : "text-sky-600"} />
+                  <span>{isAutoReconciling ? "Checking Gateway..." : "Auto-Check Recent Payments"}</span>
                 </button>
               </div>
 
-              {claimResult.status !== 'idle' && (
-                <div
-                  className={`p-3 rounded-xl text-xs border ${
-                    claimResult.status === 'success'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                      : 'bg-red-50 border-red-200 text-red-900'
-                  }`}
-                >
-                  {claimResult.message}
+              <form onSubmit={handleClaimManual} className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={claimOrderId}
+                    onChange={(e) => setClaimOrderId(e.target.value)}
+                    placeholder="Or enter Order ID (e.g. order_12345)"
+                    className="flex-grow h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 outline-none text-xs font-mono text-slate-900 focus:border-sky-500 focus:bg-white transition-all"
+                    disabled={claimLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={claimLoading}
+                    className="h-11 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    {claimLoading ? <Loader2 size={14} className="animate-spin" /> : 'Claim'}
+                  </button>
                 </div>
-              )}
-            </form>
+
+                {claimResult.status !== 'idle' && (
+                  <div
+                    className={`p-3 rounded-xl text-xs border ${
+                      claimResult.status === 'success'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        : 'bg-red-50 border-red-200 text-red-900'
+                    }`}
+                  >
+                    {claimResult.message}
+                  </div>
+                )}
+              </form>
+            </div>
           </div>
         </section>
 

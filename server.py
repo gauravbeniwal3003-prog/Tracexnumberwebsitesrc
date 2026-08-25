@@ -253,24 +253,46 @@ def sync_mobile_user_to_databases(user_payload: dict, plain_password: str = None
     }
 
 
-async def fulfill_order(order_id: str, user_id: str):
+active_fulfillments = set()
+recent_pending_orders = {}
+
+async def fulfill_order(order_id: str, user_id: str, optional_email: str = None, optional_phone: str = None, explicit_amount: float = None, explicit_plan_id: str = None):
     db = get_supabase()
     if not db:
         return
 
+    # Atomic lock per order_id to prevent double-fulfillment
+    if order_id in active_fulfillments:
+        print(f"[FULFILL_LOCK] Order {order_id} is currently being fulfilled. Skipping concurrent execution.")
+        return
+    active_fulfillments.add(order_id)
+
     try:
-        # Check if already fulfilled
+        # Check if wallet_transactions already has SUCCESS entry for this order_id
+        try:
+            tx_check = db.table("wallet_transactions").select("id").eq("reference_id", order_id).eq("status", "SUCCESS").limit(1).execute()
+            if tx_check.data:
+                print(f"[FULFILL_GUARD] Order {order_id} already has SUCCESS wallet_transaction. Updating claims status.")
+                db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
+                recent_pending_orders.pop(order_id, None)
+                return
+        except Exception as tx_guard_err:
+            pass
+
+        # Check if already fulfilled in payment_claims
         claim_query = db.table("payment_claims").select("*").eq("payment_id", order_id).execute()
-        if not claim_query.data or claim_query.data[0]['status'] == 'success':
+        if claim_query.data and claim_query.data[0]['status'] in ['success', 'consumed'] or (claim_query.data and str(claim_query.data[0]['status']).startswith('success_')):
+            recent_pending_orders.pop(order_id, None)
             return
 
-        claim = claim_query.data[0]
-        plan_id = claim['plan_id']
-        user_email = claim.get('user_email', 'N/A')
+        claim = claim_query.data[0] if claim_query.data else {}
+        plan_id = explicit_plan_id or claim.get('plan_id', 'wallet_100')
+        user_email = optional_email or claim.get('user_email', 'N/A')
 
         # Handle manual pgpay guest payments
         if plan_id in ["pgpay_manual", "panfind"]:
             db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
+            recent_pending_orders.pop(order_id, None)
             print(f"[SaaS] Manual Guest Payment fulfilled successfully for {order_id}")
             return
 
@@ -471,6 +493,95 @@ async def fulfill_order(order_id: str, user_id: str):
             
     except Exception as e:
         print(f"Fulfillment error: {e}")
+    finally:
+        active_fulfillments.discard(order_id)
+
+async def run_background_payment_reconciliation():
+    while True:
+        try:
+            await asyncio.sleep(60)
+            db = get_supabase()
+            orders_to_check = []
+
+            # 1. Gather recent pending orders from in-memory ring
+            now_ts = time.time()
+            cutoff_48h = now_ts - (48 * 3600)
+            expired_keys = [k for k, v in recent_pending_orders.items() if v.get("created_at", 0) < cutoff_48h]
+            for k in expired_keys:
+                recent_pending_orders.pop(k, None)
+
+            for oid, item in recent_pending_orders.items():
+                orders_to_check.append({
+                    "order_id": item.get("order_id"),
+                    "user_id": item.get("user_id"),
+                    "email": item.get("email"),
+                    "phone": item.get("phone"),
+                    "amount": item.get("amount"),
+                    "plan_id": item.get("plan_id")
+                })
+
+            # 2. Check pending claims in DB from last 48h
+            if db:
+                try:
+                    two_days_ago_iso = (datetime.utcnow() - timedelta(days=2)).isoformat()
+                    res = db.table("payment_claims").select("payment_id, user_id, user_email, plan_id, amount, status, created_at").in_("status", ["pending", "processing"]).gte("created_at", two_days_ago_iso).order("created_at", desc=True).limit(25).execute()
+                    if res.data:
+                        for row in res.data:
+                            if not any(o["order_id"] == row["payment_id"] for o in orders_to_check):
+                                orders_to_check.append({
+                                    "order_id": row["payment_id"],
+                                    "user_id": row["user_id"],
+                                    "email": row.get("user_email"),
+                                    "phone": None,
+                                    "amount": row.get("amount"),
+                                    "plan_id": row.get("plan_id")
+                                })
+                except Exception as query_err:
+                    pass
+
+            if orders_to_check:
+                for order in orders_to_check:
+                    oid = order["order_id"]
+                    if oid in active_fulfillments:
+                        continue
+                    try:
+                        is_paid = False
+                        resolved_amount = order.get("amount")
+                        if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
+                            render_backend_url = "https://tracexdata-api.onrender.com"
+                            resp = requests.get(f"{render_backend_url}/api/cashfree/status/{oid}", timeout=5)
+                            if resp.status_code == 200:
+                                cf_data = resp.json()
+                                if cf_data.get("order_status") in ["PAID", "SUCCESS"]:
+                                    is_paid = True
+                                    resolved_amount = cf_data.get("order_amount") or resolved_amount
+                        else:
+                            headers = {
+                                "x-client-id": CASHFREE_APP_ID,
+                                "x-client-secret": CASHFREE_SECRET_KEY,
+                                "x-api-version": "2023-08-01"
+                            }
+                            resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{oid}", headers=headers, timeout=5)
+                            if resp.status_code == 200:
+                                cf_data = resp.json()
+                                if cf_data.get("order_status") in ["PAID", "SUCCESS"]:
+                                    is_paid = True
+                                    resolved_amount = cf_data.get("order_amount") or resolved_amount
+
+                        if is_paid:
+                            print(f"[SMART_AUTO_RECONCILE_PY] Paid order {oid} recovered! Fulfilling...")
+                            await fulfill_order(oid, order.get("user_id"), order.get("email"), order.get("phone"), resolved_amount, order.get("plan_id"))
+                            recent_pending_orders.pop(oid, None)
+
+                        await asyncio.sleep(0.3)
+                    except Exception as chk_err:
+                        pass
+        except Exception as bg_err:
+            print(f"[SMART_AUTO_RECONCILE_PY_ERR] {bg_err}")
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(run_background_payment_reconciliation())
 
 # --- SECURITY & PROFILE HELPERS ---
 
@@ -1679,6 +1790,17 @@ async def create_order(payload: dict = Body(...), request: Request = None):
         else:
             print("[TRACEXDATA] Supabase database offline. Proceeding without payment claim logging.")
 
+        # Always record in-memory pending ring buffer
+        recent_pending_orders[order_id] = {
+            "order_id": order_id,
+            "user_id": user_id,
+            "email": user_email,
+            "phone": customer_phone,
+            "amount": float(amount),
+            "plan_id": plan_id,
+            "created_at": time.time()
+        }
+
         return data
     except Exception as e:
         return {"error": f"Gateway Exception: {str(e)}"}
@@ -1686,6 +1808,16 @@ async def create_order(payload: dict = Body(...), request: Request = None):
 @app.get("/api/cashfree/status/{order_id}")
 async def get_status(order_id: str):
     if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
+        render_backend_url = "https://tracexdata-api.onrender.com"
+        try:
+            resp = requests.get(f"{render_backend_url}/api/cashfree/status/{order_id}", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("order_status") in ["PAID", "SUCCESS"]:
+                    await fulfill_order(order_id, data.get("customer_details", {}).get("customer_id") or "guest", explicit_amount=data.get("order_amount"))
+                return data
+        except Exception:
+            pass
         return {"error": "Credentials missing"}
 
     try:
@@ -1697,8 +1829,8 @@ async def get_status(order_id: str):
         resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{order_id}", headers=headers)
         data = resp.json()
 
-        if resp.status_code == 200 and data.get("order_status") == "PAID":
-            await fulfill_order(order_id, data['customer_details']['customer_id'])
+        if resp.status_code == 200 and data.get("order_status") in ["PAID", "SUCCESS"]:
+            await fulfill_order(order_id, data['customer_details']['customer_id'], explicit_amount=data.get("order_amount"))
         
         db = get_supabase()
         if db:
@@ -1713,55 +1845,69 @@ async def get_status(order_id: str):
 @app.post("/api/cashfree/reconcile-user")
 async def reconcile_user(request: Request):
     db = get_supabase()
-    if not db:
-        raise HTTPException(status_code=500, detail="Database offline")
-        
     user = get_user_from_token(request)
     if not user:
         raise HTTPException(status_code=401, detail="Session has expired or is invalid")
         
     user_id_val = get_user_id(user)
+    user_email_val = getattr(user, "email", None)
     
-    try:
-        pending_claims = db.table("payment_claims").select("*").eq("user_id", user_id_val).eq("status", "pending").execute()
-    except Exception as e:
-        print(f"[RECONCILE_USER_CLAIMS_ERR] {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-        
-    if not pending_claims.data:
+    pending_list = []
+    if db:
+        try:
+            pending_claims = db.table("payment_claims").select("*").eq("user_id", user_id_val).in_("status", ["pending", "processing"]).execute()
+            if pending_claims.data:
+                pending_list.extend(pending_claims.data)
+        except Exception as e:
+            print(f"[RECONCILE_USER_CLAIMS_ERR] {e}")
+
+    for oid, item in recent_pending_orders.items():
+        if (item.get("user_id") == user_id_val or (user_email_val and item.get("email") == user_email_val)) and not any(p.get("payment_id") == oid for p in pending_list):
+            pending_list.append({
+                "payment_id": oid,
+                "user_id": user_id_val,
+                "amount": item.get("amount"),
+                "plan_id": item.get("plan_id")
+            })
+
+    if not pending_list:
         return {"status": "success", "recoveredCount": 0, "message": "No pending claims require reconciliation."}
         
     recovered_count = 0
     recovered_orders = []
     
-    for claim in pending_claims.data:
+    for claim in pending_list:
         order_id = claim.get("payment_id")
         try:
             is_paid = False
+            amount_val = claim.get("amount")
             
             if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
                 render_backend_url = "https://tracexdata-api.onrender.com"
-                resp = requests.get(f"{render_backend_url}/api/cashfree/status/{order_id}")
+                resp = requests.get(f"{render_backend_url}/api/cashfree/status/{order_id}", timeout=5)
                 if resp.status_code == 200:
                     cf_data = resp.json()
-                    if cf_data.get("order_status") == "PAID":
+                    if cf_data.get("order_status") in ["PAID", "SUCCESS"]:
                         is_paid = True
+                        amount_val = cf_data.get("order_amount") or amount_val
             else:
                 headers = {
                     "x-client-id": CASHFREE_APP_ID,
                     "x-client-secret": CASHFREE_SECRET_KEY,
                     "x-api-version": "2023-08-01"
                 }
-                resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{order_id}", headers=headers)
+                resp = requests.get(f"{CASHFREE_BASE_URL}/orders/{order_id}", headers=headers, timeout=5)
                 if resp.status_code == 200:
                     cf_data = resp.json()
-                    if cf_data.get("order_status") == "PAID":
+                    if cf_data.get("order_status") in ["PAID", "SUCCESS"]:
                         is_paid = True
+                        amount_val = cf_data.get("order_amount") or amount_val
                         
             if is_paid:
-                await fulfill_order(order_id, user_id_val)
+                await fulfill_order(order_id, user_id_val, explicit_amount=amount_val, explicit_plan_id=claim.get("plan_id"))
                 recovered_count += 1
                 recovered_orders.append(order_id)
+                recent_pending_orders.pop(order_id, None)
         except Exception as check_err:
             print(f"[RECONCILE_SYS_ERR] Order status fetch error on {order_id}: {check_err}")
             
@@ -1769,7 +1915,7 @@ async def reconcile_user(request: Request):
         "status": "success",
         "recoveredCount": recovered_count,
         "recoveredOrders": recovered_orders,
-        "message": f"Checked pending ledger matching profile. Automatically claimed and posted {recovered_count} paid order(s)." if recovered_count > 0 else "Reconciliation sweep done. No newly paid transactions found."
+        "message": f"Checked pending transactions. Automatically claimed and posted {recovered_count} paid order(s)." if recovered_count > 0 else "Reconciliation sweep done. No newly paid transactions found."
     }
 
 @app.post("/api/cashfree/claim-manual")
