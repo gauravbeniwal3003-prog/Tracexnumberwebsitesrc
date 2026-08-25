@@ -8557,9 +8557,12 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         email: mUser.email || `${phone}@tracexdata.com`,
         full_name: mUser.full_name || `User ${phone.slice(-4)}`,
         phone: phone,
-        credits: mUser.credits !== undefined ? mUser.credits : 10.00,
-        wallet_balance: mUser.credits !== undefined ? mUser.credits : 10.00,
-        created_at: mUser.created_at || new Date().toISOString()
+        credits: mUser.credits !== undefined ? mUser.credits : (mUser.wallet_balance !== undefined ? mUser.wallet_balance : 10.00),
+        wallet_balance: mUser.wallet_balance !== undefined ? mUser.wallet_balance : (mUser.credits !== undefined ? mUser.credits : 10.00),
+        unlimited_expiry: mUser.unlimited_expiry || null,
+        user_discount_percent: Number(mUser.user_discount_percent || 0),
+        created_at: mUser.created_at || new Date().toISOString(),
+        updated_at: mUser.updated_at || mUser.created_at || new Date().toISOString()
       }, "app_users");
     }
 
@@ -8770,7 +8773,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
     const cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
     const cleanEmail = email ? String(email).trim().toLowerCase() : (cleanPhone ? `${cleanPhone}@tracexdata.com` : "");
     const expiry = unlimited_expiry ? new Date(unlimited_expiry).toISOString() : null;
-    const targetBalance = Number(wallet_balance !== undefined ? wallet_balance : (credits !== undefined ? credits : 0));
+    const targetBalance = Number(wallet_balance !== undefined && wallet_balance !== null ? wallet_balance : (credits !== undefined && credits !== null ? credits : 0));
     const nameToUse = full_name?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
     const nowIso = new Date().toISOString();
 
@@ -8826,7 +8829,7 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       console.warn("Profiles table update warning:", profCatch);
     }
 
-    // 2. Sync app_users table (by id, and also sync by phone)
+    // 2. Sync app_users table (by id, and also sync by phone & email)
     try {
       const appUserObj: any = {
         id: id,
@@ -8842,13 +8845,13 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
 
       const { error: appErr } = await db.from("app_users").upsert(appUserObj, { onConflict: 'id' });
       if (appErr && cleanPhone) {
-        // Try direct update by phone
         try {
           await db.from("app_users").update({
             full_name: nameToUse,
             credits: targetBalance,
             wallet_balance: targetBalance,
             unlimited_expiry: expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
             updated_at: nowIso
           }).eq("phone", cleanPhone);
         } catch (e) {}
@@ -8860,17 +8863,31 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
             credits: targetBalance,
             wallet_balance: targetBalance,
             unlimited_expiry: expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
             updated_at: nowIso
           }).eq("phone", cleanPhone);
+        } catch (e) {}
+      }
+      if (cleanEmail) {
+        try {
+          await db.from("app_users").update({
+            full_name: nameToUse,
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            unlimited_expiry: expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
+            updated_at: nowIso
+          }).eq("email", cleanEmail);
         } catch (e) {}
       }
     } catch (appCatch) {
-      // Safe fallback with core columns if app_users schema is minimal
       if (cleanPhone) {
         try {
           await db.from("app_users").update({
             full_name: nameToUse,
-            credits: targetBalance
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            updated_at: nowIso
           }).eq("phone", cleanPhone);
         } catch (e) {}
       }
@@ -8891,7 +8908,21 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       // ignore
     }
 
-    // 4. Sync mobileUsersStore
+    // 4. Record a wallet transaction log entry for credit addition
+    try {
+      await db.from("wallet_transactions").insert([{
+        user_id: id,
+        user_email: cleanEmail || "user@tracexdata.online",
+        amount: targetBalance,
+        type: "ADMIN_ADJUSTMENT",
+        description: `Admin manual balance adjustment to ₹${targetBalance.toFixed(2)}`,
+        created_at: nowIso
+      }]);
+    } catch (txLogErr) {
+      // ignore if logging table unavailable
+    }
+
+    // 5. Sync mobileUsersStore immediately in-memory and persistent file
     if (cleanPhone && cleanPhone.length === 10) {
       const existing = mobileUsersStore.get(cleanPhone) || {};
       mobileUsersStore.set(cleanPhone, {
@@ -8901,21 +8932,44 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
         email: cleanEmail,
         full_name: nameToUse,
         credits: targetBalance,
+        wallet_balance: targetBalance,
+        unlimited_expiry: expiry,
+        user_discount_percent: Number(user_discount_percent || 0),
         updated_at: nowIso
       });
       saveMobileUsersStore(mobileUsersStore);
     } else {
+      let foundInStore = false;
       for (const [pKey, mUser] of mobileUsersStore.entries()) {
         if (mUser.id === id || (cleanEmail && mUser.email === cleanEmail)) {
           mobileUsersStore.set(pKey, {
             ...mUser,
             credits: targetBalance,
+            wallet_balance: targetBalance,
             full_name: nameToUse || mUser.full_name,
+            unlimited_expiry: expiry || mUser.unlimited_expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
             updated_at: nowIso
           });
           saveMobileUsersStore(mobileUsersStore);
+          foundInStore = true;
           break;
         }
+      }
+      if (!foundInStore && cleanPhone) {
+        mobileUsersStore.set(cleanPhone, {
+          id: id,
+          phone: cleanPhone,
+          email: cleanEmail,
+          full_name: nameToUse,
+          credits: targetBalance,
+          wallet_balance: targetBalance,
+          unlimited_expiry: expiry,
+          user_discount_percent: Number(user_discount_percent || 0),
+          created_at: nowIso,
+          updated_at: nowIso
+        });
+        saveMobileUsersStore(mobileUsersStore);
       }
     }
 
