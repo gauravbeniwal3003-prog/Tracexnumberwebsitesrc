@@ -622,7 +622,11 @@ export default function AdminDashboard() {
         return;
       }
 
-      const targetBal = Math.max(Number(newUserProfileData.wallet_balance || 0), Number(newUserProfileData.credits || 0));
+      const targetBal = Number(
+        newUserProfileData.wallet_balance !== undefined && newUserProfileData.wallet_balance !== null
+          ? newUserProfileData.wallet_balance
+          : (newUserProfileData.credits !== undefined && newUserProfileData.credits !== null ? newUserProfileData.credits : 10)
+      );
 
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles`, {
         method: 'POST',
@@ -668,7 +672,11 @@ export default function AdminDashboard() {
     if (!selectedUser) return;
     
     const expiry = selectedUser.unlimited_expiry ? new Date(selectedUser.unlimited_expiry).toISOString() : null;
-    const targetBal = Math.max(Number(selectedUser.wallet_balance || 0), Number(selectedUser.credits || 0));
+    const targetBal = Number(
+      selectedUser.wallet_balance !== undefined && selectedUser.wallet_balance !== null
+        ? selectedUser.wallet_balance
+        : (selectedUser.credits !== undefined && selectedUser.credits !== null ? selectedUser.credits : 0)
+    );
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -718,7 +726,11 @@ export default function AdminDashboard() {
         return;
       }
 
-      const curBal = Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0));
+      const curBal = Number(
+        targetUser.wallet_balance !== undefined && targetUser.wallet_balance !== null
+          ? targetUser.wallet_balance
+          : (targetUser.credits !== undefined && targetUser.credits !== null ? targetUser.credits : 0)
+      );
       const targetBal = curBal + amountToAdd;
 
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${targetUser.id}`, {
@@ -763,6 +775,12 @@ export default function AdminDashboard() {
         : new Date();
       baseDate.setDate(baseDate.getDate() + daysToAdd);
 
+      const currentBal = Number(
+        targetUser.wallet_balance !== undefined && targetUser.wallet_balance !== null
+          ? targetUser.wallet_balance
+          : (targetUser.credits !== undefined && targetUser.credits !== null ? targetUser.credits : 0)
+      );
+
       const response = await fetch(`${getApiBaseUrl()}/api/admin/profiles/${targetUser.id}`, {
         method: 'PUT',
         headers: {
@@ -773,8 +791,8 @@ export default function AdminDashboard() {
           email: targetUser.email,
           phone: targetUser.phone,
           full_name: targetUser.full_name,
-          credits: Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0)),
-          wallet_balance: Math.max(Number(targetUser.wallet_balance || 0), Number(targetUser.credits || 0)),
+          credits: currentBal,
+          wallet_balance: currentBal,
           user_discount_percent: targetUser.user_discount_percent,
           unlimited_expiry: baseDate.toISOString()
         })
@@ -1528,7 +1546,7 @@ export default function AdminDashboard() {
                           filteredProfiles.map(p => {
                             const hasUnlimited = p.unlimited_expiry && new Date(p.unlimited_expiry) > new Date();
                             const isUserAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === (p.email || '').toLowerCase());
-                            const userBal = Math.max(Number(p.wallet_balance || 0), Number(p.credits || 0));
+                            const userBal = Number(p.wallet_balance !== undefined && p.wallet_balance !== null ? p.wallet_balance : (p.credits !== undefined && p.credits !== null ? p.credits : 0));
                             
                             // Detect mobile registered details
                             const isMobile = isMobileAccount(p);
@@ -2361,9 +2379,9 @@ export default function AdminDashboard() {
                     <label className="block text-emerald-600 font-bold uppercase mb-1">Wallet Balance (₹ INR)</label>
                     <input 
                       type="number" 
-                      value={selectedUser.wallet_balance !== undefined && selectedUser.wallet_balance !== null ? selectedUser.wallet_balance : Math.max(Number(selectedUser.credits || 0), Number(selectedUser.wallet_balance || 0))}
+                      value={selectedUser.wallet_balance !== undefined && selectedUser.wallet_balance !== null ? selectedUser.wallet_balance : (selectedUser.credits !== undefined && selectedUser.credits !== null ? selectedUser.credits : 0)}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
+                        const val = e.target.value === '' ? 0 : Number(e.target.value);
                         setSelectedUser({...selectedUser, wallet_balance: val, credits: val});
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 font-mono font-bold"
@@ -2374,7 +2392,7 @@ export default function AdminDashboard() {
                           key={amt}
                           type="button"
                           onClick={() => {
-                            const cur = Math.max(Number(selectedUser.wallet_balance || 0), Number(selectedUser.credits || 0));
+                            const cur = Number(selectedUser.wallet_balance !== undefined && selectedUser.wallet_balance !== null ? selectedUser.wallet_balance : (selectedUser.credits !== undefined && selectedUser.credits !== null ? selectedUser.credits : 0));
                             const nextVal = cur + amt;
                             setSelectedUser({ ...selectedUser, wallet_balance: nextVal, credits: nextVal });
                           }}

@@ -150,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const profileData = await response.json();
         setProfile(profileData);
 
-        // Sync fresh credits to local mobile session
+        // Sync fresh credits to local mobile session & reg user store
         const savedMobileSession = localStorage.getItem('tracex_mobile_session');
         if (savedMobileSession) {
           try {
@@ -158,6 +158,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (parsed.user && profileData.credits !== undefined) {
               parsed.user.credits = profileData.credits;
               localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
+              const cleanPhone = (parsed.user.phone || profileData.phone || '').replace(/\D/g, '').slice(-10);
+              if (cleanPhone) {
+                const regStr = localStorage.getItem(`tracex_reg_user_${cleanPhone}`);
+                if (regStr) {
+                  const parsedReg = JSON.parse(regStr);
+                  if (parsedReg.user) {
+                    parsedReg.user.credits = profileData.credits;
+                    localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify(parsedReg));
+                  }
+                }
+              }
             }
           } catch (e) {}
         }

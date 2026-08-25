@@ -1420,6 +1420,10 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
       const { data: p2 } = await supabaseAdmin.from("profiles").select("*").eq("email", email).maybeSingle();
       if (p2) profileRow = p2;
     }
+    if (!profileRow && cleanPhone) {
+      const { data: p3 } = await supabaseAdmin.from("profiles").select("*").eq("phone", cleanPhone).maybeSingle();
+      if (p3) profileRow = p3;
+    }
   } catch (e) {
     console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
   }
@@ -1428,11 +1432,24 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     return null;
   }
 
-  const pCred = profileRow ? Number(profileRow.credits || 0) : 0;
-  const pWal = profileRow ? Number(profileRow.wallet_balance || 0) : 0;
-  const aCred = appUserRow ? Number(appUserRow.credits || 0) : 0;
-  const maxBal = Math.max(pCred, pWal, aCred);
-  const finalCredits = maxBal > 0 ? maxBal : 10.00;
+  // Determine latest updated record between profiles and app_users
+  const profUpdated = profileRow?.updated_at ? new Date(profileRow.updated_at).getTime() : 0;
+  const appUpdated = appUserRow?.updated_at ? new Date(appUserRow.updated_at).getTime() : 0;
+
+  let finalCredits = 10.00;
+  if (profileRow && appUserRow) {
+    if (profUpdated >= appUpdated && profileRow.credits !== undefined && profileRow.credits !== null) {
+      finalCredits = Number(profileRow.credits);
+    } else if (appUserRow.credits !== undefined && appUserRow.credits !== null) {
+      finalCredits = Number(appUserRow.credits);
+    } else if (profileRow.credits !== undefined && profileRow.credits !== null) {
+      finalCredits = Number(profileRow.credits);
+    }
+  } else if (profileRow && profileRow.credits !== undefined && profileRow.credits !== null) {
+    finalCredits = Number(profileRow.credits);
+  } else if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
+    finalCredits = Number(appUserRow.credits);
+  }
 
   const merged = {
     id: userId || appUserRow?.id || profileRow?.id,
@@ -1442,17 +1459,20 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     credits: finalCredits,
     wallet_balance: finalCredits,
     unlimited_expiry: profileRow?.unlimited_expiry || appUserRow?.unlimited_expiry || null,
+    user_discount_percent: Number(profileRow?.user_discount_percent || appUserRow?.user_discount_percent || 0),
     avatar_url: profileRow?.avatar_url || null,
     is_free_credit_claimed: profileRow?.is_free_credit_claimed ?? appUserRow?.is_free_credit_claimed ?? true,
     last_daily_credit_at: profileRow?.last_daily_credit_at || null,
     last_weekly_credit_at: profileRow?.last_weekly_credit_at || null,
-    created_at: profileRow?.created_at || appUserRow?.created_at || new Date().toISOString()
+    created_at: profileRow?.created_at || appUserRow?.created_at || new Date().toISOString(),
+    updated_at: profileRow?.updated_at || appUserRow?.updated_at || new Date().toISOString()
   };
 
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
     const mob = mobileUsersStore.get(cleanPhone);
     if (mob) {
       mob.credits = finalCredits;
+      mob.wallet_balance = finalCredits;
       mobileUsersStore.set(cleanPhone, mob);
     }
   }
@@ -1668,6 +1688,36 @@ export async function syncMobileUserToDatabases(userObj: {
   const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 10.00;
   const nowIso = userObj.created_at || new Date().toISOString();
 
+  let existingDbCredits: number | null = null;
+  if (supabaseAdmin) {
+    try {
+      const { data: pData } = await supabaseAdmin.from("profiles")
+        .select("credits, wallet_balance")
+        .or(`id.eq.${userUuid},phone.eq.${cleanPhone},email.eq.${userEmail}`)
+        .limit(1)
+        .maybeSingle();
+      if (pData && pData.credits !== null && pData.credits !== undefined) {
+        existingDbCredits = Number(pData.credits);
+      }
+
+      const { data: uData } = await supabaseAdmin.from("app_users")
+        .select("credits, wallet_balance")
+        .or(`id.eq.${userUuid},phone.eq.${cleanPhone},email.eq.${userEmail}`)
+        .limit(1)
+        .maybeSingle();
+      if (uData && uData.credits !== null && uData.credits !== undefined) {
+        const uCred = Number(uData.credits);
+        if (existingDbCredits === null || uCred > existingDbCredits) {
+          existingDbCredits = uCred;
+        }
+      }
+    } catch (e) {
+      console.warn("[SYNC_DB] Error checking existing credits:", e);
+    }
+  }
+
+  const finalCreditsToSave = (existingDbCredits !== null) ? existingDbCredits : creditsToUse;
+
   if (supabaseAdmin) {
     // 1. If auth.admin is available, create or update user in Supabase Auth
     if (plainPassword && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
@@ -1696,7 +1746,8 @@ export async function syncMobileUserToDatabases(userObj: {
         email: userEmail,
         full_name: nameToUse,
         phone: cleanPhone,
-        credits: creditsToUse,
+        credits: finalCreditsToSave,
+        wallet_balance: finalCreditsToSave,
         unlimited_expiry: null,
         is_free_credit_claimed: true,
         last_weekly_credit_at: nowIso,
@@ -1713,7 +1764,8 @@ export async function syncMobileUserToDatabases(userObj: {
           id: userUuid,
           email: userEmail,
           full_name: nameToUse,
-          credits: creditsToUse,
+          credits: finalCreditsToSave,
+          wallet_balance: finalCreditsToSave,
           is_free_credit_claimed: true,
           created_at: nowIso,
           updated_at: new Date().toISOString()
@@ -1732,7 +1784,8 @@ export async function syncMobileUserToDatabases(userObj: {
         password_hash: userObj.password_hash || "",
         full_name: nameToUse,
         email: userEmail,
-        credits: creditsToUse,
+        credits: finalCreditsToSave,
+        wallet_balance: finalCreditsToSave,
         created_at: nowIso,
         updated_at: new Date().toISOString()
       };
@@ -1777,7 +1830,7 @@ export async function syncMobileUserToDatabases(userObj: {
         await supabaseAdmin.from("wallet_transactions").insert([{
           user_id: userUuid,
           user_email: userEmail,
-          amount: creditsToUse,
+          amount: finalCreditsToSave,
           type: "credit",
           description: "Welcome Registration Bonus",
           created_at: nowIso
@@ -1794,7 +1847,8 @@ export async function syncMobileUserToDatabases(userObj: {
     phone: cleanPhone,
     email: userEmail,
     full_name: nameToUse,
-    credits: creditsToUse,
+    credits: finalCreditsToSave,
+    wallet_balance: finalCreditsToSave,
     created_at: nowIso,
     updated_at: new Date().toISOString()
   };
@@ -2008,19 +2062,37 @@ app.post("/api/mobile-auth/login", async (req, res) => {
       created_at: foundUser.created_at || new Date().toISOString()
     }, password);
 
-    // Fetch latest credits from profiles table if possible
+    // Fetch latest credits from profiles table or app_users if possible
     let latestCredits = syncedUser.credits;
     if (supabaseAdmin) {
       try {
         const { data: latestProf } = await supabaseAdmin.from("profiles")
           .select("credits")
-          .eq("id", syncedUser.id)
+          .or(`id.eq.${syncedUser.id},phone.eq.${cleanPhone},email.eq.${syncedUser.email}`)
+          .limit(1)
           .maybeSingle();
-        if (latestProf && latestProf.credits !== undefined) {
+        if (latestProf && latestProf.credits !== null && latestProf.credits !== undefined) {
           latestCredits = Number(latestProf.credits);
+        }
+
+        const { data: latestApp } = await supabaseAdmin.from("app_users")
+          .select("credits")
+          .or(`id.eq.${syncedUser.id},phone.eq.${cleanPhone},email.eq.${syncedUser.email}`)
+          .limit(1)
+          .maybeSingle();
+        if (latestApp && latestApp.credits !== null && latestApp.credits !== undefined) {
+          const appCred = Number(latestApp.credits);
+          if (appCred > latestCredits) {
+            latestCredits = appCred;
+          }
         }
       } catch (e) {}
     }
+
+    syncedUser.credits = latestCredits;
+    syncedUser.wallet_balance = latestCredits;
+    mobileUsersStore.set(cleanPhone, syncedUser);
+    saveMobileUsersStore(mobileUsersStore);
 
     const token = `mob_tok_${cleanPhone}_${crypto.randomBytes(16).toString("hex")}`;
     return res.json({
@@ -7976,19 +8048,20 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         targetUser = idIndex.get(phoneUuid) || null;
       }
 
-      const recCred = Number(
-        record.wallet_balance !== undefined ? record.wallet_balance : 
-        (record.credits !== undefined ? record.credits : 
-        (record.balance !== undefined ? record.balance : 
-        (record.amount !== undefined && record.status === "success" ? record.amount : 0)))
-      );
+      const hasExplicitCredit = record.credits !== undefined && record.credits !== null;
+      const hasExplicitWallet = record.wallet_balance !== undefined && record.wallet_balance !== null;
+      const recCred = hasExplicitCredit 
+        ? Number(record.credits) 
+        : (hasExplicitWallet ? Number(record.wallet_balance) : 10.00);
+
+      const isPrimarySource = sourceName === "profiles" || sourceName === "app_users" || sourceName === "users" || sourceName === "mobile_users" || sourceName === "user_profiles";
 
       if (!targetUser) {
         const finalPhone = rawPhone || (rawEmail.match(/^(\d{10})@/) ? rawEmail.slice(0, 10) : "");
         const finalEmail = rawEmail || (finalPhone ? `${finalPhone}@tracexdata.com` : "");
         const finalName = record.full_name || record.name || record.customer_name || record.user_metadata?.full_name || (finalPhone ? `User ${finalPhone.slice(-4)}` : (finalEmail ? finalEmail.split("@")[0] : "User"));
         const finalId = rawId || (finalPhone ? getUuidForPhone(finalPhone) : (crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`));
-        const finalBal = recCred > 0 ? recCred : 10.00;
+        const finalBal = isPrimarySource ? recCred : 10.00;
 
         targetUser = {
           id: finalId,
@@ -8001,7 +8074,8 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
           user_discount_percent: Number(record.user_discount_percent || 0),
           referral_code: record.referral_code || "",
           sources: [sourceName],
-          created_at: record.created_at || new Date().toISOString()
+          created_at: record.created_at || new Date().toISOString(),
+          updated_at: record.updated_at || record.created_at || new Date().toISOString()
         };
 
         allUsers.push(targetUser);
@@ -8022,10 +8096,19 @@ app.get("/api/admin/profiles", verifyAdminToken, async (req, res) => {
             targetUser.full_name = candidateName;
           }
         }
-        if (recCred > 0) {
-          targetUser.credits = Math.max(Number(targetUser.credits || 0), recCred);
-          targetUser.wallet_balance = Math.max(Number(targetUser.wallet_balance || 0), recCred);
+        
+        // Update credits ONLY from primary user tables, respecting the latest updated_at
+        if (isPrimarySource && (hasExplicitCredit || hasExplicitWallet)) {
+          const recTime = record.updated_at ? new Date(record.updated_at).getTime() : 0;
+          const targetTime = targetUser.updated_at ? new Date(targetUser.updated_at).getTime() : 0;
+          
+          if (recTime >= targetTime || sourceName === "profiles") {
+            targetUser.credits = recCred;
+            targetUser.wallet_balance = recCred;
+            if (record.updated_at) targetUser.updated_at = record.updated_at;
+          }
         }
+
         if (record.unlimited_expiry && !targetUser.unlimited_expiry) {
           targetUser.unlimited_expiry = record.unlimited_expiry;
         }
@@ -9309,7 +9392,9 @@ async function setupVite() {
 
 setupVite().then(() => {
   if (SUPABASE_SERVICE_ROLE_KEY) {
-    require('fs').writeFileSync('key.txt', SUPABASE_SERVICE_ROLE_KEY);
+    try {
+      fs.writeFileSync('key.txt', SUPABASE_SERVICE_ROLE_KEY);
+    } catch (e) {}
   }
 
   app.listen(PORT, "0.0.0.0", () => {

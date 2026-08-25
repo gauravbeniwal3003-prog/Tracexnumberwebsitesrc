@@ -175,6 +175,27 @@ def sync_mobile_user_to_databases(user_payload: dict, plain_password: str = None
     credits_to_use = float(user_payload.get("credits", 10.0))
     now_iso = user_payload.get("created_at") or datetime.utcnow().isoformat() + "Z"
     
+    existing_db_credits = None
+    if db:
+        try:
+            p_res = db.table("profiles").select("credits").eq("phone", clean_phone).execute()
+            if not p_res.data:
+                p_res = db.table("profiles").select("credits").eq("id", user_uuid).execute()
+            if p_res.data and p_res.data[0].get("credits") is not None:
+                existing_db_credits = float(p_res.data[0]["credits"])
+
+            u_res = db.table("app_users").select("credits").eq("phone", clean_phone).execute()
+            if not u_res.data:
+                u_res = db.table("app_users").select("credits").eq("id", user_uuid).execute()
+            if u_res.data and u_res.data[0].get("credits") is not None:
+                u_cred = float(u_res.data[0]["credits"])
+                if existing_db_credits is None or u_cred > existing_db_credits:
+                    existing_db_credits = u_cred
+        except Exception as ex:
+            print(f"[SYNC_MOBILE_ERR] Error checking existing credits: {ex}")
+
+    final_credits = existing_db_credits if existing_db_credits is not None else credits_to_use
+
     if db:
         # 1. Check/create in profiles
         try:
@@ -182,8 +203,8 @@ def sync_mobile_user_to_databases(user_payload: dict, plain_password: str = None
                 "id": user_uuid,
                 "email": user_email,
                 "full_name": name_to_use,
-                "credits": credits_to_use,
-                "wallet_balance": credits_to_use,
+                "credits": final_credits,
+                "wallet_balance": final_credits,
                 "is_free_credit_claimed": True,
                 "updated_at": now_iso
             }
@@ -199,7 +220,8 @@ def sync_mobile_user_to_databases(user_payload: dict, plain_password: str = None
                 "email": user_email,
                 "full_name": name_to_use,
                 "password_hash": user_payload.get("password_hash"),
-                "credits": credits_to_use,
+                "credits": final_credits,
+                "wallet_balance": final_credits,
                 "updated_at": now_iso
             }
             db.table("app_users").upsert(app_user_record, on_conflict="phone").execute()
@@ -706,12 +728,10 @@ async def get_profile(request: Request):
                     should_give_daily = True
                     
             if should_give_daily:
-                updated_credits = profile.get("credits") or 0
+                updated_credits = profile.get("credits") if profile.get("credits") is not None else 0
                 update_payload = {
                     "last_daily_credit_at": now_str
                 }
-                if updated_credits < 10:
-                    update_payload["credits"] = 10
                 
                 try:
                     update_response = db.table("profiles").update(update_payload).eq("id", user_id_val).execute()
@@ -1056,26 +1076,31 @@ async def get_admin_profiles(request: Request):
                 if phone_uuid in id_index:
                     target = id_index[phone_uuid]
 
-            cred_val = float(record.get("credits") if record.get("credits") is not None else (record.get("wallet_balance") if record.get("wallet_balance") is not None else 10.0))
+            has_explicit_cred = record.get("credits") is not None
+            has_explicit_wal = record.get("wallet_balance") is not None
+            cred_val = float(record.get("credits") if has_explicit_cred else (record.get("wallet_balance") if has_explicit_wal else 10.0))
+            is_primary_source = source_name in ["profiles", "app_users"]
 
             if not target:
                 final_phone = raw_phone or (raw_email[:10] if re.match(r"^\d{10}@", raw_email) else "")
                 final_email = raw_email or (f"{final_phone}@tracexdata.com" if final_phone else "")
                 final_name = record.get("full_name") or record.get("name") or (f"User {final_phone[-4:]}" if final_phone else (final_email.split("@")[0] if final_email else "User"))
                 final_id = raw_id or (get_uuid_for_phone(final_phone) if final_phone else str(uuid.uuid4()))
+                final_bal = cred_val if is_primary_source else 10.0
 
                 target = {
                     "id": final_id,
                     "email": final_email,
                     "phone": final_phone,
                     "full_name": final_name,
-                    "credits": cred_val,
-                    "wallet_balance": cred_val,
+                    "credits": final_bal,
+                    "wallet_balance": final_bal,
                     "unlimited_expiry": record.get("unlimited_expiry") or None,
                     "user_discount_percent": float(record.get("user_discount_percent") or 0),
                     "referral_code": record.get("referral_code") or "",
                     "sources": [source_name],
-                    "created_at": record.get("created_at") or datetime.utcnow().isoformat() + "Z"
+                    "created_at": record.get("created_at") or datetime.utcnow().isoformat() + "Z",
+                    "updated_at": record.get("updated_at") or record.get("created_at") or datetime.utcnow().isoformat() + "Z"
                 }
                 all_users.append(target)
             else:
@@ -1090,9 +1115,17 @@ async def get_admin_profiles(request: Request):
                     target["email"] = raw_email
                 if record.get("full_name") and (not target.get("full_name") or target.get("full_name").startswith("User ")):
                     target["full_name"] = record.get("full_name")
-                if cred_val > 0:
-                    target["credits"] = max(float(target.get("credits") or 0), cred_val)
-                    target["wallet_balance"] = max(float(target.get("wallet_balance") or 0), cred_val)
+                
+                # Update credits strictly from primary user tables respecting update timestamp
+                if is_primary_source and (has_explicit_cred or has_explicit_wal):
+                    rec_time = str(record.get("updated_at") or record.get("created_at") or "")
+                    target_time = str(target.get("updated_at") or target.get("created_at") or "")
+                    if rec_time >= target_time or source_name == "profiles":
+                        target["credits"] = cred_val
+                        target["wallet_balance"] = cred_val
+                        if record.get("updated_at"):
+                            target["updated_at"] = record.get("updated_at")
+
                 if record.get("unlimited_expiry") and not target.get("unlimited_expiry"):
                     target["unlimited_expiry"] = record.get("unlimited_expiry")
 
