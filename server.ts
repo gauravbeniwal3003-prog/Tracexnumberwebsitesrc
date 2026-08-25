@@ -112,7 +112,7 @@ const isKeyValid = (key: any): boolean => {
 const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vb3BscXhiZnNrZ3dqbHB1dXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDcxMTAsImV4cCI6MjA5MzU4MzExMH0.oGnMxO4JvALvOGnSSqoeOmpxJMUWQ__Fe3LcZCu_er0";
 export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
 export const getRenderBackendUrl = (): string => {
-  return (process.env.VITE_RENDER_BACKEND_URL || process.env.RENDER_BACKEND_URL || "").trim().replace(/\/$/, "");
+  return (process.env.VITE_RENDER_BACKEND_URL || process.env.RENDER_BACKEND_URL || "https://tracexdata-api.onrender.com").trim().replace(/\/$/, "");
 };
 const INTERNAL_MASTER_KEY = process.env.INTERNAL_MASTER_KEY || "TRACEX_INTERNAL_MASTER_KEY_0987654321_SECURE";
 
@@ -1553,13 +1553,15 @@ app.get("/api/profile", async (req, res) => {
       try {
         await supabaseAdmin.from("profiles").upsert(newProfile, { onConflict: "id" });
         if (user.email) {
-          await supabaseAdmin.from("app_users").upsert({
-            id: user.id,
-            email: user.email,
-            phone: user.phone || "",
-            credits: freeCredits,
-            full_name: newProfile.full_name
-          }, { onConflict: "id" }).catch(() => {});
+          try {
+            await supabaseAdmin.from("app_users").upsert({
+              id: user.id,
+              email: user.email,
+              phone: user.phone || "",
+              credits: freeCredits,
+              full_name: newProfile.full_name
+            }, { onConflict: "id" });
+          } catch (e) {}
         }
       } catch (e) {}
     }
@@ -1787,8 +1789,9 @@ export async function syncMobileUserToDatabases(userObj: {
       const { error: appUserErr } = 
           await supabaseAdmin.from("app_users").upsert(appUserRecord, { onConflict: "phone" });
       if (appUserErr) {
-        
-          await supabaseAdmin.from("app_users").insert([appUserRecord]).catch(() => {});
+        try {
+          await supabaseAdmin.from("app_users").insert([appUserRecord]);
+        } catch (insErr) {}
       }
       console.log(`[SYNC_DB] Successfully synchronized user ${cleanPhone} to app_users table.`);
     } catch (e: any) {
@@ -5237,39 +5240,70 @@ async function fulfillOrder(
       if (profile?.unlimited_expiry) profileUpsertPayload.unlimited_expiry = profile.unlimited_expiry;
       if (profile?.user_discount_percent) profileUpsertPayload.user_discount_percent = profile.user_discount_percent;
 
-      // Upsert profiles by id
-      await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" }).catch(async () => {
-        await db.from("profiles").update(profileUpsertPayload).eq("id", finalUserId).catch(() => {});
-      });
-
-      // Also update profiles by email to guarantee sync
-      if (emailToUse && emailToUse.includes("@")) {
-        await db.from("profiles").update({
-          credits: newTotalBalance,
-          wallet_balance: newTotalBalance,
-          updated_at: new Date().toISOString()
-        }).eq("email", emailToUse).catch(() => {});
+      // 1. Upsert profiles table by id
+      try {
+        const { error: pErr } = await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" });
+        if (pErr) {
+          console.warn("[FULFILL] profiles upsert error, trying update:", pErr.message);
+          await db.from("profiles").update({
+            credits: newTotalBalance,
+            wallet_balance: newTotalBalance,
+            updated_at: new Date().toISOString()
+          }).eq("id", finalUserId);
+        }
+      } catch (pEx) {
+        console.warn("[FULFILL] profiles table operation warning:", pEx);
       }
 
-      // Upsert app_users
-      await db.from("app_users").upsert({
-        id: finalUserId,
-        email: emailToUse,
-        full_name: nameToUse,
-        credits: newTotalBalance,
-        wallet_balance: newTotalBalance,
-        phone: cleanPhoneForStore || (profile?.phone || "")
-      }, { onConflict: "id" }).catch(() => {});
-
+      // 2. Also update profiles by email to guarantee sync across queries
       if (emailToUse && emailToUse.includes("@")) {
-        await db.from("app_users").update({
-          credits: newTotalBalance,
-          wallet_balance: newTotalBalance,
-          updated_at: new Date().toISOString()
-        }).eq("email", emailToUse).catch(() => {});
+        try {
+          await db.from("profiles").update({
+            credits: newTotalBalance,
+            wallet_balance: newTotalBalance,
+            updated_at: new Date().toISOString()
+          }).eq("email", emailToUse);
+        } catch (emEx) {
+          console.warn("[FULFILL] profiles email update warning:", emEx);
+        }
       }
 
-      // Sync mobileUsersStore if applicable
+      // 3. Upsert app_users table
+      try {
+        const { error: aErr } = await db.from("app_users").upsert({
+          id: finalUserId,
+          email: emailToUse,
+          full_name: nameToUse,
+          credits: newTotalBalance,
+          wallet_balance: newTotalBalance,
+          phone: cleanPhoneForStore || (profile?.phone || ""),
+          updated_at: new Date().toISOString()
+        }, { onConflict: "id" });
+
+        if (aErr && cleanPhoneForStore) {
+          await db.from("app_users").update({
+            credits: newTotalBalance,
+            wallet_balance: newTotalBalance,
+            updated_at: new Date().toISOString()
+          }).eq("phone", cleanPhoneForStore);
+        }
+      } catch (aEx) {
+        console.warn("[FULFILL] app_users upsert warning:", aEx);
+      }
+
+      if (emailToUse && emailToUse.includes("@")) {
+        try {
+          await db.from("app_users").update({
+            credits: newTotalBalance,
+            wallet_balance: newTotalBalance,
+            updated_at: new Date().toISOString()
+          }).eq("email", emailToUse);
+        } catch (aEmEx) {
+          console.warn("[FULFILL] app_users email update warning:", aEmEx);
+        }
+      }
+
+      // 4. Sync in-memory mobileUsersStore if applicable
       if (cleanPhoneForStore && cleanPhoneForStore.length === 10) {
         const existingMobile = mobileUsersStore.get(cleanPhoneForStore) || {};
         mobileUsersStore.set(cleanPhoneForStore, {
@@ -5285,15 +5319,20 @@ async function fulfillOrder(
         saveMobileUsersStore(mobileUsersStore);
       }
 
-      // Update payment_claims to success
-      await db.from("payment_claims").update({
-        user_id: finalUserId,
-        amount: baseAmount || orderAmount || creditsToAdd,
-        status: "success",
-        updated_at: new Date().toISOString()
-      }).eq("payment_id", orderId);
+      // 5. Update payment_claims to success with final credits and user
+      try {
+        await db.from("payment_claims").update({
+          user_id: finalUserId,
+          amount: baseAmount || orderAmount || creditsToAdd,
+          credits: creditsToAdd,
+          status: "success",
+          updated_at: new Date().toISOString()
+        }).eq("payment_id", orderId);
+      } catch (clErr) {
+        console.error("[FULFILL] Error updating payment_claims status to success:", clErr);
+      }
 
-      // Record in wallet_transactions
+      // 6. Record in wallet_transactions
       try {
         await db.from("wallet_transactions").insert({
           user_id: finalUserId,
@@ -5305,18 +5344,27 @@ async function fulfillOrder(
           created_at: new Date().toISOString()
         });
       } catch (txErr) {
-        console.error("Failed to insert wallet_transactions log:", txErr);
+        console.warn("[FULFILL] Failed to insert wallet_transactions log:", txErr);
       }
 
-      // Trigger 5% Referral Bonus to referrer
+      // 7. Cleanup pending ring entry
+      recentPendingOrders.delete(orderId);
+
+      // 8. Trigger 5% Referral Bonus to referrer if applicable
       const depositAmt = Number(baseAmount || orderAmount || creditsToAdd || 0);
       if (depositAmt > 0) {
-        await processReferralDepositBonus(finalUserId, depositAmt);
+        try {
+          await processReferralDepositBonus(finalUserId, depositAmt);
+        } catch (refErr) {
+          console.warn("[FULFILL] Referral bonus processing error:", refErr);
+        }
       }
       console.log(`[FULFILL GUARANTEE] Successfully credited ₹${creditsToAdd} (Base: ₹${baseAmount}) to user ${finalUserId} (${emailToUse}) for Order ${orderId}`);
     } catch (innerErr) {
       console.error("[FULFILL] Internal fulfillment error, reverting status to pending:", innerErr);
-      await db.from("payment_claims").update({ status: "pending" }).eq("payment_id", orderId).eq("status", "processing");
+      try {
+        await db.from("payment_claims").update({ status: "pending" }).eq("payment_id", orderId).eq("status", "processing");
+      } catch (revErr) {}
       throw innerErr;
     }
   } catch (err) {
@@ -5433,7 +5481,9 @@ async function runBackgroundPaymentReconciliation() {
             } else if (orderStatus === "EXPIRED" || orderStatus === "CANCELLED" || orderStatus === "TERMINATED") {
               recentPendingOrders.delete(order.orderId);
               if (db) {
-                await db.from("payment_claims").update({ status: orderStatus.toLowerCase() }).eq("payment_id", order.orderId).eq("status", "pending").catch(() => {});
+                try {
+                  await db.from("payment_claims").update({ status: orderStatus.toLowerCase() }).eq("payment_id", order.orderId).eq("status", "pending");
+                } catch (e) {}
               }
             }
           }
@@ -8036,12 +8086,13 @@ app.all(["/api/admin/provider-configs", "/api/provider-configs"], async (req, re
       if (supabaseAdmin) {
         try {
           for (const [key, url] of Object.entries(cleanConfigs)) {
-            
-          await supabaseAdmin.from("api_provider_configs").upsert({
-              service_key: key,
-              provider_url: url,
-              updated_at: new Date().toISOString()
-            }, { onConflict: "service_key" }).catch(() => null);
+            try {
+              await supabaseAdmin.from("api_provider_configs").upsert({
+                service_key: key,
+                provider_url: url,
+                updated_at: new Date().toISOString()
+              }, { onConflict: "service_key" });
+            } catch (singleErr) {}
           }
         } catch (subErr) {
           console.warn("[PROVIDER_CONFIG_SUPABASE_NOTICE]", subErr);
@@ -8645,21 +8696,25 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
     if (profErr) {
       // Fallback without phone column if schema lacks phone
       delete newProfileData.phone;
-      await db.from("profiles").upsert(newProfileData, { onConflict: "id" }).catch(() => {});
+      try {
+        await db.from("profiles").upsert(newProfileData, { onConflict: "id" });
+      } catch (e) {}
     }
 
     // 3. Upsert into app_users table
-    await db.from("app_users").upsert({
-      id: randId,
-      email: cleanEmail,
-      phone: cleanPhone || undefined,
-      full_name: nameToUse,
-      credits: targetBalance,
-      wallet_balance: targetBalance,
-      unlimited_expiry: expiry,
-      user_discount_percent: Number(user_discount_percent || 0),
-      updated_at: nowIso
-    }, { onConflict: "id" }).catch(() => {});
+    try {
+      await db.from("app_users").upsert({
+        id: randId,
+        email: cleanEmail,
+        phone: cleanPhone || undefined,
+        full_name: nameToUse,
+        credits: targetBalance,
+        wallet_balance: targetBalance,
+        unlimited_expiry: expiry,
+        user_discount_percent: Number(user_discount_percent || 0),
+        updated_at: nowIso
+      }, { onConflict: "id" });
+    } catch (e) {}
 
     // 4. Sync to mobileUsersStore if phone provided
     if (cleanPhone && cleanPhone.length === 10) {
@@ -8687,7 +8742,7 @@ app.post("/api/admin/profiles", verifyAdminToken, async (req, res) => {
         request_limit: 100,
         is_active: true,
         created_at: nowIso
-      }]).catch(() => {});
+      }]);
     } catch (e) {
       // ignore
     }
@@ -8739,27 +8794,33 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       const { error: profErr } = await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
       if (profErr) {
         delete updateObj.phone;
-        await db.from("profiles").upsert(updateObj, { onConflict: 'id' }).catch(() => {});
+        try {
+          await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
+        } catch (e) {}
       }
       if (cleanEmail && !cleanEmail.endsWith("@tracexdata.com")) {
-        await db.from("profiles").update({
-          full_name: nameToUse,
-          credits: targetBalance,
-          wallet_balance: targetBalance,
-          unlimited_expiry: expiry,
-          user_discount_percent: Number(user_discount_percent || 0),
-          updated_at: nowIso
-        }).eq("email", cleanEmail).catch(() => {});
+        try {
+          await db.from("profiles").update({
+            full_name: nameToUse,
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            unlimited_expiry: expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
+            updated_at: nowIso
+          }).eq("email", cleanEmail);
+        } catch (e) {}
       }
       if (cleanPhone) {
-        await db.from("profiles").update({
-          full_name: nameToUse,
-          credits: targetBalance,
-          wallet_balance: targetBalance,
-          unlimited_expiry: expiry,
-          user_discount_percent: Number(user_discount_percent || 0),
-          updated_at: nowIso
-        }).eq("phone", cleanPhone).catch(() => {});
+        try {
+          await db.from("profiles").update({
+            full_name: nameToUse,
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            unlimited_expiry: expiry,
+            user_discount_percent: Number(user_discount_percent || 0),
+            updated_at: nowIso
+          }).eq("phone", cleanPhone);
+        } catch (e) {}
       }
     } catch (profCatch) {
       console.warn("Profiles table update warning:", profCatch);
@@ -8782,30 +8843,36 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       const { error: appErr } = await db.from("app_users").upsert(appUserObj, { onConflict: 'id' });
       if (appErr && cleanPhone) {
         // Try direct update by phone
-        await db.from("app_users").update({
-          full_name: nameToUse,
-          credits: targetBalance,
-          wallet_balance: targetBalance,
-          unlimited_expiry: expiry,
-          updated_at: nowIso
-        }).eq("phone", cleanPhone).catch(() => {});
+        try {
+          await db.from("app_users").update({
+            full_name: nameToUse,
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            unlimited_expiry: expiry,
+            updated_at: nowIso
+          }).eq("phone", cleanPhone);
+        } catch (e) {}
       }
       if (cleanPhone) {
-        await db.from("app_users").update({
-          full_name: nameToUse,
-          credits: targetBalance,
-          wallet_balance: targetBalance,
-          unlimited_expiry: expiry,
-          updated_at: nowIso
-        }).eq("phone", cleanPhone).catch(() => {});
+        try {
+          await db.from("app_users").update({
+            full_name: nameToUse,
+            credits: targetBalance,
+            wallet_balance: targetBalance,
+            unlimited_expiry: expiry,
+            updated_at: nowIso
+          }).eq("phone", cleanPhone);
+        } catch (e) {}
       }
     } catch (appCatch) {
       // Safe fallback with core columns if app_users schema is minimal
       if (cleanPhone) {
-        await db.from("app_users").update({
-          full_name: nameToUse,
-          credits: targetBalance
-        }).eq("phone", cleanPhone).catch(() => {});
+        try {
+          await db.from("app_users").update({
+            full_name: nameToUse,
+            credits: targetBalance
+          }).eq("phone", cleanPhone);
+        } catch (e) {}
       }
     }
 
@@ -8884,14 +8951,18 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
     }
     
     // 2. Delete from profiles
-    await db.from("profiles").delete().eq("id", id).catch(() => {});
-    if (targetEmail) await db.from("profiles").delete().eq("email", targetEmail).catch(() => {});
-    if (targetPhone) await db.from("profiles").delete().eq("phone", targetPhone).catch(() => {});
+    try {
+      await db.from("profiles").delete().eq("id", id);
+      if (targetEmail) await db.from("profiles").delete().eq("email", targetEmail);
+      if (targetPhone) await db.from("profiles").delete().eq("phone", targetPhone);
+    } catch (e) {}
 
     // 3. Delete from app_users
-    await db.from("app_users").delete().eq("id", id).catch(() => {});
-    if (targetPhone) await db.from("app_users").delete().eq("phone", targetPhone).catch(() => {});
-    if (targetEmail) await db.from("app_users").delete().eq("email", targetEmail).catch(() => {});
+    try {
+      await db.from("app_users").delete().eq("id", id);
+      if (targetPhone) await db.from("app_users").delete().eq("phone", targetPhone);
+      if (targetEmail) await db.from("app_users").delete().eq("email", targetEmail);
+    } catch (e) {}
 
     // 4. Delete from mobileUsersStore
     for (const [pKey, mUser] of mobileUsersStore.entries()) {
@@ -8903,8 +8974,10 @@ app.delete("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
     }
 
     // 5. Clean up associated API keys & custom pricing
-    await db.from("api_keys").delete().eq("user_id", id).catch(() => {});
-    await db.from("user_custom_pricing").delete().eq("user_id", id).catch(() => {});
+    try {
+      await db.from("api_keys").delete().eq("user_id", id);
+      await db.from("user_custom_pricing").delete().eq("user_id", id);
+    } catch (e) {}
 
     return res.json({ status: "success", message: "User profile deleted successfully across all systems." });
   } catch (err: any) {
