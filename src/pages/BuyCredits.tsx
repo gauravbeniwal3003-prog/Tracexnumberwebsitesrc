@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wallet, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, IndianRupee, Plus, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Wallet, CheckCircle2, Loader2, X, ShieldCheck, AlertCircle, IndianRupee, Plus, ArrowLeft, RefreshCw, Copy, CopyCheck, Clock, ArrowDownLeft, ArrowUpRight, Check, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../services/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
@@ -39,6 +39,34 @@ export default function BuyCredits() {
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimResult, setClaimResult] = useState<{ status: 'idle' | 'success' | 'failed', message: string }>({ status: 'idle', message: '' });
 
+  // Transaction History State
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+
+  const fetchTransactions = async () => {
+    if (!user) return;
+    try {
+      setTxLoading(true);
+      const token = await getAuthToken();
+      if (!token) return;
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/wallet/history`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTransactions(data);
+      }
+    } catch (err) {
+      console.error("Error fetching transactions:", err);
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
   const runAutoReconciliation = async (silent = true) => {
     try {
       if (!silent) setIsAutoReconciling(true);
@@ -61,6 +89,7 @@ export default function BuyCredits() {
           });
           localStorage.removeItem('tracex_last_pending_order');
           await refreshProfile();
+          fetchTransactions();
         } else if (!silent) {
           setPaymentStatus({
             status: 'success',
@@ -78,6 +107,7 @@ export default function BuyCredits() {
   useEffect(() => {
     if (user) {
       runAutoReconciliation(true);
+      fetchTransactions();
     }
 
     // Check if there was an in-flight pending order from this device
@@ -131,6 +161,7 @@ export default function BuyCredits() {
         setClaimOrderId('');
         localStorage.removeItem('tracex_last_pending_order');
         await refreshProfile();
+        fetchTransactions();
       } else {
         setClaimResult({ status: 'failed', message: resJson.error || 'Verification failed.' });
       }
@@ -178,8 +209,10 @@ export default function BuyCredits() {
         localStorage.removeItem('tracex_last_pending_order');
         
         await refreshProfile();
+        fetchTransactions();
         setTimeout(async () => {
           await refreshProfile();
+          fetchTransactions();
         }, 2000);
       } else {
         setPaymentStatus({ status: 'failed', message: `Payment ${data.order_status}. Please try again.` });
@@ -508,7 +541,7 @@ export default function BuyCredits() {
         </div>
 
         {/* Self-Healing Manual Order Reconciliation Form */}
-        <section className="mt-12 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm">
+        <section id="claim-input-form" className="mt-12 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="max-w-md">
               <h3 className="text-base font-black text-slate-900 mb-1 flex items-center gap-2">
@@ -565,6 +598,239 @@ export default function BuyCredits() {
                 )}
               </form>
             </div>
+          </div>
+        </section>
+
+        {/* Dynamic Transaction History Dashboard */}
+        <section className="mt-8 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900 mb-1 flex items-center gap-2">
+                  <Clock size={18} className="text-sky-600" />
+                  Transaction & Payment History
+                </h3>
+                <p className="text-slate-600 text-xs font-medium">
+                  Showing all successful, failed, and pending wallet transactions from the last 3 days.
+                </p>
+              </div>
+              <button
+                onClick={fetchTransactions}
+                disabled={txLoading}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={txLoading ? "animate-spin text-slate-500" : "text-slate-500"} />
+                <span>Refresh History</span>
+              </button>
+            </div>
+
+            {txLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 size={32} className="animate-spin text-sky-600" />
+                <span className="text-slate-600 text-xs font-bold">Retrieving secure transaction history...</span>
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="text-center py-12 px-4 border-2 border-dashed border-slate-100 rounded-2xl">
+                <p className="text-slate-600 font-bold text-sm mb-1">No transaction history found</p>
+                <p className="text-slate-500 text-xs">
+                  Only transactions and payment attempts from the last 3 days are retained.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Desktop view (Table) - hidden on mobile */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider">
+                        <th className="py-3 px-4">Date / Time</th>
+                        <th className="py-3 px-4">Cashfree Order ID</th>
+                        <th className="py-3 px-4">Type & Details</th>
+                        <th className="py-3 px-4">Amount</th>
+                        <th className="py-3 px-4">Account Balance</th>
+                        <th className="py-3 px-4">Status & Credit</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                      {transactions.map((tx) => {
+                        const isCredit = tx.type === "Credit";
+                        const isSuccess = tx.status === "SUCCESS";
+                        const isPending = tx.status === "PENDING" || tx.status === "PROCESSING";
+                        const isFailed = !isSuccess && !isPending;
+                        return (
+                          <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3.5 px-4 whitespace-nowrap text-slate-500 text-[11px] font-mono">
+                              {tx.date ? tx.date.replace('T', ' ').substring(0, 19) : ""}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-800">
+                                <span className="max-w-[120px] truncate" title={tx.order_id}>{tx.order_id}</span>
+                                {tx.order_id && tx.order_id !== "N/A" && (
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(tx.order_id);
+                                      setCopiedOrderId(tx.order_id);
+                                      setTimeout(() => setCopiedOrderId(null), 1500);
+                                    }}
+                                    className="p-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+                                  >
+                                    {copiedOrderId === tx.order_id ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="font-bold text-slate-950">{tx.service}</div>
+                              <div className="text-[10px] text-slate-600 flex items-center gap-1">
+                                {isCredit ? (
+                                  <>
+                                    <ArrowDownLeft size={10} className="text-emerald-500" />
+                                    <span>Recharge</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ArrowUpRight size={10} className="text-red-500" />
+                                    <span>Query Charge</span>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold font-mono">
+                              <span className={isCredit ? "text-emerald-600" : "text-slate-900"}>
+                                {isCredit ? "+" : "-"}₹{tx.amount}.00
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
+                              {tx.balanceAfter !== null && tx.balanceAfter !== undefined ? `₹${tx.balanceAfter}.00` : "—"}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex flex-col gap-0.5">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold w-fit uppercase ${
+                                  isSuccess ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  isPending ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
+                                  'bg-red-50 text-red-700 border border-red-200'
+                                }`}>
+                                  {isSuccess && <Check size={10} />}
+                                  {isPending && <Clock size={10} className="animate-spin" />}
+                                  {isFailed && <AlertTriangle size={10} />}
+                                  {tx.status}
+                                </span>
+                                <span className="text-[9px] text-slate-600 leading-tight font-bold">
+                                  {tx.credited ? "SUCCESSFULLY CREDITED" : "NOT CREDITED TO WALLET"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              {!tx.credited && tx.order_id && tx.order_id !== "N/A" && (
+                                <button
+                                  onClick={() => {
+                                    setClaimOrderId(tx.order_id);
+                                    const element = document.getElementById("claim-input-form");
+                                    if (element) {
+                                      element.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-[10px] font-black bg-sky-50 text-sky-700 hover:bg-sky-100 rounded border border-sky-200 transition-all cursor-pointer"
+                                >
+                                  Verify & Claim
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile list view - hidden on desktop */}
+                <div className="md:hidden space-y-3">
+                  {transactions.map((tx) => {
+                    const isCredit = tx.type === "Credit";
+                    const isSuccess = tx.status === "SUCCESS";
+                    const isPending = tx.status === "PENDING" || tx.status === "PROCESSING";
+                    const isFailed = !isSuccess && !isPending;
+                    return (
+                      <div key={tx.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/60 flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-slate-900 text-sm leading-tight">{tx.service}</div>
+                            <span className="text-[10px] text-slate-600 font-mono block mt-0.5">
+                              {tx.date ? tx.date.replace('T', ' ').substring(0, 19) : ""}
+                            </span>
+                          </div>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            isSuccess ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            isPending ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                            'bg-red-50 text-red-700 border border-red-200'
+                          }`}>
+                            {tx.status}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-y-2.5 gap-x-2 py-2.5 border-t border-b border-slate-200/50 text-xs">
+                          <div>
+                            <span className="text-slate-600 font-semibold block text-[10px] uppercase">Order ID</span>
+                            <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-900 mt-0.5">
+                              <span className="max-w-[100px] truncate">{tx.order_id}</span>
+                              {tx.order_id && tx.order_id !== "N/A" && (
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(tx.order_id);
+                                    setCopiedOrderId(tx.order_id);
+                                    setTimeout(() => setCopiedOrderId(null), 1500);
+                                  }}
+                                  className="p-1 rounded bg-slate-200/50 text-slate-500 hover:text-slate-700 cursor-pointer"
+                                >
+                                  {copiedOrderId === tx.order_id ? <Check size={8} className="text-emerald-600" /> : <Copy size={8} />}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-600 font-semibold block text-[10px] uppercase">Amount</span>
+                            <span className={`font-mono font-bold mt-0.5 block ${isCredit ? 'text-emerald-600' : 'text-slate-950'}`}>
+                              {isCredit ? "+" : "-"}₹{tx.amount}.00
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-600 font-semibold block text-[10px] uppercase">Wallet Balance</span>
+                            <span className="font-mono font-bold text-slate-900 mt-0.5 block">
+                              {tx.balanceAfter !== null && tx.balanceAfter !== undefined ? `₹${tx.balanceAfter}.00` : "—"}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-600 font-semibold block text-[10px] uppercase">Fulfillment</span>
+                            <span className={`font-bold block mt-0.5 text-[10px] ${tx.credited ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {tx.credited ? "CREDITED" : "NOT CREDITED"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {!tx.credited && tx.order_id && tx.order_id !== "N/A" && (
+                          <button
+                            onClick={() => {
+                              setClaimOrderId(tx.order_id);
+                              const element = document.getElementById("claim-input-form");
+                              if (element) {
+                                element.scrollIntoView({ behavior: 'smooth' });
+                              }
+                            }}
+                            className="w-full py-2 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl text-xs font-black text-sky-700 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <span>Verify & Claim Order</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

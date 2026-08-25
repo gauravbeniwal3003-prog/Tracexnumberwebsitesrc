@@ -296,15 +296,55 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
             print(f"[SaaS] Manual Guest Payment fulfilled successfully for {order_id}")
             return
 
-        # Check if user_id is a valid UUID
-        if not is_valid_uuid(user_id):
-            if claim.get('user_id') and is_valid_uuid(claim['user_id']):
-                user_id = claim['user_id']
-                print(f"[FULFILL] Resolved non-UUID to valid user_id from claim: {user_id}")
+        # Flexible user ID resolution (standardize to UUID)
+        final_user_id = user_id if is_valid_uuid(user_id) else None
+        if not final_user_id and claim.get('user_id') and is_valid_uuid(claim['user_id']):
+            final_user_id = claim['user_id']
+
+        # Email fallback lookup
+        email_candidate = user_email or claim.get('user_email')
+        if not final_user_id and email_candidate and "@" in email_candidate:
+            clean_email = email_candidate.strip().lower()
+            try:
+                p_res = db.table("profiles").select("id").eq("email", clean_email).execute()
+                if p_res.data:
+                    final_user_id = p_res.data[0]['id']
+                else:
+                    u_res = db.table("app_users").select("id").eq("email", clean_email).execute()
+                    if u_res.data:
+                        final_user_id = u_res.data[0]['id']
+            except Exception as e:
+                print(f"[FULFILL] Email resolution error: {e}")
+
+        # Phone fallback lookup
+        phone_candidate = optional_phone or (email_candidate if (email_candidate and "@" not in email_candidate) else None)
+        if phone_candidate:
+            clean_phone = re.sub(r"\D", "", phone_candidate)[-10:]
+            if len(clean_phone) == 10:
+                if not final_user_id:
+                    try:
+                        u_res = db.table("app_users").select("id").eq("phone", clean_phone).execute()
+                        if u_res.data:
+                            final_user_id = u_res.data[0]['id']
+                    except Exception:
+                        pass
+                if not final_user_id:
+                    try:
+                        p_res = db.table("profiles").select("id").eq("email", f"{clean_phone}@tracexdata.com").execute()
+                        if p_res.data:
+                            final_user_id = p_res.data[0]['id']
+                    except Exception:
+                        pass
+                if not final_user_id:
+                    final_user_id = get_uuid_for_phone(clean_phone)
+
+        # Ultimate fallback: generate deterministic UUID
+        if not final_user_id:
+            if email_candidate and "@" in email_candidate:
+                clean_email_prefix = re.sub(r"[^a-zA-Z0-9]", "", email_candidate.split("@")[0])[:10]
+                final_user_id = get_uuid_for_phone(clean_email_prefix or "user")
             else:
-                print(f"[FULFILL] Non-UUID user_id '{user_id}' skipped database state updates, marking order {order_id} fulfilled.")
-                db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
-                return
+                final_user_id = str(uuid.uuid4())
 
         # Check if it's a Protection Plan
         if plan_id.startswith('protect_'):
@@ -318,16 +358,16 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                         if not exist.data:
                             db.table("protected_numbers").insert({
                                 "phone_number": protect_target,
-                                "owner_id": user_id
+                                "owner_id": final_user_id
                             }).execute()
-                        print(f"[FULFILL] Protected mobile number '{protect_target}' for user {user_id}")
+                        print(f"[FULFILL] Protected mobile number '{protect_target}' for user {final_user_id}")
                     elif protect_type == 'telegram':
                         clean_un = protect_target.replace('@', '')
                         exist1 = db.table("protected_telegrams").select("*").eq("telegram_id", clean_un).execute()
                         if not exist1.data:
                             db.table("protected_telegrams").insert({
                                 "telegram_id": clean_un,
-                                "owner_id": user_id
+                                "owner_id": final_user_id
                             }).execute()
                         
                         at_un = f"@{clean_un}"
@@ -335,22 +375,22 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                         if not exist2.data:
                             db.table("protected_telegrams").insert({
                                 "telegram_id": at_un,
-                                "owner_id": user_id
+                                "owner_id": final_user_id
                             }).execute()
-                        print(f"[FULFILL] Protected telegram handles '{clean_un}' & '{at_un}' for user {user_id}")
+                        print(f"[FULFILL] Protected telegram handles '{clean_un}' & '{at_un}' for user {final_user_id}")
                     elif protect_type == 'vehicle':
                         clean_veh = protect_target.upper().strip()
                         exist = db.table("protected_vehicles").select("*").eq("vehicle_number", clean_veh).execute()
                         if not exist.data:
                             db.table("protected_vehicles").insert({
                                 "vehicle_number": clean_veh,
-                                "owner_id": user_id
+                                "owner_id": final_user_id
                             }).execute()
-                        print(f"[FULFILL] Protected vehicle number '{clean_veh}' for user {user_id}")
+                        print(f"[FULFILL] Protected vehicle number '{clean_veh}' for user {final_user_id}")
                 except Exception as db_err:
                     print(f"[FULFILL] Error inserting protected item: {db_err}")
             
-            db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
+            db.table("payment_claims").update({"status": "success", "user_id": final_user_id}).eq("payment_id", order_id).execute()
             return
 
         # Check if it's an API Plan
@@ -413,7 +453,7 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
             
             db.table("api_keys").insert({
                 "api_key": api_key,
-                "user_id": user_id,
+                "user_id": final_user_id,
                 "user_email": user_email,
                 "plan_name": plan_name,
                 "duration_days": days,
@@ -422,70 +462,58 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                 "order_id": order_id
             }).execute()
 
-            db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
-            print(f"[FULFILL] Created API Key for {user_id} of plan {plan_name}")
+            db.table("payment_claims").update({"status": "success", "user_id": final_user_id}).eq("payment_id", order_id).execute()
+            print(f"[FULFILL] Created API Key for {final_user_id} of plan {plan_name}")
             return
 
         # Regular Credit/Unlimited/Wallet Plans
         profile = None
-        if user_id:
-            profile_query = db.table("profiles").select("*").eq("id", user_id).execute()
+        profile_query = db.table("profiles").select("*").eq("id", final_user_id).execute()
+        if profile_query.data:
+            profile = profile_query.data[0]
+        
+        if not profile and email_candidate and "@" in email_candidate:
+            profile_query = db.table("profiles").select("*").eq("email", email_candidate.strip().lower()).execute()
             if profile_query.data:
                 profile = profile_query.data[0]
-        
-        if not profile and user_email and "@" in user_email:
-            profile_query = db.table("profiles").select("*").eq("email", user_email.strip().lower()).execute()
-            if profile_query.data:
-                profile = profile_query.data[0]
-                user_id = profile.get("id")
+                final_user_id = profile.get("id")
 
-        if not profile:
-            print(f"[FULFILL] Profile not found for {user_id} / {user_email}")
-            return
-        
-        update_data = {}
+        # Also lookup existing balance in app_users to maximize sync safety
+        app_user_credits = 0.0
+        try:
+            au_query = db.table("app_users").select("credits, wallet_balance").eq("id", final_user_id).execute()
+            if au_query.data:
+                app_user_credits = max(float(au_query.data[0].get("credits") or 0), float(au_query.data[0].get("wallet_balance") or 0))
+        except Exception:
+            pass
 
-        # Use more flexible ID checking with dynamic numeric credits support
-        credits_to_add = 0
+        base_amt = 0
         if explicit_amount and float(explicit_amount) > 0:
             base_amt = int(float(explicit_amount))
+        else:
+            m = re.match(r'^(?:c|credit_|wallet_|recharge_?)(\d+)$', str(plan_id))
+            if m:
+                base_amt = int(m.group(1))
+
+        credits_to_add = 0
+        if base_amt > 0:
             bonus_pct = 0
             if base_amt >= 100:
                 bonus_pct = 100 if base_amt >= 1000 else (base_amt // 100) * 10
             bonus_amt = round((base_amt * bonus_pct) / 100)
             credits_to_add = base_amt + bonus_amt
-        elif plan_id in ['c10', 'credit_10']: credits_to_add = 15
-        elif plan_id in ['c20', 'credit_20']: credits_to_add = 30
-        elif plan_id in ['c40', 'credit_40']: credits_to_add = 60
-        elif plan_id in ['c50', 'credit_50']: credits_to_add = 75
-        elif plan_id in ['c100', 'credit_100']: credits_to_add = 150
-        elif plan_id in ['c150', 'credit_150']: credits_to_add = 225
-        elif plan_id in ['c250', 'credit_250']: credits_to_add = 412
-        elif plan_id in ['c500', 'credit_500']: credits_to_add = 900
-        elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1950
         else:
-            # Dynamic fallback: if plan_id is of form cXX, credit_XX, wallet_XX
-            import re
-            m = re.match(r'^(?:c|credit_|wallet_|recharge_?)(\d+)$', str(plan_id))
-            if m:
-                try:
-                    base_amt = int(m.group(1))
-                    bonus_pct = 0
-                    if base_amt >= 100:
-                        bonus_pct = 100 if base_amt >= 1000 else (base_amt // 100) * 10
-                    bonus_amt = round((base_amt * bonus_pct) / 100)
-                    credits_to_add = base_amt + bonus_amt
-                except ValueError:
-                    pass
+            credits_to_add = 1 # Safe minimum fallback
 
+        update_data = {}
         if credits_to_add > 0:
-            existing_bal = max(float(profile.get('wallet_balance') or 0), float(profile.get('credits') or 0))
+            profile_bal = max(float(profile.get('wallet_balance') or 0), float(profile.get('credits') or 0)) if profile else 0.0
+            existing_bal = max(profile_bal, app_user_credits)
             new_bal = existing_bal + credits_to_add
             update_data['credits'] = new_bal
             update_data['wallet_balance'] = new_bal
             print(f"[FULFILL] Determined {credits_to_add} credits to add from plan_id '{plan_id}'. New Balance: {new_bal}")
         elif plan_id.startswith('u') or plan_id.startswith('unlimited'):
-            # Hours mapping
             hours_map = {
                 'u1h': 1, 'unlimited_1h': 1,
                 'u1d': 24, 'u24h': 24, 'unlimited_24h': 24, 'unlimited_1d': 24,
@@ -500,7 +528,7 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
             if hours > 0:
                 now = datetime.utcnow()
                 start = now
-                expiry_str = profile.get('unlimited_expiry')
+                expiry_str = profile.get('unlimited_expiry') if profile else None
                 if expiry_str:
                     try:
                         clean_expiry = expiry_str.replace('Z', '+00:00')
@@ -513,9 +541,78 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
                 update_data['unlimited_expiry'] = (start + timedelta(hours=hours)).isoformat()
 
         if update_data:
-            db.table("profiles").update(update_data).eq("id", user_id).execute()
-            db.table("payment_claims").update({"status": "success"}).eq("payment_id", order_id).execute()
-            print(f"[FULFILL] Updated profile for {user_id}")
+            # Forceful update to profiles
+            email_to_use = email_candidate or (profile.get("email") if profile else f"user_{final_user_id[:8]}@tracexdata.com")
+            name_to_use = profile.get("full_name") if profile else email_to_use.split("@")[0]
+            
+            profile_payload = {
+                "id": final_user_id,
+                "email": email_to_use,
+                "full_name": name_to_use,
+                "credits": update_data.get("credits", 10.0),
+                "wallet_balance": update_data.get("wallet_balance", 10.0),
+                "is_free_credit_claimed": True,
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }
+            if update_data.get("unlimited_expiry"):
+                profile_payload["unlimited_expiry"] = update_data["unlimited_expiry"]
+
+            db.table("profiles").upsert(profile_payload, on_conflict="id").execute()
+            
+            if email_to_use and "@" in email_to_use:
+                db.table("profiles").update({
+                    "credits": update_data.get("credits", 10.0),
+                    "wallet_balance": update_data.get("wallet_balance", 10.0),
+                    "updated_at": datetime.utcnow().isoformat() + "Z"
+                }).eq("email", email_to_use).execute()
+
+            # Forceful update to app_users
+            app_user_phone = optional_phone or (profile.get("phone") if profile else "")
+            app_user_payload = {
+                "id": final_user_id,
+                "email": email_to_use,
+                "full_name": name_to_use,
+                "credits": update_data.get("credits", 10.0),
+                "wallet_balance": update_data.get("wallet_balance", 10.0),
+                "phone": app_user_phone,
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }
+            db.table("app_users").upsert(app_user_payload, on_conflict="id").execute()
+            
+            if email_to_use and "@" in email_to_use:
+                db.table("app_users").update({
+                    "credits": update_data.get("credits", 10.0),
+                    "wallet_balance": update_data.get("wallet_balance", 10.0),
+                    "updated_at": datetime.utcnow().isoformat() + "Z"
+                }).eq("email", email_to_use).execute()
+
+            # Record in wallet_transactions
+            try:
+                db.table("wallet_transactions").insert({
+                    "user_id": final_user_id,
+                    "user_email": email_to_use,
+                    "amount": credits_to_add,
+                    "balance_after": update_data.get("wallet_balance", 10.0),
+                    "type": "CREDIT",
+                    "payment_method": "Cashfree",
+                    "reference_id": order_id,
+                    "description": f"Wallet Recharge: ₹{base_amt} (Credited: ₹{credits_to_add})",
+                    "status": "SUCCESS",
+                    "created_at": datetime.utcnow().isoformat() + "Z"
+                }).execute()
+            except Exception as tx_err:
+                print(f"Failed to insert wallet_transactions in python: {tx_err}")
+
+            # Prune physical logs older than 3 days
+            try:
+                three_days_ago_iso = (datetime.utcnow() - timedelta(days=3)).isoformat() + "Z"
+                db.table("wallet_transactions").delete().lt("created_at", three_days_ago_iso).execute()
+                db.table("payment_claims").delete().lt("created_at", three_days_ago_iso).execute()
+            except Exception as prune_err:
+                print(f"Pruning error in python: {prune_err}")
+
+            db.table("payment_claims").update({"status": "success", "user_id": final_user_id, "amount": base_amt}).eq("payment_id", order_id).execute()
+            print(f"[FULFILL] Forcefully updated profile and app_users for {final_user_id}. Order {order_id} success.")
             
     except Exception as e:
         print(f"Fulfillment error: {e}")

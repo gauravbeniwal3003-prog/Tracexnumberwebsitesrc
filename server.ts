@@ -2180,7 +2180,7 @@ app.get("/api/user-keys", async (req, res) => {
   }
 });
 
-// GET /api/wallet/history - Fetch wallet debit/credit transaction history
+// GET /api/wallet/history - Fetch unified payment & wallet transactions for the last 3 days
 app.get("/api/wallet/history", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
@@ -2205,29 +2205,100 @@ app.get("/api/wallet/history", async (req, res) => {
       return res.json([]);
     }
 
-    const { data: txData, error: txErr } = 
-          await supabaseAdmin
-      .from("wallet_transactions")
-      .select("*")
-      .or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 
-    if (txErr || !txData || txData.length === 0) {
-      return res.json([]);
+    // FORCEFULLY SAVE ONLY LAST 3 DAYS TRANSACTION HISTORY (PRUNE PHYSICAL DB ROWS)
+    try {
+      await supabaseAdmin.from("wallet_transactions").delete().lt("created_at", threeDaysAgo);
+      await supabaseAdmin.from("payment_claims").delete().lt("created_at", threeDaysAgo);
+    } catch (pruneErr) {
+      console.warn("[PRUNE_ERR] Failed to prune transaction history:", pruneErr);
     }
 
-    const formatted = txData.map((t: any, idx: number) => ({
-      id: t.id || idx + 1,
-      service: t.service_name || t.description || "Wallet Operation",
-      type: (t.type || "Debit").toLowerCase() === "credit" ? "Credit" : "Debit",
-      amount: Number(t.amount || 0),
-      balanceAfter: Number(t.balance_after || 0),
-      date: t.created_at ? new Date(t.created_at).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19)
-    }));
+    // Fetch fresh transactions and claims
+    const [txResponse, claimsResponse] = await Promise.all([
+      supabaseAdmin
+        .from("wallet_transactions")
+        .select("*")
+        .or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
+        .gte("created_at", threeDaysAgo)
+        .order("created_at", { ascending: false }),
+      supabaseAdmin
+        .from("payment_claims")
+        .select("*")
+        .or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
+        .gte("created_at", threeDaysAgo)
+        .order("created_at", { ascending: false })
+    ]);
 
-    return res.json(formatted);
+    const txData = txResponse.data || [];
+    const claimsData = claimsResponse.data || [];
+
+    // Unified format mapping
+    const unifiedMap = new Map<string, any>();
+
+    // 1. Process wallet transactions (both debits and successful credits)
+    txData.forEach((t: any, idx: number) => {
+      const isCredit = (t.type || "Debit").toLowerCase() === "credit";
+      const item: any = {
+        id: t.id || `tx_${idx}_${Date.now()}`,
+        order_id: t.reference_id || "N/A",
+        service: t.service_name || t.description || (isCredit ? "Wallet Recharge" : "Search Query Lookup"),
+        type: isCredit ? "Credit" : "Debit",
+        amount: Number(t.amount || 0),
+        balanceAfter: Number(t.balance_after || 0),
+        status: t.status ? t.status.toUpperCase() : "SUCCESS",
+        credited: isCredit && (t.status || "").toUpperCase() === "SUCCESS",
+        date: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString()
+      };
+      // If we have an order_id, map it there
+      if (t.reference_id && t.reference_id !== "N/A") {
+        unifiedMap.set(t.reference_id, item);
+      } else {
+        unifiedMap.set(`nonref_${t.id || idx}`, item);
+      }
+    });
+
+    // 2. Process payment claims to include PENDING or FAILED attempts, or complement SUCCESS credits
+    claimsData.forEach((c: any, idx: number) => {
+      const orderId = c.payment_id;
+      const claimStatus = String(c.status || "pending").toUpperCase();
+      const isSuccess = claimStatus === "SUCCESS" || claimStatus.startsWith("SUCCESS_");
+      
+      if (orderId && unifiedMap.has(orderId)) {
+        // Complement existing credit transaction with exact claim info
+        const existing = unifiedMap.get(orderId);
+        existing.status = isSuccess ? "SUCCESS" : claimStatus;
+        existing.credited = isSuccess;
+      } else {
+        // Create new item for pending/failed/processing claims
+        const item = {
+          id: c.id || `claim_${idx}_${Date.now()}`,
+          order_id: orderId || "N/A",
+          service: `Wallet Recharge (Plan: ${c.plan_id || "Custom"})`,
+          type: "Credit",
+          amount: Number(c.amount || 0),
+          balanceAfter: null,
+          status: isSuccess ? "SUCCESS" : claimStatus,
+          credited: isSuccess,
+          date: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString()
+        };
+        if (orderId && orderId !== "N/A") {
+          unifiedMap.set(orderId, item);
+        } else {
+          unifiedMap.set(`nonref_claim_${c.id || idx}`, item);
+        }
+      }
+    });
+
+    // Convert map to list and sort descending by date
+    const mergedList = Array.from(unifiedMap.values()).sort((a, b) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    return res.json(mergedList);
   } catch (err: any) {
+    console.error("Error fetching unified wallet history:", err);
     return res.json([]);
   }
 });
