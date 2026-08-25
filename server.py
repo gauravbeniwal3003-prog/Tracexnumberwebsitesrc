@@ -426,17 +426,35 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
             print(f"[FULFILL] Created API Key for {user_id} of plan {plan_name}")
             return
 
-        # Regular Credit/Unlimited Plans
-        profile_query = db.table("profiles").select("*").eq("id", user_id).execute()
-        if not profile_query.data:
+        # Regular Credit/Unlimited/Wallet Plans
+        profile = None
+        if user_id:
+            profile_query = db.table("profiles").select("*").eq("id", user_id).execute()
+            if profile_query.data:
+                profile = profile_query.data[0]
+        
+        if not profile and user_email and "@" in user_email:
+            profile_query = db.table("profiles").select("*").eq("email", user_email.strip().lower()).execute()
+            if profile_query.data:
+                profile = profile_query.data[0]
+                user_id = profile.get("id")
+
+        if not profile:
+            print(f"[FULFILL] Profile not found for {user_id} / {user_email}")
             return
         
-        profile = profile_query.data[0]
         update_data = {}
 
         # Use more flexible ID checking with dynamic numeric credits support
         credits_to_add = 0
-        if plan_id in ['c10', 'credit_10']: credits_to_add = 15
+        if explicit_amount and float(explicit_amount) > 0:
+            base_amt = int(float(explicit_amount))
+            bonus_pct = 0
+            if base_amt >= 100:
+                bonus_pct = 100 if base_amt >= 1000 else (base_amt // 100) * 10
+            bonus_amt = round((base_amt * bonus_pct) / 100)
+            credits_to_add = base_amt + bonus_amt
+        elif plan_id in ['c10', 'credit_10']: credits_to_add = 15
         elif plan_id in ['c20', 'credit_20']: credits_to_add = 30
         elif plan_id in ['c40', 'credit_40']: credits_to_add = 60
         elif plan_id in ['c50', 'credit_50']: credits_to_add = 75
@@ -446,18 +464,26 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
         elif plan_id in ['c500', 'credit_500']: credits_to_add = 900
         elif plan_id in ['c1000', 'credit_1000']: credits_to_add = 1950
         else:
-            # Dynamic fallback: if plan_id is of form cXX or credit_XX
+            # Dynamic fallback: if plan_id is of form cXX, credit_XX, wallet_XX
             import re
-            m = re.match(r'^(?:c|credit_?)(\d+)$', str(plan_id))
+            m = re.match(r'^(?:c|credit_|wallet_|recharge_?)(\d+)$', str(plan_id))
             if m:
                 try:
-                    credits_to_add = int(m.group(1))
+                    base_amt = int(m.group(1))
+                    bonus_pct = 0
+                    if base_amt >= 100:
+                        bonus_pct = 100 if base_amt >= 1000 else (base_amt // 100) * 10
+                    bonus_amt = round((base_amt * bonus_pct) / 100)
+                    credits_to_add = base_amt + bonus_amt
                 except ValueError:
                     pass
 
         if credits_to_add > 0:
-            update_data['credits'] = (profile.get('credits') or 0) + credits_to_add
-            print(f"[FULFILL] Determined {credits_to_add} credits to add from plan_id '{plan_id}'")
+            existing_bal = max(float(profile.get('wallet_balance') or 0), float(profile.get('credits') or 0))
+            new_bal = existing_bal + credits_to_add
+            update_data['credits'] = new_bal
+            update_data['wallet_balance'] = new_bal
+            print(f"[FULFILL] Determined {credits_to_add} credits to add from plan_id '{plan_id}'. New Balance: {new_bal}")
         elif plan_id.startswith('u') or plan_id.startswith('unlimited'):
             # Hours mapping
             hours_map = {

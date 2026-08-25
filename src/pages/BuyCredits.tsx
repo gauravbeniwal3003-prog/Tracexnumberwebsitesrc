@@ -8,10 +8,10 @@ import HeaderNavbar from '../components/HeaderNavbar';
 import { supabase } from '../services/supabase.ts';
 import { getApiBaseUrl, getAuthToken } from '../services/api';
 
-const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
+const PRESET_AMOUNTS = [1, 20, 50, 100, 200, 500, 1000, 2000];
 
 export function getRechargeBonus(amount: number) {
-  if (amount < 50) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
+  if (amount < 1) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
   if (amount < 100) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
   if (amount >= 1000) {
     const bonusPercent = 100;
@@ -28,7 +28,7 @@ export default function BuyCredits() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const [selectedAmount, setSelectedAmount] = useState<number>(100);
+  const [selectedAmount, setSelectedAmount] = useState<number>(50);
   const [customAmountInput, setCustomAmountInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAutoReconciling, setIsAutoReconciling] = useState(false);
@@ -198,8 +198,8 @@ export default function BuyCredits() {
       return;
     }
 
-    if (!amountToPay || amountToPay < 50) {
-      alert("Please enter a valid amount (minimum ₹50)");
+    if (!amountToPay || amountToPay < 1) {
+      alert("Please enter a valid amount (minimum ₹1)");
       return;
     }
 
@@ -393,7 +393,7 @@ export default function BuyCredits() {
                       </span>
                     ) : (
                       <span className="text-[10px] text-slate-400 font-bold">
-                        {amt === 50 ? 'Min. Recharge' : 'No Bonus'}
+                        {amt === 1 ? 'Min. Recharge' : 'No Bonus'}
                       </span>
                     )}
                   </button>
@@ -413,9 +413,9 @@ export default function BuyCredits() {
               <input
                 id="buy-credits-custom-amount"
                 type="number"
-                min="50"
+                min="1"
                 max="100000"
-                placeholder="Enter custom amount (minimum ₹50)"
+                placeholder="Enter custom amount (minimum ₹1)"
                 value={customAmountInput}
                 onChange={(e) => {
                   setCustomAmountInput(e.target.value);
@@ -429,7 +429,7 @@ export default function BuyCredits() {
           </div>
 
           {/* Offer & Bonus Breakdown Card */}
-          {finalAmount >= 50 && (
+          {finalAmount >= 1 && (
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Recharge Offer Details</span>

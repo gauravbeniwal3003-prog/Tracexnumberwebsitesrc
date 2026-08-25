@@ -1502,10 +1502,6 @@ app.get("/api/profile", async (req, res) => {
     if (dbProfile) {
       if (isAdmin) {
         dbProfile.is_admin = true;
-        // Restore unlimited credits for admin accounts
-        dbProfile.credits = 99999.00;
-        dbProfile.wallet_balance = 99999.00;
-        dbProfile.unlimited_expiry = "2099-12-31T23:59:59.000Z";
       }
       return res.json(dbProfile);
     }
@@ -1514,9 +1510,8 @@ app.get("/api/profile", async (req, res) => {
       return res.json({
         id: user.id,
         email: user.email,
-        credits: 99999.00,
-        wallet_balance: 99999.00,
-        unlimited_expiry: "2099-12-31T23:59:59.000Z",
+        credits: 100.00,
+        wallet_balance: 100.00,
         full_name: user.user_metadata?.full_name || "Administrator",
         avatar_url: null,
         is_free_credit_claimed: true,
@@ -5124,10 +5119,28 @@ async function fulfillOrder(
       }
 
       // Wallet refill & tiered bonus credit topup logic
-      let { data: profile } = await db.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
-      
       const cleanPhoneForStore = customer_phone ? customer_phone.replace(/\D/g, "").slice(-10) : "";
-      const emailToUse = profile?.email || user_email || (cleanPhoneForStore ? `${cleanPhoneForStore}@tracexdata.com` : `user_${finalUserId.slice(0, 8)}@tracexdata.online`);
+      const cleanEmailCandidate = (user_email || emailCandidate || "").trim().toLowerCase();
+
+      let { data: profile } = await db.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
+
+      if (!profile && cleanEmailCandidate && cleanEmailCandidate.includes("@")) {
+        const { data: profByEmail } = await db.from("profiles").select("*").eq("email", cleanEmailCandidate).maybeSingle();
+        if (profByEmail) {
+          profile = profByEmail;
+          if (profByEmail.id) finalUserId = profByEmail.id;
+        }
+      }
+
+      if (!profile && cleanPhoneForStore) {
+        const { data: profByPhone } = await db.from("profiles").select("*").eq("phone", cleanPhoneForStore).maybeSingle();
+        if (profByPhone) {
+          profile = profByPhone;
+          if (profByPhone.id) finalUserId = profByPhone.id;
+        }
+      }
+
+      const emailToUse = profile?.email || cleanEmailCandidate || (cleanPhoneForStore ? `${cleanPhoneForStore}@tracexdata.com` : `user_${finalUserId.slice(0, 8)}@tracexdata.online`);
       const nameToUse = profile?.full_name || (emailToUse ? emailToUse.split("@")[0] : `User ${finalUserId.slice(0, 4)}`);
 
       let baseAmount = 0;
@@ -5153,7 +5166,7 @@ async function fulfillOrder(
         const bonusAmount = Math.round((baseAmount * bonusPercent) / 100);
         creditsToAdd = baseAmount + bonusAmount;
       } else {
-        creditsToAdd = 100; // default safe fallback
+        creditsToAdd = 1; // minimum default safe fallback
       }
 
       const existingBalance = profile ? Math.max(Number(profile.wallet_balance || 0), Number(profile.credits || 0)) : 0;
@@ -5172,8 +5185,19 @@ async function fulfillOrder(
       if (profile?.unlimited_expiry) profileUpsertPayload.unlimited_expiry = profile.unlimited_expiry;
       if (profile?.user_discount_percent) profileUpsertPayload.user_discount_percent = profile.user_discount_percent;
 
-      // Upsert profiles
-      await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" });
+      // Upsert profiles by id
+      await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" }).catch(async () => {
+        await db.from("profiles").update(profileUpsertPayload).eq("id", finalUserId).catch(() => {});
+      });
+
+      // Also update profiles by email to guarantee sync
+      if (emailToUse && emailToUse.includes("@")) {
+        await db.from("profiles").update({
+          credits: newTotalBalance,
+          wallet_balance: newTotalBalance,
+          updated_at: new Date().toISOString()
+        }).eq("email", emailToUse).catch(() => {});
+      }
 
       // Upsert app_users
       await db.from("app_users").upsert({
@@ -5181,8 +5205,17 @@ async function fulfillOrder(
         email: emailToUse,
         full_name: nameToUse,
         credits: newTotalBalance,
+        wallet_balance: newTotalBalance,
         phone: cleanPhoneForStore || (profile?.phone || "")
       }, { onConflict: "id" }).catch(() => {});
+
+      if (emailToUse && emailToUse.includes("@")) {
+        await db.from("app_users").update({
+          credits: newTotalBalance,
+          wallet_balance: newTotalBalance,
+          updated_at: new Date().toISOString()
+        }).eq("email", emailToUse).catch(() => {});
+      }
 
       // Sync mobileUsersStore if applicable
       if (cleanPhoneForStore && cleanPhoneForStore.length === 10) {
@@ -5194,6 +5227,7 @@ async function fulfillOrder(
           email: emailToUse,
           full_name: nameToUse,
           credits: newTotalBalance,
+          wallet_balance: newTotalBalance,
           updated_at: new Date().toISOString()
         });
         saveMobileUsersStore(mobileUsersStore);
@@ -5204,14 +5238,17 @@ async function fulfillOrder(
         user_id: finalUserId,
         user_email: emailToUse,
         amount: baseAmount || orderAmount || creditsToAdd,
-        status: "success"
+        status: "success",
+        updated_at: new Date().toISOString()
       }).eq("payment_id", orderId);
 
       // Record in wallet_transactions
       try {
         await db.from("wallet_transactions").insert({
           user_id: finalUserId,
+          user_email: emailToUse,
           amount: creditsToAdd,
+          balance_after: newTotalBalance,
           type: "CREDIT",
           payment_method: "Cashfree",
           reference_id: orderId,
@@ -5411,8 +5448,8 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     const { user_id, user_email, plan_id, amount, customer_phone, customer_name, return_url } = req.body;
     
     // Strict input validation
-    if (!amount || typeof amount !== 'number' || amount < 50 || amount > 100000) {
-      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹50." });
+    if (!amount || typeof amount !== 'number' || amount < 1 || amount > 100000) {
+      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹1." });
     }
     if (plan_id !== "pgpay_manual" && plan_id !== "panfind" ) {
       if (!user_id || typeof user_id !== 'string') {
