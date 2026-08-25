@@ -464,7 +464,7 @@ export default function BuyCredits() {
               </div>
 
               {/* Promo Banner Info */}
-              {finalAmount >= 50 && finalAmount < 100 && (
+              {finalAmount >= 1 && finalAmount < 100 && (
                 <div className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-100 p-2.5 rounded-xl flex items-center gap-1.5 mt-2">
                   <AlertCircle size={12} className="shrink-0" />
                   <span>Tip: Recharge ₹100 or more to unlock up to 100% extra bonus!</span>
@@ -489,7 +489,7 @@ export default function BuyCredits() {
 
           {/* Action Button */}
           <button
-            disabled={isProcessing || !finalAmount || finalAmount < 50}
+            disabled={isProcessing || !finalAmount || finalAmount < 1}
             onClick={() => handleAddFunds(finalAmount)}
             className="w-full py-5 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-black text-base uppercase tracking-wider shadow-lg shadow-sky-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3.5 cursor-pointer"
           >
