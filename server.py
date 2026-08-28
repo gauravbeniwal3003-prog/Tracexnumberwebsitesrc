@@ -621,6 +621,58 @@ async def fulfill_order(order_id: str, user_id: str, optional_email: str = None,
     finally:
         active_fulfillments.discard(order_id)
 
+def record_wallet_transaction_py(db, user_id, user_email, service_name, tx_type, amount, balance_after=None):
+    if not db:
+        return
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    desc_str = f"{tx_type}: {service_name}" if service_name else tx_type
+    
+    # 1. Try full schema payload
+    try:
+        db.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "user_email": user_email or "User",
+            "service_name": service_name,
+            "description": desc_str,
+            "service": service_name,
+            "type": tx_type,
+            "amount": amount,
+            "balance_after": balance_after,
+            "created_at": now_iso
+        }).execute()
+        return
+    except Exception:
+        pass
+
+    # 2. Try standard schema (service_name + description)
+    try:
+        db.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "user_email": user_email or "User",
+            "service_name": service_name,
+            "description": desc_str,
+            "type": tx_type,
+            "amount": amount,
+            "balance_after": balance_after,
+            "created_at": now_iso
+        }).execute()
+        return
+    except Exception:
+        pass
+
+    # 3. Try minimal schema
+    try:
+        db.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "user_email": user_email or "User",
+            "type": tx_type,
+            "amount": amount,
+            "balance_after": balance_after,
+            "created_at": now_iso
+        }).execute()
+    except Exception as err:
+        print(f"[WALLET_TX_NOTICE] {err}")
+
 async def run_background_payment_reconciliation():
     while True:
         try:
@@ -1040,41 +1092,56 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
     candidate_rows = []
 
     # 1. Fetch all matching candidate rows from profiles
-    try:
-        if user_id and is_valid_uuid(str(user_id)):
+    if user_id and is_valid_uuid(str(user_id)):
+        try:
             res = db.table("profiles").select("*").eq("id", str(user_id)).execute()
             if res.data:
                 candidate_rows.extend(res.data)
-        if clean_email:
+        except Exception:
+            pass
+    if clean_email:
+        try:
             res = db.table("profiles").select("*").ilike("email", clean_email).execute()
             if res.data:
                 candidate_rows.extend(res.data)
-        if clean_phone:
+        except Exception:
+            pass
+    if clean_phone:
+        try:
             res = db.table("profiles").select("*").eq("phone", clean_phone).execute()
             if res.data:
                 candidate_rows.extend(res.data)
+        except Exception:
+            pass
+        try:
             res_ph_em = db.table("profiles").select("*").eq("email", f"{clean_phone}@tracexdata.com").execute()
             if res_ph_em.data:
                 candidate_rows.extend(res_ph_em.data)
-    except Exception as e:
-        print(f"[DB_PROFILE_FETCH] profiles query error: {e}")
+        except Exception:
+            pass
 
     # 2. Fetch all matching candidate rows from app_users
-    try:
-        if user_id and is_valid_uuid(str(user_id)):
+    if user_id and is_valid_uuid(str(user_id)):
+        try:
             res = db.table("app_users").select("*").eq("id", str(user_id)).execute()
             if res.data:
                 candidate_rows.extend(res.data)
-        if clean_email:
+        except Exception:
+            pass
+    if clean_email:
+        try:
             res = db.table("app_users").select("*").ilike("email", clean_email).execute()
             if res.data:
                 candidate_rows.extend(res.data)
-        if clean_phone:
+        except Exception:
+            pass
+    if clean_phone:
+        try:
             res = db.table("app_users").select("*").eq("phone", clean_phone).execute()
             if res.data:
                 candidate_rows.extend(res.data)
-    except Exception as e:
-        print(f"[DB_PROFILE_FETCH] app_users query error: {e}")
+        except Exception:
+            pass
 
     if not candidate_rows:
         return None
@@ -3045,8 +3112,8 @@ async def support_lookup(
 @app.get("/api/user-lookup")
 async def user_lookup(
     request: Request,
-    service: Optional[str] = Query(None),
-    query: Optional[str] = Query(None)
+    service: Optional[str] = None,
+    query: Optional[str] = None
 ):
     import urllib.parse
     import re
@@ -3054,14 +3121,17 @@ async def user_lookup(
     import time
     from datetime import datetime
     
-    if not service or not query:
+    service_param = (service if isinstance(service, str) else None) or (request.query_params.get("service") if request else None) or ""
+    query_param = (query if isinstance(query, str) else None) or (request.query_params.get("query") if request else None) or (request.query_params.get("number") if request else None) or ""
+
+    if not service_param.strip() or not query_param.strip():
         return make_api_response({
             "status": "success",
             "results": {"error": "Missing or invalid service/query"}
         })
         
-    service_clean = service.lower().strip()
-    cleaned_query = query.strip()
+    service_clean = service_param.lower().strip()
+    cleaned_query = query_param.strip()
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -3135,7 +3205,7 @@ async def user_lookup(
     is_unlimited = False
     if profile.get('unlimited_expiry'):
         try:
-            clean_exp = profile['unlimited_expiry'].replace('Z', '')
+            clean_exp = str(profile['unlimited_expiry']).replace('Z', '')
             if '+' in clean_exp:
                 clean_exp = clean_exp.split('+')[0]
             expiry_dt = datetime.fromisoformat(clean_exp)
@@ -3183,13 +3253,12 @@ async def user_lookup(
             new_api_url = get_provider_url("phone", cleaned_query)
             try:
                 print(f"[user-lookup] Fetching phone API: {new_api_url}")
-                resp = requests.get(new_api_url, headers=headers, timeout=12)
+                resp = requests.get(new_api_url, headers=headers, timeout=10)
                 if resp.status_code == 200:
                     text = resp.text.strip()
                     try:
                         parsed = resp.json()
                     except:
-                        print("[user-lookup] Phone API is not JSON, parsing as plain text...")
                         parsed = parse_raw_text_to_records(text)
                     
                     if isinstance(parsed, dict):
@@ -3219,9 +3288,9 @@ async def user_lookup(
                 
             if not response_data:
                 # Fallback to saas_lookup internally
-                print(f"[user-lookup] Falling back to old phone target...")
+                print(f"[user-lookup] Falling back to secondary phone lookup...")
                 try:
-                    res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, number=cleaned_query)
+                    res = await saas_lookup(request=request, key=INTERNAL_MASTER_KEY, number=cleaned_query, query=cleaned_query, service="phone")
                     if res and isinstance(res, dict):
                         response_data = res.get("results")
                 except Exception as fb_err:
@@ -3296,14 +3365,15 @@ async def user_lookup(
                         "log_number": int(time.time() % 1000)
                     }).execute()
                     
-                    db.table("wallet_transactions").insert({
-                        "user_id": profile.get("id"),
-                        "user_email": profile.get("email") or "User",
-                        "service": f"Refund: {service_clean.upper()} ({cleaned_query})",
-                        "type": "Refund",
-                        "amount": credit_cost,
-                        "balance_after": current_credits
-                    }).execute()
+                    record_wallet_transaction_py(
+                        db,
+                        user_id=profile.get("id"),
+                        user_email=profile.get("email") or "User",
+                        service_name=f"Refund: {service_clean.upper()} ({cleaned_query})",
+                        tx_type="Refund",
+                        amount=credit_cost,
+                        balance_after=current_credits
+                    )
                 except Exception as log_err:
                     print(f"[Refund log err]: {log_err}")
 
@@ -3343,14 +3413,15 @@ async def user_lookup(
                     "log_number": int(time.time() % 1000)
                 }).execute()
                 
-                db.table("wallet_transactions").insert({
-                    "user_id": profile.get("id"),
-                    "user_email": profile.get("email") or "User",
-                    "service": f"Web Search: {service_clean.upper()} ({cleaned_query})",
-                    "type": "Debit",
-                    "amount": credit_cost,
-                    "balance_after": new_balance
-                }).execute()
+                record_wallet_transaction_py(
+                    db,
+                    user_id=profile.get("id"),
+                    user_email=profile.get("email") or "User",
+                    service_name=f"Web Search: {service_clean.upper()} ({cleaned_query})",
+                    tx_type="Debit",
+                    amount=credit_cost,
+                    balance_after=new_balance
+                )
             except Exception as deduct_err:
                 print(f"[Credit deduction err]: {deduct_err}")
 
@@ -3449,24 +3520,28 @@ def check_user_wallet_and_deduct(db, license, service_type: str, query_text: str
         
         # Save service record and wallet transaction for API owner
         ref_code = f"API-TRX-{int(time.time())}"
-        db.table("service_records").insert({
-            "user_id": profile.get("id"),
-            "client_name": profile.get("email") or "API User",
-            "service_name": f"API Search: {str(service_type).upper()} ({query_text})",
-            "reference_code": ref_code,
-            "status": "SUCCESS",
-            "result_payload": {"service": service_type, "query": query_text, "key_id": license.get("id")},
-            "log_number": int(time.time() % 1000)
-        }).execute()
+        try:
+            db.table("service_records").insert({
+                "user_id": profile.get("id"),
+                "client_name": profile.get("email") or "API User",
+                "service_name": f"API Search: {str(service_type).upper()} ({query_text})",
+                "reference_code": ref_code,
+                "status": "SUCCESS",
+                "result_payload": {"service": service_type, "query": query_text, "key_id": license.get("id")},
+                "log_number": int(time.time() % 1000)
+            }).execute()
+        except Exception:
+            pass
         
-        db.table("wallet_transactions").insert({
-            "user_id": profile.get("id"),
-            "user_email": profile.get("email") or "API User",
-            "service": f"API Search: {str(service_type).upper()} ({query_text})",
-            "type": "Debit",
-            "amount": required_cost,
-            "balance_after": new_balance
-        }).execute()
+        record_wallet_transaction_py(
+            db,
+            user_id=profile.get("id"),
+            user_email=profile.get("email") or "API User",
+            service_name=f"API Search: {str(service_type).upper()} ({query_text})",
+            tx_type="Debit",
+            amount=required_cost,
+            balance_after=new_balance
+        )
     except Exception as e:
         print(f"[Deduct Error] {e}")
 
@@ -3475,21 +3550,38 @@ def check_user_wallet_and_deduct(db, license, service_type: str, query_text: str
 @app.get("/api/lookup")
 async def saas_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    number: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    numquery: Optional[str] = Query(None),
-    service: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    number: Optional[str] = None,
+    query: Optional[str] = None,
+    numquery: Optional[str] = None,
+    service: Optional[str] = None
 ):
     start_time = time.time()
     
-    key = extract_api_key(request, key)
-    service = (service or request.query_params.get("service") or request.query_params.get("type") or "").strip()
-    num = (number or query or numquery or request.query_params.get("query") or request.query_params.get("numquery") or request.query_params.get("number") or request.query_params.get("phone") or request.query_params.get("rc") or request.query_params.get("vehicle") or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key = extract_api_key(request, key if isinstance(key, str) else None)
+    service_str = resolve_str(service) or resolve_str(request.query_params.get("service") if request else None) or resolve_str(request.query_params.get("type") if request else None)
+    num = (
+        resolve_str(number) or 
+        resolve_str(query) or 
+        resolve_str(numquery) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("numquery") if request else None) or 
+        resolve_str(request.query_params.get("number") if request else None) or 
+        resolve_str(request.query_params.get("phone") if request else None) or 
+        resolve_str(request.query_params.get("rc") if request else None) or 
+        resolve_str(request.query_params.get("vehicle") if request else None)
+    )
 
     # Route right away if service is passed
-    if service:
-        service_lower = service.lower()
+    if service_str:
+        service_lower = service_str.lower()
         if service_lower in ["adhr", "identity", "aadhaar", "aadhar"]:
             return await identity_lookup(
                 request=request, 
@@ -4027,17 +4119,32 @@ async def saas_lookup(
 @app.get("/api/telegram")
 async def telegram_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    telegram: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    api: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    telegram: Optional[str] = None,
+    query: Optional[str] = None,
+    api: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime, timezone
     
     start_time = time.time()
-    targetTelegramId = (query or telegram or api or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    targetTelegramId = (
+        resolve_str(query) or 
+        resolve_str(telegram) or 
+        resolve_str(api) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("telegram") if request else None) or 
+        resolve_str(request.query_params.get("tg") if request else None)
+    )
     if not targetTelegramId:
         return make_api_response({"status": "error", "message": "Telegram query parameter is required"})
 
@@ -4046,7 +4153,7 @@ async def telegram_lookup(
         if not db:
             return make_api_response({"status": "error", "message": "ServerDown: Database connection failure"})
 
-        is_master = key == INTERNAL_MASTER_KEY
+        is_master = key_param == INTERNAL_MASTER_KEY
         keyRecord = None
 
         if is_master:
@@ -4056,10 +4163,10 @@ async def telegram_lookup(
                 "status": "active"
             }
         else:
-            if not key:
+            if not key_param:
                 return make_api_response({"status": "error", "message": "API key is required"})
 
-            keyRecords = db.table("api_keys").select("*").eq("api_key", key).execute()
+            keyRecords = db.table("api_keys").select("*").eq("api_key", key_param).execute()
             if not keyRecords.data or len(keyRecords.data) == 0:
                 return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
 
@@ -4373,9 +4480,9 @@ async def telegram_lookup(
 @app.get("/api/email")
 async def email_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    email: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    query: Optional[str] = None,
+    email: Optional[str] = None
 ):
     import re
     import time
@@ -4383,7 +4490,20 @@ async def email_lookup(
     from datetime import datetime, timezone
     
     start_time = time.time()
-    target_query = (query or email or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(query) or 
+        resolve_str(email) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("email") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "Email query parameter is required"})
@@ -4392,7 +4512,7 @@ async def email_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     if is_master:
@@ -4404,11 +4524,11 @@ async def email_lookup(
             "request_limit": None
         }
     else:
-        if not key:
+        if not key_param:
             return make_api_response({"status": "error", "message": "API key is required"})
             
         try:
-            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+            auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
             if not auth_query.data or len(auth_query.data) == 0:
                 return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                 
@@ -4547,18 +4667,35 @@ async def email_lookup(
 @app.get("/api/identity")
 async def identity_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    aadhar: Optional[str] = Query(None),
-    identity: Optional[str] = Query(None),
-    exploits: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    query: Optional[str] = None,
+    aadhar: Optional[str] = None,
+    identity: Optional[str] = None,
+    exploits: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime
     
     start_time = time.time()
-    target_query = (query or aadhar or identity or exploits or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(query) or 
+        resolve_str(aadhar) or 
+        resolve_str(identity) or 
+        resolve_str(exploits) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("aadhar") if request else None) or 
+        resolve_str(request.query_params.get("aadhaar") if request else None) or 
+        resolve_str(request.query_params.get("identity") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "Identity/Aadhaar query parameter is required"})
@@ -4572,7 +4709,7 @@ async def identity_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     if is_master:
@@ -4584,11 +4721,11 @@ async def identity_lookup(
             "request_limit": None
         }
     else:
-        if not key:
+        if not key_param:
             return make_api_response({"status": "error", "message": "API key is required"})
             
         try:
-            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+            auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
             if not auth_query.data or len(auth_query.data) == 0:
                 return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                 
@@ -4733,18 +4870,34 @@ async def identity_lookup(
 @app.get("/api/bank")
 async def bank_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    ifsc: Optional[str] = Query(None),
-    bank: Optional[str] = Query(None),
-    exploits: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    query: Optional[str] = None,
+    ifsc: Optional[str] = None,
+    bank: Optional[str] = None,
+    exploits: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime
     
     start_time = time.time()
-    target_query = (query or ifsc or bank or exploits or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(query) or 
+        resolve_str(ifsc) or 
+        resolve_str(bank) or 
+        resolve_str(exploits) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("ifsc") if request else None) or 
+        resolve_str(request.query_params.get("bank") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "Bank/IFSC query parameter is required"})
@@ -4758,7 +4911,7 @@ async def bank_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     if is_master:
@@ -4770,11 +4923,11 @@ async def bank_lookup(
             "request_limit": None
         }
     else:
-        if not key:
+        if not key_param:
             return make_api_response({"status": "error", "message": "API key is required"})
             
         try:
-            auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+            auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
             if not auth_query.data or len(auth_query.data) == 0:
                 return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                 
@@ -4921,19 +5074,37 @@ async def bank_lookup(
 @app.get("/api/vehicle")
 async def vehicle_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    rc: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    vehicle: Optional[str] = Query(None),
-    vehicle_no: Optional[str] = Query(None),
-    exploits: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    rc: Optional[str] = None,
+    query: Optional[str] = None,
+    vehicle: Optional[str] = None,
+    vehicle_no: Optional[str] = None,
+    exploits: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime
     
     start_time = time.time()
-    target_query = (rc or query or vehicle or vehicle_no or exploits or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(rc) or 
+        resolve_str(query) or 
+        resolve_str(vehicle) or 
+        resolve_str(vehicle_no) or 
+        resolve_str(exploits) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("rc") if request else None) or 
+        resolve_str(request.query_params.get("vehicle") if request else None) or 
+        resolve_str(request.query_params.get("vehicle_no") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "Vehicle lookup query parameter is required"})
@@ -4947,7 +5118,7 @@ async def vehicle_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     try:
@@ -4960,11 +5131,11 @@ async def vehicle_lookup(
                 "request_limit": None
             }
         else:
-            if not key:
+            if not key_param:
                 return make_api_response({"status": "error", "message": "API key is required"})
                 
             try:
-                auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+                auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
                 if not auth_query.data or len(auth_query.data) == 0:
                     return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                     
@@ -5175,19 +5346,37 @@ async def vehicle_lookup(
 @app.get("/api/veh-owner-num")
 async def veh_owner_num_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    rc: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    vehicle: Optional[str] = Query(None),
-    vehicle_no: Optional[str] = Query(None),
-    exploits: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    rc: Optional[str] = None,
+    query: Optional[str] = None,
+    vehicle: Optional[str] = None,
+    vehicle_no: Optional[str] = None,
+    exploits: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime
     
     start_time = time.time()
-    target_query = (rc or query or vehicle or vehicle_no or exploits or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(rc) or 
+        resolve_str(query) or 
+        resolve_str(vehicle) or 
+        resolve_str(vehicle_no) or 
+        resolve_str(exploits) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("rc") if request else None) or 
+        resolve_str(request.query_params.get("vehicle") if request else None) or 
+        resolve_str(request.query_params.get("vehicle_no") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "Vehicle query parameter is required"})
@@ -5201,7 +5390,7 @@ async def veh_owner_num_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     try:
@@ -5214,11 +5403,11 @@ async def veh_owner_num_lookup(
                 "request_limit": None
             }
         else:
-            if not key:
+            if not key_param:
                 return make_api_response({"status": "error", "message": "API key is required"})
                 
             try:
-                auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+                auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
                 if not auth_query.data or len(auth_query.data) == 0:
                     return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                     
@@ -5416,19 +5605,37 @@ async def veh_owner_num_lookup(
 @app.get("/api/pancard")
 async def pancard_lookup(
     request: Request,
-    key: Optional[str] = Query(None),
-    pan: Optional[str] = Query(None),
-    pn: Optional[str] = Query(None),
-    query: Optional[str] = Query(None),
-    pancard: Optional[str] = Query(None),
-    exploits: Optional[str] = Query(None)
+    key: Optional[str] = None,
+    pan: Optional[str] = None,
+    pn: Optional[str] = None,
+    query: Optional[str] = None,
+    pancard: Optional[str] = None,
+    exploits: Optional[str] = None
 ):
     import re
     import time
     from datetime import datetime
     
     start_time = time.time()
-    target_query = (pan or pn or query or pancard or exploits or "").strip()
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    key_param = (key if isinstance(key, str) else None) or extract_api_key(request, None)
+    target_query = (
+        resolve_str(pan) or 
+        resolve_str(pn) or 
+        resolve_str(query) or 
+        resolve_str(pancard) or 
+        resolve_str(exploits) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("pan") if request else None) or 
+        resolve_str(request.query_params.get("pn") if request else None) or 
+        resolve_str(request.query_params.get("pancard") if request else None)
+    )
     
     if not target_query:
         return make_api_response({"status": "error", "message": "PN/PAN card query parameter is required"})
@@ -5442,7 +5649,7 @@ async def pancard_lookup(
     if not db:
         return make_api_response({"status": "error", "message": "Engine Offline: Internal connection failure"})
         
-    is_master = key == INTERNAL_MASTER_KEY
+    is_master = key_param == INTERNAL_MASTER_KEY
     key_record = None
     
     try:
@@ -5455,11 +5662,11 @@ async def pancard_lookup(
                 "request_limit": None
             }
         else:
-            if not key:
+            if not key_param:
                 return make_api_response({"status": "error", "message": "API key is required"})
                 
             try:
-                auth_query = db.table("api_keys").select("*").eq("api_key", key).execute()
+                auth_query = db.table("api_keys").select("*").eq("api_key", key_param).execute()
                 if not auth_query.data or len(auth_query.data) == 0:
                     return make_api_response({"status": "error", "message": "Access Denied: Invalid or unauthorized API key"})
                     
@@ -5977,9 +6184,34 @@ def get_py_demo_response(service: str, query: str) -> dict:
 @app.post("/api/demo_api.php")
 @app.get("/api/demo-lookup")
 @app.post("/api/demo-lookup")
-async def api_demo_lookup(service: Optional[str] = Query(None), query: Optional[str] = Query(None), type: Optional[str] = Query(None), term: Optional[str] = Query(None)):
-    svc = service or type or "phone"
-    qry = query or term or "9876543210"
+async def api_demo_lookup(
+    request: Request,
+    service: Optional[str] = None,
+    query: Optional[str] = None,
+    type: Optional[str] = None,
+    term: Optional[str] = None
+):
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    svc = (
+        resolve_str(service) or 
+        resolve_str(type) or 
+        resolve_str(request.query_params.get("service") if request else None) or 
+        resolve_str(request.query_params.get("type") if request else None) or 
+        "phone"
+    )
+    qry = (
+        resolve_str(query) or 
+        resolve_str(term) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        resolve_str(request.query_params.get("term") if request else None) or 
+        "9876543210"
+    )
     results = get_py_demo_response(svc, qry)
     return {
         "status": "success",
@@ -5994,13 +6226,47 @@ async def api_demo_lookup(service: Optional[str] = Query(None), query: Optional[
 
 @app.get("/api/developer_api.php")
 @app.post("/api/developer_api.php")
-async def api_developer_api_php(api_key: Optional[str] = Query(None), key: Optional[str] = Query(None), service: Optional[str] = Query(None), query: Optional[str] = Query(None), demo: Optional[str] = Query(None)):
-    active_key = api_key or key or ""
-    is_demo = demo == "true" or active_key == "DEMO_KEY_TRACEXDATA" or active_key == "DEMO_KEY" or demo == "1"
+async def api_developer_api_php(
+    request: Request,
+    api_key: Optional[str] = None,
+    key: Optional[str] = None,
+    service: Optional[str] = None,
+    query: Optional[str] = None,
+    demo: Optional[str] = None
+):
+    def resolve_str(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return ""
+
+    active_key = (
+        resolve_str(api_key) or 
+        resolve_str(key) or 
+        resolve_str(request.query_params.get("api_key") if request else None) or 
+        resolve_str(request.query_params.get("key") if request else None) or 
+        ""
+    )
+    demo_val = (
+        resolve_str(demo) or 
+        resolve_str(request.query_params.get("demo") if request else None) or 
+        ""
+    )
+    is_demo = demo_val == "true" or active_key == "DEMO_KEY_TRACEXDATA" or active_key == "DEMO_KEY" or demo_val == "1"
     
+    svc = (
+        resolve_str(service) or 
+        resolve_str(request.query_params.get("service") if request else None) or 
+        "phone"
+    )
+    qry = (
+        resolve_str(query) or 
+        resolve_str(request.query_params.get("query") if request else None) or 
+        "9876543210"
+    )
+
     if is_demo or not active_key:
-        svc = service or "phone"
-        qry = query or "9876543210"
         results = get_py_demo_response(svc, qry)
         return {
             "status": "success",
@@ -6018,8 +6284,8 @@ async def api_developer_api_php(api_key: Optional[str] = Query(None), key: Optio
         "status": "success",
         "message": "Developer API Request Processed.",
         "api_key": active_key,
-        "service": service,
-        "query": query
+        "service": svc,
+        "query": qry
     }
 
 
