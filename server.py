@@ -60,7 +60,7 @@ DEFAULT_PROVIDER_CONFIGS = {
     "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    "telegram": "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+    "telegram": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
     "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 }
 
@@ -2150,7 +2150,7 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
         r't\.me\/', r'telegram\.me\/', r'techvishalboss\.com', r'exploitsindia\.site',
         r'uersxinfo\.in', r'@anishexploits', r'@techvishalboss', r'@uersxinfo', r'@uersx',
         r'key=TVB_SGL_BCFC1E32', r'key=498wlpajf', r'@vectraen', r'vectraen', r'osintcallerbot',
-        r'buy\s*api', r'support\s*:', r'support\s*@', r'tracexdata'
+        r'vishal\s*boss', r'👑', r'buy\s*api', r'support\s*:', r'support\s*@', r'tracexdata'
     ]
     
     for line in lines:
@@ -2165,9 +2165,11 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
             
         # Inline branding removal that doesn't damage legitimate names/addresses
         line = re.sub(
-            r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot)',
+            r'(tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
             '',
             line,
+            flags=re.IGNORECASE
+        )
             flags=re.IGNORECASE
         )
         # Strip code tag elements
@@ -2339,8 +2341,8 @@ def clean_branding_recursive(obj):
     if isinstance(obj, dict):
         cleaned_dict = {}
         for k, v in obj.items():
-            # Skip keys that are purely promotional branding fields like "api_creator" or "api_by_link"
-            if str(k).lower() in ["api_creator", "api_by_link", "website_link", "creator", "credit", "support"]:
+            # Skip keys that are purely promotional branding fields like "api_creator" or "api_by_link" or "brand"
+            if str(k).lower() in ["api_creator", "api_by_link", "website_link", "creator", "credit", "support", "brand", "brand_name", "branding", "powered_by", "buy_api", "owner_telegram", "developer", "developer_name", "provider", "provider_info"]:
                 continue
             cleaned_dict[k] = clean_branding_recursive(v)
         return cleaned_dict
@@ -2354,7 +2356,7 @@ def clean_branding_recursive(obj):
             import re
             # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
             pattern = re.compile(
-                r'(tech[\s\-_]*vishal[\s\-_]*boss|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot)',
+                r'(tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
                 re.IGNORECASE
             )
             val = pattern.sub("", obj)
@@ -3908,19 +3910,23 @@ async def telegram_lookup(
         try:
             parsed = resp.json()
             
-            # Check if source explicitly returned success: false
-            if parsed.get("success") is False or str(parsed.get("success")).lower() == "false":
+            # Check if source explicitly returned success/status: false
+            if parsed.get("Status") is False or parsed.get("status") is False or str(parsed.get("status")).lower() == "false" or parsed.get("success") is False:
                 return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
             cleaned_json = clean_branding_recursive(parsed)
+            data_obj = cleaned_json.get('Data') or cleaned_json.get('data') or cleaned_json.get('results') or cleaned_json
             
-            telegram_id = cleaned_json.get('tg_id') or cleaned_json.get('telegram_id') or target_username
-            phone = cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or "N/A"
-            username = cleaned_json.get('username') or cleaned_json.get('name') or target_username
-            country = cleaned_json.get('country') or "N/A"
-            country_code = cleaned_json.get('country_code') or "N/A"
+            if isinstance(data_obj, dict) and data_obj.get("msg") and "not found" in str(data_obj.get("msg")).lower() and not data_obj.get('number') and not data_obj.get('mobile'):
+                return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
-            if telegram_id == "N/A" and phone == "N/A":
+            telegram_id = data_obj.get('tg_id') or data_obj.get('telegram_id') or cleaned_json.get('tg_id') or cleaned_json.get('telegram_id') or target_username
+            phone = data_obj.get('number') or data_obj.get('mobile') or data_obj.get('phone') or cleaned_json.get('number') or cleaned_json.get('mobile') or cleaned_json.get('phone') or "N/A"
+            username = data_obj.get('username') or parsed.get('Search_Number') or cleaned_json.get('username') or target_username
+            country = data_obj.get('country') or cleaned_json.get('country') or "N/A"
+            country_code = data_obj.get('country_code') or cleaned_json.get('country_code') or "N/A"
+
+            if (telegram_id == "N/A" or not telegram_id) and (phone == "N/A" or not phone):
                 return make_api_response({"status": "success", "results": {}, "message": "no data found"})
 
             # Post-fetch validation to verify protection status (both for Telegram ID and username)

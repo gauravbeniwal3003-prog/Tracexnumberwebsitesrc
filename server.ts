@@ -4150,18 +4150,22 @@ app.all("/api/lookup", async (req, res) => {
 
       try {
         const parsed = JSON.parse(text);
-        if (parsed && (parsed.success === false || parsed.status === false || parsed.status === "false")) {
+        if (parsed && (parsed.Status === false || parsed.status === false || parsed.status === "false" || parsed.success === false)) {
           await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
           return res.status(404).json({ status: "error", message: `Sorry, we don't have data related to the query.` });
         }
         const cleaned_json = scrubAllBranding(parsed);
         if (cleaned_json && typeof cleaned_json === 'object') {
-          let raw_res = cleaned_json.results || cleaned_json.data || cleaned_json;
+          let raw_res = cleaned_json.Data || cleaned_json.data || cleaned_json.results || cleaned_json;
+          if (raw_res.msg && (String(raw_res.msg).toLowerCase().includes("not found") || String(raw_res.msg).toLowerCase().includes("no details")) && !raw_res.number && !raw_res.mobile && !raw_res.phone) {
+            await logApiRequest(keyRecord?.id || null, `TG: ${targetQuery}`, "failed", Date.now() - startTime);
+            return res.status(404).json({ status: "error", message: `Sorry, we don't have data related to the query.` });
+          }
           if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile || raw_res.user_id || raw_res.phone || raw_res.mobile_number) {
              const mob = String(raw_res.number || raw_res.mobile || raw_res.phone || raw_res.mobile_number || "N/A").trim();
              const tgid = String(raw_res.tg_id || raw_res.telegram_id || raw_res.user_id || "N/A").trim();
              parsedResult = {
-               username: (raw_res.username || target_username).replace(/^@/, ''),
+               username: (raw_res.username || parsed.Search_Number || target_username).replace(/^@/, ''),
                telegram_id: tgid,
                user_id: tgid,
                mobile: mob,
@@ -4169,6 +4173,7 @@ app.all("/api/lookup", async (req, res) => {
                number: mob,
                phone: mob,
                ...(raw_res.country ? { country: raw_res.country } : {}),
+               ...(raw_res.country_code ? { country_code: raw_res.country_code } : {}),
                ...(raw_res.name ? { name: raw_res.name } : {}),
                platform: "Telegram Lookup"
              };
@@ -6226,19 +6231,23 @@ app.get("/api/telegram", async (req, res) => {
 
     try {
       const parsed = JSON.parse(text);
-      if (parsed && (parsed.success === false || parsed.status === false || parsed.status === "false")) {
+      if (parsed && (parsed.Status === false || parsed.status === false || parsed.status === "false" || parsed.success === false)) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
         return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
       }
 
       const cleaned_json = scrubAllBranding(parsed);
       if (cleaned_json && typeof cleaned_json === 'object') {
-        let raw_res = cleaned_json.results || cleaned_json.data || cleaned_json;
+        let raw_res = cleaned_json.Data || cleaned_json.data || cleaned_json.results || cleaned_json;
+        if (raw_res.msg && (String(raw_res.msg).toLowerCase().includes("not found") || String(raw_res.msg).toLowerCase().includes("no details")) && !raw_res.number && !raw_res.mobile && !raw_res.phone) {
+          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+          return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
+        }
         if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile || raw_res.user_id || raw_res.phone || raw_res.mobile_number) {
            const mob = String(raw_res.number || raw_res.mobile || raw_res.phone || raw_res.mobile_number || "N/A").trim();
            const tgid = String(raw_res.tg_id || raw_res.telegram_id || raw_res.user_id || "N/A").trim();
            results = {
-             username: (raw_res.username || target_username).replace(/^@/, ''),
+             username: (raw_res.username || parsed.Search_Number || target_username).replace(/^@/, ''),
              telegram_id: tgid,
              user_id: tgid,
              mobile: mob,
@@ -6246,6 +6255,7 @@ app.get("/api/telegram", async (req, res) => {
              number: mob,
              phone: mob,
              ...(raw_res.country ? { country: raw_res.country } : {}),
+             ...(raw_res.country_code ? { country_code: raw_res.country_code } : {}),
              ...(raw_res.name ? { name: raw_res.name } : {}),
              platform: "Telegram Lookup"
            };
@@ -7478,7 +7488,7 @@ const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-  telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+  telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
   family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 };
 
@@ -7547,7 +7557,7 @@ async function loadProviderConfigsFromDatabase() {
       vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
       veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
       veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-      telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
+      telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
       ifsc: "https://ifsc.razorpay.com/{query}",
       bnk: "https://ifsc.razorpay.com/{query}",
       family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
@@ -7556,7 +7566,7 @@ async function loadProviderConfigsFromDatabase() {
     for (const [key, targetUrl] of Object.entries(targetConfigs)) {
       dbConfigs[key] = targetUrl;
       if (SUPABASE_SERVICE_ROLE_KEY && supabaseAdmin) {
-        if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("techvishalboss") || dbConfigs[key].includes("digisevapoint")) {
+        if (!dbConfigs[key] || dbConfigs[key] !== targetUrl || dbConfigs[key].includes("anish-private-api") || dbConfigs[key].includes("uersxinfo") || dbConfigs[key].includes("digisevapoint")) {
           try {
             const { error: upsertErr } = 
           await supabaseAdmin
@@ -7681,7 +7691,7 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|👑|\ud83d\udc51)/gi, "")
       .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -7697,7 +7707,7 @@ function scrubAllBranding(obj: any): any {
     for (const [key, val] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
       if ([
-        "branding", "api_info", "powered_by", "buy_api", 
+        "branding", "brand", "brand_name", "api_info", "powered_by", "buy_api", 
         "owner_telegram", "developer", "developer_name", "provider", 
         "provider_info", "api_buy_link", "website_link", "buy", 
         "digiseva", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot"

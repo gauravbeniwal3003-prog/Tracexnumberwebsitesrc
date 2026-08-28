@@ -136,13 +136,16 @@ export interface ApiResponse {
 const BANNED_WORDS = [
   'gaurav', 'beniwal', 'seekhlebhai', 'bot_owner', 'buy_api', 'developer',
   'api_provider', 'created_by', 'channel', 'credits', 'admin', 'seller',
+  'vishal', 'boss', 'vishal boss', 'techvishalboss', '👑', 'brand',
   'https://t.me/Gaurav_beni_0001', 'https://t.me/Seekhlebhai', 'tg_channel', 'watermark'
 ];
 
 export const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    let cleaned = obj;
+    let cleaned = obj
+      .replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|👑|\ud83d\udc51)/gi, '')
+      .replace(/(gaurav[\s\-_]*beniwal|seekhlebhai(?:\.in)?|exploitsindia(?:\.site)?|osintcaller(?:bot)?)/gi, '');
     for (const word of BANNED_WORDS) {
       if (word.startsWith('https://')) {
         cleaned = cleaned.split(word).join('');
@@ -151,7 +154,7 @@ export const scrubBranding = (obj: any): any => {
         cleaned = cleaned.replace(regex, '');
       }
     }
-    return cleaned.trim();
+    return cleaned.replace(/\s+/g, ' ').trim();
   }
   if (Array.isArray(obj)) {
     return obj.map(scrubBranding);
@@ -161,7 +164,7 @@ export const scrubBranding = (obj: any): any => {
     for (const key in obj) {
       const lowerKey = key.toLowerCase();
       const isBanned = BANNED_WORDS.some(b => lowerKey.includes(b));
-      if (!isBanned && !lowerKey.includes('owner') && !lowerKey.includes('dev') && !lowerKey.includes('contact')) {
+      if (!isBanned && !lowerKey.includes('owner') && !lowerKey.includes('dev') && !lowerKey.includes('contact') && !lowerKey.includes('brand')) {
         result[key] = scrubBranding(obj[key]);
       }
     }
@@ -176,8 +179,7 @@ const DIRECT_PROVIDERS: Record<string, string[]> = {
     "https://seekhlebhai.in/api/v1/search?api_key=5219fdfc4155a0139b4bfa2540b6ff8d&search={query}"
   ],
   telegram: [
-    "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}",
-    "https://tgapi.exploitsindia.site/tg-osint.php?exploits={query}"
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}"
   ],
   adhr: [
     "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",

@@ -98,7 +98,7 @@ export default function AdminDashboard() {
     vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
     veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    telegram: "https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}"
+    telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}"
   });
   const [isSavingProviders, setIsSavingProviders] = useState(false);
 

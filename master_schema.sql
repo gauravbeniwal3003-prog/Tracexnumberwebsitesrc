@@ -163,7 +163,7 @@ VALUES
     ('ifsc', 'Bank IFSC Details Lookup', 1.00, 'BANKING', 'https://ifsc.razorpay.com/{query}'),
     ('vehicle', 'Vehicle RC Information', 1.00, 'VEHICLE', 'https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}'),
     ('email', 'Email OSINT Intelligence', 1.00, 'DIGITAL', 'https://exploitsindia.site/osintcallerbot/email.php?exploits={query}'),
-    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'https://exploitsindia.site/osintcallerbot/telegram.php?exploits={query}'),
+    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}'),
     ('family', 'Ration Card / Family Tree Lookup', 1.00, 'GOVT', 'https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}')
 ON CONFLICT (service_key) DO UPDATE 
 SET service_name = EXCLUDED.service_name;
