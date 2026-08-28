@@ -71,7 +71,7 @@ export default function WalletHistory() {
               Current Balance
             </span>
             <h1 className="text-3xl sm:text-5xl font-mono font-black tracking-tight">
-              ₹{balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? "Unlimited" : `₹${balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
             </h1>
           </div>
 

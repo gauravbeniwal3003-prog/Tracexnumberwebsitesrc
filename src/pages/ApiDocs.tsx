@@ -539,7 +539,9 @@ export default function ApiDocs() {
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
-  const walletAmount = profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹10.00";
+  const walletAmount = profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date()
+    ? "Unlimited"
+    : (profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹10.00");
 
   return (
     <div className="min-h-screen bg-[#f8fafc] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] text-slate-800 font-sans pb-24 selection:bg-blue-500/20 selection:text-blue-900">

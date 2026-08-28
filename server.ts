@@ -1589,6 +1589,21 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     }
   }
 
+  // Sort candidate rows by updated_at descending (most recently updated first)
+  candidateRows.sort((a, b) => {
+    const parseTime = (row: any) => {
+      if (!row) return 0;
+      const dateStr = row.updated_at || row.created_at;
+      if (!dateStr) return 0;
+      try {
+        return new Date(dateStr).getTime();
+      } catch (e) {
+        return 0;
+      }
+    };
+    return parseTime(b) - parseTime(a);
+  });
+
   if (candidateRows.length === 0) {
     return null;
   }

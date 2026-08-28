@@ -381,7 +381,7 @@ export default function BuyCredits() {
             <div>
               <span className="text-[10px] uppercase tracking-widest font-extrabold text-sky-100">Current Wallet Balance</span>
               <div className="text-4xl font-black font-mono text-white mt-1">
-                ₹{profile?.credits || 0}.00
+                {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? "Unlimited" : `₹${profile?.credits || 0}.00`}
               </div>
             </div>
             <div className="px-4 py-2 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs">
