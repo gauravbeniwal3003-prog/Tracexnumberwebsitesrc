@@ -1037,110 +1037,147 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
         clean_phone = str(user_id)[-10:]
     clean_email = email.strip().lower() if email and "@" in email else None
 
-    app_user_row = None
-    profile_row = None
+    candidate_rows = []
 
-    # Query app_users
-    try:
-        if user_id and is_valid_uuid(str(user_id)):
-            res = db.table("app_users").select("*").eq("id", str(user_id)).execute()
-            if res.data and len(res.data) > 0:
-                app_user_row = res.data[0]
-        if not app_user_row and clean_phone:
-            res = db.table("app_users").select("*").eq("phone", clean_phone).execute()
-            if res.data and len(res.data) > 0:
-                app_user_row = res.data[0]
-        if not app_user_row and clean_email:
-            res = db.table("app_users").select("*").eq("email", clean_email).execute()
-            if res.data and len(res.data) > 0:
-                app_user_row = res.data[0]
-    except Exception as e:
-        print(f"[DB_PROFILE_FETCH] app_users query error: {e}")
-
-    # Query profiles
+    # 1. Fetch all matching candidate rows from profiles
     try:
         if user_id and is_valid_uuid(str(user_id)):
             res = db.table("profiles").select("*").eq("id", str(user_id)).execute()
-            if res.data and len(res.data) > 0:
-                profile_row = res.data[0]
-        if not profile_row and clean_email:
-            res = db.table("profiles").select("*").eq("email", clean_email).execute()
-            if res.data and len(res.data) > 0:
-                profile_row = res.data[0]
-        if not profile_row and clean_phone:
+            if res.data:
+                candidate_rows.extend(res.data)
+        if clean_email:
+            res = db.table("profiles").select("*").ilike("email", clean_email).execute()
+            if res.data:
+                candidate_rows.extend(res.data)
+        if clean_phone:
             res = db.table("profiles").select("*").eq("phone", clean_phone).execute()
-            if res.data and len(res.data) > 0:
-                profile_row = res.data[0]
-            if not profile_row:
-                res = db.table("profiles").select("*").eq("email", f"{clean_phone}@tracexdata.com").execute()
-                if res.data and len(res.data) > 0:
-                    profile_row = res.data[0]
+            if res.data:
+                candidate_rows.extend(res.data)
+            res_ph_em = db.table("profiles").select("*").eq("email", f"{clean_phone}@tracexdata.com").execute()
+            if res_ph_em.data:
+                candidate_rows.extend(res_ph_em.data)
     except Exception as e:
         print(f"[DB_PROFILE_FETCH] profiles query error: {e}")
 
-    if not app_user_row and not profile_row:
+    # 2. Fetch all matching candidate rows from app_users
+    try:
+        if user_id and is_valid_uuid(str(user_id)):
+            res = db.table("app_users").select("*").eq("id", str(user_id)).execute()
+            if res.data:
+                candidate_rows.extend(res.data)
+        if clean_email:
+            res = db.table("app_users").select("*").ilike("email", clean_email).execute()
+            if res.data:
+                candidate_rows.extend(res.data)
+        if clean_phone:
+            res = db.table("app_users").select("*").eq("phone", clean_phone).execute()
+            if res.data:
+                candidate_rows.extend(res.data)
+    except Exception as e:
+        print(f"[DB_PROFILE_FETCH] app_users query error: {e}")
+
+    if not candidate_rows:
         return None
 
-    def parse_ts(row):
-        if not row: return 0
-        ts = row.get("updated_at") or row.get("created_at")
-        if not ts: return 0
-        try:
-            clean = str(ts).replace("Z", "")
-            if "+" in clean: clean = clean.split("+")[0]
-            return datetime.fromisoformat(clean).timestamp()
-        except:
-            return 0
+    # Deduplicate candidates
+    deduped = []
+    seen = set()
+    for row in candidate_rows:
+        row_key = f"{row.get('id')}_{row.get('email')}_{row.get('credits')}_{row.get('unlimited_expiry')}"
+        if row_key not in seen:
+            seen.add(row_key)
+            deduped.append(row)
 
-    prof_updated = parse_ts(profile_row)
-    app_updated = parse_ts(app_user_row)
-
-    final_credits = 10.00
-    if profile_row and app_user_row:
-        prof_c = profile_row.get("credits") if profile_row.get("credits") is not None else profile_row.get("wallet_balance")
-        app_c = app_user_row.get("credits") if app_user_row.get("credits") is not None else app_user_row.get("wallet_balance")
-        if prof_updated >= app_updated and prof_c is not None:
-            final_credits = safe_float(prof_c, 10.00)
-        elif app_c is not None:
-            final_credits = safe_float(app_c, 10.00)
-        elif prof_c is not None:
-            final_credits = safe_float(prof_c, 10.00)
-    elif profile_row and (profile_row.get("credits") is not None or profile_row.get("wallet_balance") is not None):
-        final_credits = safe_float(profile_row.get("credits") if profile_row.get("credits") is not None else profile_row.get("wallet_balance"), 10.00)
-    elif app_user_row and (app_user_row.get("credits") is not None or app_user_row.get("wallet_balance") is not None):
-        final_credits = safe_float(app_user_row.get("credits") if app_user_row.get("credits") is not None else app_user_row.get("wallet_balance"), 10.00)
-
+    # 3. Find highest credits across all matching records
+    all_credits = []
+    for r in deduped:
+        c_val = r.get("credits") if r.get("credits") is not None else r.get("wallet_balance")
+        if c_val is not None:
+            all_credits.append(safe_float(c_val, 0.0))
+    final_credits = max(all_credits) if all_credits else 10.00
     final_credits = max(0.0, round(final_credits, 2))
 
-    prof_disc = profile_row.get("user_discount_percent") if profile_row else None
-    app_disc = app_user_row.get("user_discount_percent") if app_user_row else None
-    final_discount = 0.0
-    if prof_disc is not None:
-        final_discount = safe_float(prof_disc, 0.0)
-    elif app_disc is not None:
-        final_discount = safe_float(app_disc, 0.0)
+    # 4. Find best active unlimited expiry
+    best_unlimited_expiry = None
+    now_dt = datetime.utcnow()
+    for r in deduped:
+        exp = r.get("unlimited_expiry")
+        if exp:
+            try:
+                clean_exp = str(exp).replace("Z", "")
+                if "+" in clean_exp:
+                    clean_exp = clean_exp.split("+")[0]
+                exp_dt = datetime.fromisoformat(clean_exp)
+                if exp_dt > now_dt:
+                    if not best_unlimited_expiry or exp_dt > datetime.fromisoformat(str(best_unlimited_expiry).replace("Z", "").split("+")[0]):
+                        best_unlimited_expiry = str(exp)
+            except Exception:
+                if not best_unlimited_expiry:
+                    best_unlimited_expiry = str(exp)
 
-    resolved_id = (str(user_id) if user_id and is_valid_uuid(str(user_id)) else None) or (profile_row.get("id") if profile_row else None) or (app_user_row.get("id") if app_user_row else None) or "user"
-    resolved_email = clean_email or (profile_row.get("email") if profile_row else None) or (app_user_row.get("email") if app_user_row else None)
-    resolved_phone = clean_phone or (app_user_row.get("phone") if app_user_row else None) or (profile_row.get("phone") if profile_row else None)
-    resolved_name = (profile_row.get("full_name") if profile_row else None) or (app_user_row.get("full_name") if app_user_row else None) or (resolved_email.split("@")[0] if resolved_email else "User")
+    # 5. Resolve best user attributes
+    best_name = None
+    best_avatar = None
+    best_discount = 0.0
+    for r in deduped:
+        name = r.get("full_name")
+        if name and str(name).strip() and str(name).strip().lower() not in ["user", "none", "null"]:
+            if not best_name or len(str(name)) > len(str(best_name)):
+                best_name = str(name).strip()
+        avatar = r.get("avatar_url")
+        if avatar and not best_avatar:
+            best_avatar = avatar
+        disc = r.get("user_discount_percent")
+        if disc is not None:
+            best_discount = max(best_discount, safe_float(disc, 0.0))
 
-    return {
+    # Preferred base row
+    primary_row = deduped[0]
+    for r in deduped:
+        if r.get("credits") == final_credits or r.get("unlimited_expiry") == best_unlimited_expiry:
+            primary_row = r
+            break
+
+    resolved_id = (str(user_id) if user_id and is_valid_uuid(str(user_id)) else None) or primary_row.get("id") or (clean_phone and f"user_{clean_phone}") or "user"
+    resolved_email = clean_email or primary_row.get("email") or (clean_phone and f"{clean_phone}@tracexdata.com")
+    resolved_phone = clean_phone or primary_row.get("phone")
+    resolved_name = best_name or primary_row.get("full_name") or (resolved_email.split("@")[0] if resolved_email else "User")
+
+    unified_profile = {
         "id": resolved_id,
         "email": resolved_email,
         "phone": resolved_phone,
         "full_name": resolved_name,
         "credits": final_credits,
         "wallet_balance": final_credits,
-        "unlimited_expiry": (profile_row.get("unlimited_expiry") if profile_row else None) or (app_user_row.get("unlimited_expiry") if app_user_row else None),
-        "user_discount_percent": final_discount,
-        "avatar_url": profile_row.get("avatar_url") if profile_row else None,
-        "is_free_credit_claimed": (profile_row.get("is_free_credit_claimed") if profile_row and profile_row.get("is_free_credit_claimed") is not None else (app_user_row.get("is_free_credit_claimed") if app_user_row and app_user_row.get("is_free_credit_claimed") is not None else True)),
-        "last_daily_credit_at": profile_row.get("last_daily_credit_at") if profile_row else None,
-        "last_weekly_credit_at": profile_row.get("last_weekly_credit_at") if profile_row else None,
-        "created_at": (profile_row.get("created_at") if profile_row else None) or (app_user_row.get("created_at") if app_user_row else datetime.utcnow().isoformat() + "Z"),
-        "updated_at": (profile_row.get("updated_at") if profile_row else None) or (app_user_row.get("updated_at") if app_user_row else datetime.utcnow().isoformat() + "Z")
+        "unlimited_expiry": best_unlimited_expiry,
+        "user_discount_percent": best_discount,
+        "avatar_url": best_avatar or primary_row.get("avatar_url"),
+        "is_free_credit_claimed": primary_row.get("is_free_credit_claimed", True),
+        "last_daily_credit_at": primary_row.get("last_daily_credit_at"),
+        "last_weekly_credit_at": primary_row.get("last_weekly_credit_at"),
+        "created_at": primary_row.get("created_at") or datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.utcnow().isoformat() + "Z"
     }
+
+    # 6. Self-healing DB sync: ensure the user's primary Supabase records have the true balance & unlimited expiry
+    try:
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        sync_payload = {
+            "credits": int(round(final_credits)),
+            "wallet_balance": int(round(final_credits)),
+            "unlimited_expiry": best_unlimited_expiry,
+            "full_name": resolved_name,
+            "updated_at": now_iso
+        }
+        if resolved_id and is_valid_uuid(str(resolved_id)):
+            db.table("profiles").update(sync_payload).eq("id", str(resolved_id)).execute()
+        if resolved_email:
+            db.table("profiles").update(sync_payload).ilike("email", resolved_email).execute()
+    except Exception as sync_e:
+        print(f"[DB_PROFILE_SYNC_NOTICE] {sync_e}")
+
+    return unified_profile
 
 @app.get("/api/profile")
 async def get_profile(request: Request):

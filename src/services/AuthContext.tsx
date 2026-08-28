@@ -82,6 +82,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(IS_TESTING_MODE ? false : true);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
 
+  const userRef = useRef<User | null>(realUser);
+  useEffect(() => {
+    userRef.current = realUser;
+  }, [realUser]);
+
   useEffect(() => {
     localStorage.removeItem('digi_demo_access');
   }, []);
@@ -157,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(savedMobileSession);
             if (parsed.user && profileData.credits !== undefined) {
               parsed.user.credits = profileData.credits;
+              if (profileData.unlimited_expiry !== undefined) parsed.user.unlimited_expiry = profileData.unlimited_expiry;
               localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
               const cleanPhone = (parsed.user.phone || profileData.phone || '').replace(/\D/g, '').slice(-10);
               if (cleanPhone) {
@@ -165,6 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   const parsedReg = JSON.parse(regStr);
                   if (parsedReg.user) {
                     parsedReg.user.credits = profileData.credits;
+                    if (profileData.unlimited_expiry !== undefined) parsedReg.user.unlimited_expiry = profileData.unlimited_expiry;
                     localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify(parsedReg));
                   }
                 }
@@ -175,6 +182,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (response) {
         const errorText = await response.text();
         console.warn('Failed to fetch secure profile from server:', errorText);
+        
+        // Direct Supabase fallback if server returned an error
+        try {
+          const { data: dbProfiles } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId);
+          if (dbProfiles && dbProfiles.length > 0) {
+            const dbProf = dbProfiles[0];
+            setProfile(prev => ({
+              ...(prev || {}),
+              id: dbProf.id,
+              email: dbProf.email,
+              full_name: dbProf.full_name || 'User',
+              credits: dbProf.credits !== undefined ? Number(dbProf.credits) : 10.00,
+              unlimited_expiry: dbProf.unlimited_expiry || null,
+              avatar_url: dbProf.avatar_url || '',
+              is_free_credit_claimed: dbProf.is_free_credit_claimed ?? true,
+              last_weekly_credit_at: dbProf.last_weekly_credit_at || new Date().toISOString()
+            } as UserProfile));
+          }
+        } catch (dbErr) {
+          console.warn('Direct Supabase profile lookup error:', dbErr);
+        }
+
         const savedMobileSession = localStorage.getItem('tracex_mobile_session');
         if (response.status === 401 && !savedMobileSession) {
           console.warn('Unauthorized session detected, clearing invalid auth state.');
@@ -441,11 +473,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('focus', handleFocus);
 
+    // Supabase Realtime subscription for instantaneous profile/balance updates
+    const profileRealtimeChannel = supabase
+      .channel('public:profiles_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        (payload: any) => {
+          if (payload?.new) {
+            const newRow = payload.new;
+            const curUser = userRef.current;
+            if (
+              (curUser?.id && newRow.id === curUser.id) ||
+              (curUser?.email && newRow.email && newRow.email.toLowerCase() === curUser.email.toLowerCase())
+            ) {
+              setProfile(prev => ({
+                ...(prev || {}),
+                id: newRow.id || prev?.id || curUser?.id || '',
+                email: newRow.email || prev?.email || curUser?.email || '',
+                full_name: newRow.full_name || prev?.full_name || 'User',
+                credits: newRow.credits !== undefined ? Number(newRow.credits) : (prev?.credits ?? 10.00),
+                unlimited_expiry: newRow.unlimited_expiry ?? prev?.unlimited_expiry ?? null,
+                avatar_url: newRow.avatar_url || prev?.avatar_url || '',
+                is_free_credit_claimed: newRow.is_free_credit_claimed ?? prev?.is_free_credit_claimed ?? true,
+                last_weekly_credit_at: newRow.last_weekly_credit_at || prev?.last_weekly_credit_at || new Date().toISOString()
+              } as UserProfile));
+            }
+          }
+          refreshProfile();
+        }
+      )
+      .subscribe();
+
     return () => {
       mounted = false;
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
       subscription.unsubscribe();
+      supabase.removeChannel(profileRealtimeChannel);
     };
   }, []);
 

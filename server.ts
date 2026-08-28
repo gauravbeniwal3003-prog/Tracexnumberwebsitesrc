@@ -1531,42 +1531,46 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   const db = supabaseAdmin || supabase;
 
   const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : (userId && !userId.includes('-') && userId.length >= 10 ? userId : '');
-  let appUserRow: any = null;
-  let profileRow: any = null;
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+  const candidateRows: any[] = [];
 
   if (db) {
+    // 1. Fetch from profiles
     try {
       if (userId && userId.includes('-')) {
-        const { data: u1 } = await db.from("app_users").select("*").eq("id", userId).maybeSingle();
-        if (u1) appUserRow = u1;
+        const { data: p1 } = await db.from("profiles").select("*").eq("id", userId);
+        if (p1 && p1.length > 0) candidateRows.push(...p1);
       }
-      if (!appUserRow && cleanPhone) {
-        const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone).maybeSingle();
-        if (u2) appUserRow = u2;
+      if (cleanEmail) {
+        const { data: p2 } = await db.from("profiles").select("*").ilike("email", cleanEmail);
+        if (p2 && p2.length > 0) candidateRows.push(...p2);
       }
-      if (!appUserRow && email) {
-        const { data: u3 } = await db.from("app_users").select("*").eq("email", email).maybeSingle();
-        if (u3) appUserRow = u3;
-      }
-    } catch (e) {
-      console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
-    }
-
-    try {
-      if (userId && userId.includes('-')) {
-        const { data: p1 } = await db.from("profiles").select("*").eq("id", userId).maybeSingle();
-        if (p1) profileRow = p1;
-      }
-      if (!profileRow && email) {
-        const { data: p2 } = await db.from("profiles").select("*").eq("email", email).maybeSingle();
-        if (p2) profileRow = p2;
-      }
-      if (!profileRow && cleanPhone) {
-        const { data: p3 } = await db.from("profiles").select("*").eq("phone", cleanPhone).maybeSingle();
-        if (p3) profileRow = p3;
+      if (cleanPhone) {
+        const { data: p3 } = await db.from("profiles").select("*").eq("phone", cleanPhone);
+        if (p3 && p3.length > 0) candidateRows.push(...p3);
+        const { data: p4 } = await db.from("profiles").select("*").eq("email", `${cleanPhone}@tracexdata.com`);
+        if (p4 && p4.length > 0) candidateRows.push(...p4);
       }
     } catch (e) {
       console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
+    }
+
+    // 2. Fetch from app_users
+    try {
+      if (userId && userId.includes('-')) {
+        const { data: u1 } = await db.from("app_users").select("*").eq("id", userId);
+        if (u1 && u1.length > 0) candidateRows.push(...u1);
+      }
+      if (cleanPhone) {
+        const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone);
+        if (u2 && u2.length > 0) candidateRows.push(...u2);
+      }
+      if (cleanEmail) {
+        const { data: u3 } = await db.from("app_users").select("*").ilike("email", cleanEmail);
+        if (u3 && u3.length > 0) candidateRows.push(...u3);
+      }
+    } catch (e) {
+      console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
     }
   }
 
@@ -1574,60 +1578,107 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   let mobStoreUser: any = null;
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
     mobStoreUser = mobileUsersStore.get(cleanPhone);
+    if (mobStoreUser) candidateRows.push(mobStoreUser);
   } else {
     for (const [pKey, mUser] of mobileUsersStore.entries()) {
-      if ((userId && mUser.id === userId) || (email && mUser.email === email)) {
+      if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail)) {
         mobStoreUser = mUser;
+        candidateRows.push(mobStoreUser);
         break;
       }
     }
   }
 
-  if (!appUserRow && !profileRow && !mobStoreUser) {
+  if (candidateRows.length === 0) {
     return null;
   }
 
-  // Determine latest updated record between profiles, app_users, and mobileUsersStore
-  const profUpdated = profileRow?.updated_at ? new Date(profileRow.updated_at).getTime() : 0;
-  const appUpdated = appUserRow?.updated_at ? new Date(appUserRow.updated_at).getTime() : 0;
-  const mobUpdated = mobStoreUser?.updated_at ? new Date(mobStoreUser.updated_at).getTime() : 0;
-
-  let finalCredits = 10.00;
-  if (mobStoreUser && mobUpdated > profUpdated && mobUpdated > appUpdated) {
-    finalCredits = Number(mobStoreUser.credits !== undefined ? mobStoreUser.credits : (mobStoreUser.wallet_balance !== undefined ? mobStoreUser.wallet_balance : 10.00));
-  } else if (profileRow && appUserRow) {
-    if (profUpdated >= appUpdated && profileRow.credits !== undefined && profileRow.credits !== null) {
-      finalCredits = Number(profileRow.credits);
-    } else if (appUserRow.credits !== undefined && appUserRow.credits !== null) {
-      finalCredits = Number(appUserRow.credits);
-    } else if (profileRow.credits !== undefined && profileRow.credits !== null) {
-      finalCredits = Number(profileRow.credits);
+  // Deduplicate candidate rows
+  const deduped: any[] = [];
+  const seen = new Set<string>();
+  for (const row of candidateRows) {
+    const key = `${row.id || ''}_${row.email || ''}_${row.credits ?? ''}_${row.unlimited_expiry || ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(row);
     }
-  } else if (profileRow && profileRow.credits !== undefined && profileRow.credits !== null) {
-    finalCredits = Number(profileRow.credits);
-  } else if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
-    finalCredits = Number(appUserRow.credits);
-  } else if (mobStoreUser) {
-    finalCredits = Number(mobStoreUser.credits !== undefined ? mobStoreUser.credits : (mobStoreUser.wallet_balance !== undefined ? mobStoreUser.wallet_balance : 10.00));
   }
 
+  // 3. Find highest credits across all matching records
+  const allCredits: number[] = [];
+  for (const r of deduped) {
+    const cVal = r.credits !== undefined && r.credits !== null ? r.credits : r.wallet_balance;
+    if (cVal !== undefined && cVal !== null && !isNaN(Number(cVal))) {
+      allCredits.push(Number(cVal));
+    }
+  }
+  let finalCredits = allCredits.length > 0 ? Math.max(...allCredits) : 10.00;
   finalCredits = Math.max(0, Number(finalCredits.toFixed(2)));
 
+  // 4. Find best active unlimited expiry
+  let bestUnlimitedExpiry: string | null = null;
+  const now = Date.now();
+  for (const r of deduped) {
+    const exp = r.unlimited_expiry;
+    if (exp) {
+      try {
+        const expTime = new Date(exp).getTime();
+        if (expTime > now) {
+          if (!bestUnlimitedExpiry || expTime > new Date(bestUnlimitedExpiry).getTime()) {
+            bestUnlimitedExpiry = String(exp);
+          }
+        }
+      } catch (e) {
+        if (!bestUnlimitedExpiry) bestUnlimitedExpiry = String(exp);
+      }
+    }
+  }
+
+  // 5. Resolve best user attributes
+  let bestName: string | null = null;
+  let bestAvatar: string | null = null;
+  let bestDiscount = 0;
+  for (const r of deduped) {
+    const name = r.full_name;
+    if (name && typeof name === 'string' && name.trim() && !['user', 'none', 'null'].includes(name.trim().toLowerCase())) {
+      if (!bestName || name.length > bestName.length) {
+        bestName = name.trim();
+      }
+    }
+    const avatar = r.avatar_url;
+    if (avatar && !bestAvatar) bestAvatar = avatar;
+    const disc = Number(r.user_discount_percent || 0);
+    if (!isNaN(disc)) bestDiscount = Math.max(bestDiscount, disc);
+  }
+
+  let primaryRow = deduped[0];
+  for (const r of deduped) {
+    if (r.credits === finalCredits || r.unlimited_expiry === bestUnlimitedExpiry) {
+      primaryRow = r;
+      break;
+    }
+  }
+
+  const resolvedId = (userId && userId.includes('-') ? userId : null) || primaryRow.id || (cleanPhone ? `user_${cleanPhone}` : "user");
+  const resolvedEmail = cleanEmail || primaryRow.email || (cleanPhone ? `${cleanPhone}@tracexdata.com` : undefined);
+  const resolvedPhone = cleanPhone || primaryRow.phone;
+  const resolvedName = bestName || primaryRow.full_name || (resolvedEmail ? resolvedEmail.split("@")[0] : "User");
+
   const merged = {
-    id: userId || appUserRow?.id || profileRow?.id || mobStoreUser?.id || (cleanPhone ? getUuidForPhone(cleanPhone) : "user"),
-    email: email || appUserRow?.email || profileRow?.email || mobStoreUser?.email,
-    phone: cleanPhone || appUserRow?.phone || profileRow?.phone || mobStoreUser?.phone,
-    full_name: profileRow?.full_name || appUserRow?.full_name || mobStoreUser?.full_name || email?.split("@")[0] || "User",
+    id: resolvedId,
+    email: resolvedEmail,
+    phone: resolvedPhone,
+    full_name: resolvedName,
     credits: finalCredits,
     wallet_balance: finalCredits,
-    unlimited_expiry: profileRow?.unlimited_expiry || appUserRow?.unlimited_expiry || mobStoreUser?.unlimited_expiry || null,
-    user_discount_percent: Number(profileRow?.user_discount_percent || appUserRow?.user_discount_percent || mobStoreUser?.user_discount_percent || 0),
-    avatar_url: profileRow?.avatar_url || null,
-    is_free_credit_claimed: profileRow?.is_free_credit_claimed ?? appUserRow?.is_free_credit_claimed ?? true,
-    last_daily_credit_at: profileRow?.last_daily_credit_at || null,
-    last_weekly_credit_at: profileRow?.last_weekly_credit_at || null,
-    created_at: profileRow?.created_at || appUserRow?.created_at || mobStoreUser?.created_at || new Date().toISOString(),
-    updated_at: profileRow?.updated_at || appUserRow?.updated_at || mobStoreUser?.updated_at || new Date().toISOString()
+    unlimited_expiry: bestUnlimitedExpiry,
+    user_discount_percent: bestDiscount,
+    avatar_url: bestAvatar || primaryRow.avatar_url || null,
+    is_free_credit_claimed: primaryRow.is_free_credit_claimed ?? true,
+    last_daily_credit_at: primaryRow.last_daily_credit_at || null,
+    last_weekly_credit_at: primaryRow.last_weekly_credit_at || null,
+    created_at: primaryRow.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
@@ -1635,7 +1686,29 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     if (mob) {
       mob.credits = finalCredits;
       mob.wallet_balance = finalCredits;
+      mob.unlimited_expiry = bestUnlimitedExpiry;
       mobileUsersStore.set(cleanPhone, mob);
+    }
+  }
+
+  // 6. Self-healing DB sync: ensure Supabase records have the true balance & unlimited expiry
+  if (db) {
+    try {
+      const syncPayload: any = {
+        credits: Math.round(finalCredits),
+        wallet_balance: Math.round(finalCredits),
+        unlimited_expiry: bestUnlimitedExpiry,
+        full_name: resolvedName,
+        updated_at: new Date().toISOString()
+      };
+      if (resolvedId && resolvedId.includes('-')) {
+        await db.from("profiles").update(syncPayload).eq("id", resolvedId);
+      }
+      if (resolvedEmail) {
+        await db.from("profiles").update(syncPayload).ilike("email", resolvedEmail);
+      }
+    } catch (syncErr) {
+      console.warn("[DB_PROFILE_SYNC_NOTICE]", syncErr);
     }
   }
 
