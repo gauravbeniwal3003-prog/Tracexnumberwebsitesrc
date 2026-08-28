@@ -686,7 +686,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProfileCredits = (credits: number) => {
-    setProfile(prev => prev ? { ...prev, credits } : prev);
+    const numCredits = Math.max(0, Number(Number(credits).toFixed(2)));
+    setProfile(prev => prev ? { ...prev, credits: numCredits, wallet_balance: numCredits } : prev);
+    const savedMobileSession = localStorage.getItem('tracex_mobile_session');
+    if (savedMobileSession) {
+      try {
+        const parsed = JSON.parse(savedMobileSession);
+        if (parsed.user) {
+          parsed.user.credits = numCredits;
+          parsed.user.wallet_balance = numCredits;
+          localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
+        }
+      } catch (e) {}
+    }
   };
 
   return (

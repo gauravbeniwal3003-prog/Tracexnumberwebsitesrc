@@ -48,7 +48,7 @@ app = FastAPI(title="TraceXData Intelligence PRO")
 
 # --- PROVIDER CONFIGURATION AND HELPER ---
 DEFAULT_PROVIDER_CONFIGS = {
-    "phone": "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    "phone": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
     "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
     "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
     "aadhaar_to_pan": "https://digisevapoint.com/api/developer_api.php?api_key=be46807e4885358a1adcc55a73038d7f&service=panfind&query={query}",
@@ -60,7 +60,7 @@ DEFAULT_PROVIDER_CONFIGS = {
     "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    "telegram": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
+    "telegram": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
     "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 }
 
@@ -2165,11 +2165,9 @@ def clean_branding_text_line_by_line(raw_text: str) -> str:
             
         # Inline branding removal that doesn't damage legitimate names/addresses
         line = re.sub(
-            r'(tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
+            r'(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
             '',
             line,
-            flags=re.IGNORECASE
-        )
             flags=re.IGNORECASE
         )
         # Strip code tag elements
@@ -2356,7 +2354,7 @@ def clean_branding_recursive(obj):
             import re
             # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
             pattern = re.compile(
-                r'(tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
+                r'(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
                 re.IGNORECASE
             )
             val = pattern.sub("", obj)

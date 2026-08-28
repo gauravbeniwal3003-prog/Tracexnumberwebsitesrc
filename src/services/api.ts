@@ -136,18 +136,18 @@ export interface ApiResponse {
 const BANNED_WORDS = [
   'gaurav', 'beniwal', 'seekhlebhai', 'bot_owner', 'buy_api', 'developer',
   'api_provider', 'created_by', 'channel', 'credits', 'admin', 'seller',
-  'vishal', 'boss', 'vishal boss', 'techvishalboss', '👑', 'brand',
-  'https://t.me/Gaurav_beni_0001', 'https://t.me/Seekhlebhai', 'tg_channel', 'watermark'
+  'vishal', 'boss', 'vishal boss', 'techvishalboss', '👑', 'brand', 'digiseva', 'digisevapoint',
+  'https://t.me/Gaurav_beni_0001', 'https://t.me/Seekhlebhai', 'https://digisevapoint.com', '@Techvishalboss', 'tg_channel', 'watermark'
 ];
 
 export const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     let cleaned = obj
-      .replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|👑|\ud83d\udc51)/gi, '')
+      .replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|👑|\ud83d\udc51)/gi, '')
       .replace(/(gaurav[\s\-_]*beniwal|seekhlebhai(?:\.in)?|exploitsindia(?:\.site)?|osintcaller(?:bot)?)/gi, '');
     for (const word of BANNED_WORDS) {
-      if (word.startsWith('https://')) {
+      if (word.startsWith('https://') || word.startsWith('@')) {
         cleaned = cleaned.split(word).join('');
       } else {
         const regex = new RegExp(`\\b${word}\\b`, 'gi');
@@ -164,7 +164,7 @@ export const scrubBranding = (obj: any): any => {
     for (const key in obj) {
       const lowerKey = key.toLowerCase();
       const isBanned = BANNED_WORDS.some(b => lowerKey.includes(b));
-      if (!isBanned && !lowerKey.includes('owner') && !lowerKey.includes('dev') && !lowerKey.includes('contact') && !lowerKey.includes('brand')) {
+      if (!isBanned && !lowerKey.includes('owner') && !lowerKey.includes('dev') && !lowerKey.includes('contact') && !lowerKey.includes('brand') && !lowerKey.includes('branding')) {
         result[key] = scrubBranding(obj[key]);
       }
     }
@@ -175,11 +175,10 @@ export const scrubBranding = (obj: any): any => {
 
 const DIRECT_PROVIDERS: Record<string, string[]> = {
   phone: [
-    "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
-    "https://seekhlebhai.in/api/v1/search?api_key=5219fdfc4155a0139b4bfa2540b6ff8d&search={query}"
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
   ],
   telegram: [
-    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}"
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
   ],
   adhr: [
     "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",

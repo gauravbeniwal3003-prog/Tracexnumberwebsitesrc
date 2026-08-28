@@ -336,23 +336,16 @@ const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || process.env.VITE_
 const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || "https://api.cashfree.com/pg";
 
 
-// Security Middleware (Helmet)
+// Security Middleware (Helmet configured to permit iframe preview in AI Studio)
 app.disable('x-powered-by');
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https://*"],
-      connectSrc: ["'self'", "https://*"],
-      frameSrc: ["'self'", "https://sdk.cashfree.com"]
-    }
-  } : false,
+  contentSecurityPolicy: false,
+  frameguard: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
   crossOriginEmbedderPolicy: false,
-  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
-  referrerPolicy: { policy: 'same-origin' }
+  hsts: false,
+  referrerPolicy: { policy: 'no-referrer-when-downgrade' }
 }));
 
 // CORS Configuration
@@ -385,7 +378,6 @@ const securityGuard = (req: express.Request, res: express.Response, next: expres
   if (req.path.includes('/provider-configs') || req.path.includes('/api-settings')) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('X-Frame-Options', 'ALLOW-FROM https://ai.studio');
     return next();
   }
 
@@ -430,7 +422,6 @@ const securityGuard = (req: express.Request, res: express.Response, next: expres
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('X-Frame-Options', 'ALLOW-FROM https://ai.studio');
   next();
 };
 
@@ -1092,7 +1083,13 @@ function normalizeProviderRecord(rawItem: any, type: string, queryStr: string = 
   if (foundPan) normalized.pan_number = String(foundPan).trim().toUpperCase();
 
   const foundAddress = getValueByKeywords('address', 'location', 'c_address', 'p_address', 'permanent_address', 'present_address', 'addr', 'full_address');
-  if (foundAddress) normalized.address = String(foundAddress).trim();
+  if (foundAddress) {
+    let cleanAddr = String(foundAddress).trim();
+    if (cleanAddr.includes('!')) {
+      cleanAddr = cleanAddr.replace(/!+/g, ', ').replace(/^,\s*|,\s*$/g, '').trim();
+    }
+    normalized.address = cleanAddr;
+  }
 
   const foundOperator = getValueByKeywords('operator', 'carrier', 'network', 'telecom_operator', 'provider');
   if (foundOperator) normalized.operator = String(foundOperator).trim().toUpperCase();
@@ -1113,16 +1110,16 @@ function normalizeProviderRecord(rawItem: any, type: string, queryStr: string = 
   for (const k of itemKeys) {
     const lowerK = k.toLowerCase();
     if ([
-      'branding', 'api_info', 'powered_by', 'buy_api', 
+      'branding', 'brand', 'api_info', 'powered_by', 'buy_api', 
       'owner_telegram', 'developer', 'developer_name', 'provider', 
       'provider_info', 'api_buy_link', 'website_link', 'buy', 
-      'digiseva', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to'
+      'digiseva', 'digisevapoint', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to', 'telegram_support'
     ].includes(lowerK)) continue;
 
     if (normalized[k] === undefined && item[k] !== undefined && item[k] !== null) {
       let val = item[k];
       if (typeof val === 'string') {
-        val = val.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?digiseva|@?osintcaller)/gi, "").trim();
+        val = val.replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|@?digiseva|@?osintcaller|👑|\ud83d\udc51)/gi, "").trim();
       }
       normalized[k] = val;
     }
@@ -1213,7 +1210,7 @@ function formatUnifiedSaaSResponse({
 function cleanBrandingObject(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === 'string') {
-    let val = obj.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia)/gi, "").trim();
+    let val = obj.replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|👑|\ud83d\udc51)/gi, "").trim();
     val = val.replace(/\s+/g, ' ').trim();
     val = val.replace(/^[:\-\s@]+|[:\-\s@]+$/g, '').trim();
     return val || "N/A";
@@ -1224,7 +1221,7 @@ function cleanBrandingObject(obj: any): any {
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
-      if (['api_creator', 'api_by_link', 'website_link', 'creator', 'credit', 'support'].includes(key.toLowerCase())) {
+      if (['api_creator', 'api_by_link', 'website_link', 'creator', 'credit', 'support', 'branding', 'developer', 'telegram_support'].includes(key.toLowerCase())) {
         continue;
       }
       cleaned[key] = cleanBrandingObject(obj[key]);
@@ -1387,57 +1384,218 @@ function parsePlainTextLookup(text: string, type: 'aadhar' | 'pan' | 'bank' | 'r
 // Public SaaS API Endpoint (Smart Unified Lookup proxy to support multiple databases)
 
 
+async function updateUserCreditsAcrossAllStores(
+  userId: string | null | undefined,
+  email: string | null | undefined,
+  phone: string | null | undefined,
+  targetBalance: number,
+  fullName?: string,
+  unlimitedExpiry?: string | null,
+  userDiscountPercent?: number,
+  isFreeCreditClaimed?: boolean
+): Promise<{ success: boolean; finalCredits: number }> {
+  const db = supabaseAdmin || supabase;
+  const nowIso = new Date().toISOString();
+  const cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
+  const cleanEmail = email ? String(email).trim().toLowerCase() : (cleanPhone ? `${cleanPhone}@tracexdata.com` : "");
+  const targetBal = Math.max(0, Number(Number(targetBalance).toFixed(2)));
+  const nameToUse = fullName?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
+
+  // 1. Sync in-memory mobileUsersStore & data/mobile_users.json
+  if (cleanPhone && cleanPhone.length === 10) {
+    const existing = mobileUsersStore.get(cleanPhone) || {};
+    mobileUsersStore.set(cleanPhone, {
+      ...existing,
+      id: userId || existing.id || getUuidForPhone(cleanPhone),
+      phone: cleanPhone,
+      email: cleanEmail || existing.email,
+      full_name: nameToUse || existing.full_name,
+      credits: targetBal,
+      wallet_balance: targetBal,
+      unlimited_expiry: unlimitedExpiry !== undefined ? unlimitedExpiry : (existing.unlimited_expiry || null),
+      user_discount_percent: userDiscountPercent !== undefined ? Number(userDiscountPercent) : Number(existing.user_discount_percent || 0),
+      updated_at: nowIso
+    });
+    saveMobileUsersStore(mobileUsersStore);
+  }
+  for (const [pKey, mUser] of mobileUsersStore.entries()) {
+    if ((userId && mUser.id === userId) || (cleanEmail && mUser.email === cleanEmail)) {
+      mobileUsersStore.set(pKey, {
+        ...mUser,
+        credits: targetBal,
+        wallet_balance: targetBal,
+        full_name: nameToUse || mUser.full_name,
+        unlimited_expiry: unlimitedExpiry !== undefined ? unlimitedExpiry : mUser.unlimited_expiry,
+        user_discount_percent: userDiscountPercent !== undefined ? Number(userDiscountPercent) : Number(mUser.user_discount_percent || 0),
+        updated_at: nowIso
+      });
+      saveMobileUsersStore(mobileUsersStore);
+    }
+  }
+
+  if (db) {
+    // 2. Update profiles table
+    const profUpdatePayload: any = {
+      credits: targetBal,
+      wallet_balance: targetBal,
+      updated_at: nowIso
+    };
+    if (nameToUse) profUpdatePayload.full_name = nameToUse;
+    if (unlimitedExpiry !== undefined) profUpdatePayload.unlimited_expiry = unlimitedExpiry;
+    if (userDiscountPercent !== undefined) profUpdatePayload.user_discount_percent = Number(userDiscountPercent);
+    if (isFreeCreditClaimed !== undefined) profUpdatePayload.is_free_credit_claimed = isFreeCreditClaimed;
+
+    if (userId) {
+      try {
+        await db.from("profiles").update(profUpdatePayload).eq("id", userId);
+      } catch (e) {}
+    }
+    if (cleanEmail) {
+      try {
+        await db.from("profiles").update(profUpdatePayload).eq("email", cleanEmail);
+      } catch (e) {}
+    }
+    if (cleanPhone) {
+      try {
+        await db.from("profiles").update(profUpdatePayload).eq("phone", cleanPhone);
+      } catch (e) {}
+      try {
+        await db.from("profiles").update(profUpdatePayload).eq("email", `${cleanPhone}@tracexdata.com`);
+      } catch (e) {}
+    }
+
+    // 3. Update app_users table
+    const appUpdatePayload: any = {
+      credits: targetBal,
+      wallet_balance: targetBal,
+      updated_at: nowIso
+    };
+    if (nameToUse) appUpdatePayload.full_name = nameToUse;
+    if (cleanPhone) appUpdatePayload.phone = cleanPhone;
+    if (cleanEmail) appUpdatePayload.email = cleanEmail;
+    if (unlimitedExpiry !== undefined) appUpdatePayload.unlimited_expiry = unlimitedExpiry;
+    if (userDiscountPercent !== undefined) appUpdatePayload.user_discount_percent = Number(userDiscountPercent);
+
+    if (userId) {
+      try {
+        await db.from("app_users").update(appUpdatePayload).eq("id", userId);
+      } catch (e) {}
+    }
+    if (cleanPhone) {
+      try {
+        await db.from("app_users").update(appUpdatePayload).eq("phone", cleanPhone);
+      } catch (e) {}
+    }
+    if (cleanEmail) {
+      try {
+        await db.from("app_users").update(appUpdatePayload).eq("email", cleanEmail);
+      } catch (e) {}
+    }
+
+    // If userId is provided, ensure rows exist
+    if (userId) {
+      try {
+        await db.from("app_users").upsert({
+          id: userId,
+          email: cleanEmail,
+          phone: cleanPhone || undefined,
+          full_name: nameToUse,
+          credits: targetBal,
+          wallet_balance: targetBal,
+          unlimited_expiry: unlimitedExpiry || null,
+          user_discount_percent: Number(userDiscountPercent || 0),
+          updated_at: nowIso
+        }, { onConflict: "id" });
+      } catch (e) {}
+
+      try {
+        await db.from("profiles").upsert({
+          id: userId,
+          email: cleanEmail || (cleanPhone ? `${cleanPhone}@tracexdata.com` : "user@tracexdata.online"),
+          full_name: nameToUse,
+          credits: targetBal,
+          wallet_balance: targetBal,
+          is_free_credit_claimed: isFreeCreditClaimed ?? true,
+          unlimited_expiry: unlimitedExpiry || null,
+          user_discount_percent: Number(userDiscountPercent || 0),
+          updated_at: nowIso
+        }, { onConflict: "id" });
+      } catch (e) {}
+    }
+  }
+
+  return { success: true, finalCredits: targetBal };
+}
+
 async function getUnifiedUserProfile(userId: string, email?: string, phone?: string): Promise<any> {
-  if (!supabaseAdmin) return null;
+  const db = supabaseAdmin || supabase;
 
   const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : (userId && !userId.includes('-') && userId.length >= 10 ? userId : '');
   let appUserRow: any = null;
   let profileRow: any = null;
 
-  try {
-    if (userId && userId.includes('-')) {
-      const { data: u1 } = await supabaseAdmin.from("app_users").select("*").eq("id", userId).maybeSingle();
-      if (u1) appUserRow = u1;
+  if (db) {
+    try {
+      if (userId && userId.includes('-')) {
+        const { data: u1 } = await db.from("app_users").select("*").eq("id", userId).maybeSingle();
+        if (u1) appUserRow = u1;
+      }
+      if (!appUserRow && cleanPhone) {
+        const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone).maybeSingle();
+        if (u2) appUserRow = u2;
+      }
+      if (!appUserRow && email) {
+        const { data: u3 } = await db.from("app_users").select("*").eq("email", email).maybeSingle();
+        if (u3) appUserRow = u3;
+      }
+    } catch (e) {
+      console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
     }
-    if (!appUserRow && cleanPhone) {
-      const { data: u2 } = await supabaseAdmin.from("app_users").select("*").eq("phone", cleanPhone).maybeSingle();
-      if (u2) appUserRow = u2;
+
+    try {
+      if (userId && userId.includes('-')) {
+        const { data: p1 } = await db.from("profiles").select("*").eq("id", userId).maybeSingle();
+        if (p1) profileRow = p1;
+      }
+      if (!profileRow && email) {
+        const { data: p2 } = await db.from("profiles").select("*").eq("email", email).maybeSingle();
+        if (p2) profileRow = p2;
+      }
+      if (!profileRow && cleanPhone) {
+        const { data: p3 } = await db.from("profiles").select("*").eq("phone", cleanPhone).maybeSingle();
+        if (p3) profileRow = p3;
+      }
+    } catch (e) {
+      console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
     }
-    if (!appUserRow && email) {
-      const { data: u3 } = await supabaseAdmin.from("app_users").select("*").eq("email", email).maybeSingle();
-      if (u3) appUserRow = u3;
-    }
-  } catch (e) {
-    console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
   }
 
-  try {
-    if (userId && userId.includes('-')) {
-      const { data: p1 } = await supabaseAdmin.from("profiles").select("*").eq("id", userId).maybeSingle();
-      if (p1) profileRow = p1;
+  // Also check mobileUsersStore
+  let mobStoreUser: any = null;
+  if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
+    mobStoreUser = mobileUsersStore.get(cleanPhone);
+  } else {
+    for (const [pKey, mUser] of mobileUsersStore.entries()) {
+      if ((userId && mUser.id === userId) || (email && mUser.email === email)) {
+        mobStoreUser = mUser;
+        break;
+      }
     }
-    if (!profileRow && email) {
-      const { data: p2 } = await supabaseAdmin.from("profiles").select("*").eq("email", email).maybeSingle();
-      if (p2) profileRow = p2;
-    }
-    if (!profileRow && cleanPhone) {
-      const { data: p3 } = await supabaseAdmin.from("profiles").select("*").eq("phone", cleanPhone).maybeSingle();
-      if (p3) profileRow = p3;
-    }
-  } catch (e) {
-    console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
   }
 
-  if (!appUserRow && !profileRow) {
+  if (!appUserRow && !profileRow && !mobStoreUser) {
     return null;
   }
 
-  // Determine latest updated record between profiles and app_users
+  // Determine latest updated record between profiles, app_users, and mobileUsersStore
   const profUpdated = profileRow?.updated_at ? new Date(profileRow.updated_at).getTime() : 0;
   const appUpdated = appUserRow?.updated_at ? new Date(appUserRow.updated_at).getTime() : 0;
+  const mobUpdated = mobStoreUser?.updated_at ? new Date(mobStoreUser.updated_at).getTime() : 0;
 
   let finalCredits = 10.00;
-  if (profileRow && appUserRow) {
+  if (mobStoreUser && mobUpdated > profUpdated && mobUpdated > appUpdated) {
+    finalCredits = Number(mobStoreUser.credits !== undefined ? mobStoreUser.credits : (mobStoreUser.wallet_balance !== undefined ? mobStoreUser.wallet_balance : 10.00));
+  } else if (profileRow && appUserRow) {
     if (profUpdated >= appUpdated && profileRow.credits !== undefined && profileRow.credits !== null) {
       finalCredits = Number(profileRow.credits);
     } else if (appUserRow.credits !== undefined && appUserRow.credits !== null) {
@@ -1449,23 +1607,27 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     finalCredits = Number(profileRow.credits);
   } else if (appUserRow && appUserRow.credits !== undefined && appUserRow.credits !== null) {
     finalCredits = Number(appUserRow.credits);
+  } else if (mobStoreUser) {
+    finalCredits = Number(mobStoreUser.credits !== undefined ? mobStoreUser.credits : (mobStoreUser.wallet_balance !== undefined ? mobStoreUser.wallet_balance : 10.00));
   }
 
+  finalCredits = Math.max(0, Number(finalCredits.toFixed(2)));
+
   const merged = {
-    id: userId || appUserRow?.id || profileRow?.id,
-    email: email || appUserRow?.email || profileRow?.email,
-    phone: cleanPhone || appUserRow?.phone || profileRow?.phone,
-    full_name: profileRow?.full_name || appUserRow?.full_name || email?.split("@")[0] || "User",
+    id: userId || appUserRow?.id || profileRow?.id || mobStoreUser?.id || (cleanPhone ? getUuidForPhone(cleanPhone) : "user"),
+    email: email || appUserRow?.email || profileRow?.email || mobStoreUser?.email,
+    phone: cleanPhone || appUserRow?.phone || profileRow?.phone || mobStoreUser?.phone,
+    full_name: profileRow?.full_name || appUserRow?.full_name || mobStoreUser?.full_name || email?.split("@")[0] || "User",
     credits: finalCredits,
     wallet_balance: finalCredits,
-    unlimited_expiry: profileRow?.unlimited_expiry || appUserRow?.unlimited_expiry || null,
-    user_discount_percent: Number(profileRow?.user_discount_percent || appUserRow?.user_discount_percent || 0),
+    unlimited_expiry: profileRow?.unlimited_expiry || appUserRow?.unlimited_expiry || mobStoreUser?.unlimited_expiry || null,
+    user_discount_percent: Number(profileRow?.user_discount_percent || appUserRow?.user_discount_percent || mobStoreUser?.user_discount_percent || 0),
     avatar_url: profileRow?.avatar_url || null,
     is_free_credit_claimed: profileRow?.is_free_credit_claimed ?? appUserRow?.is_free_credit_claimed ?? true,
     last_daily_credit_at: profileRow?.last_daily_credit_at || null,
     last_weekly_credit_at: profileRow?.last_weekly_credit_at || null,
-    created_at: profileRow?.created_at || appUserRow?.created_at || new Date().toISOString(),
-    updated_at: profileRow?.updated_at || appUserRow?.updated_at || new Date().toISOString()
+    created_at: profileRow?.created_at || appUserRow?.created_at || mobStoreUser?.created_at || new Date().toISOString(),
+    updated_at: profileRow?.updated_at || appUserRow?.updated_at || mobStoreUser?.updated_at || new Date().toISOString()
   };
 
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
@@ -3277,56 +3439,6 @@ app.get("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Deduct balance upfront
-  let newBalance = currentCredits;
-  if (!isUnlimited) {
-    newBalance = Math.max(0, currentCredits - lookupCost);
-    if (user.phone && mobileUsersStore.has(user.phone)) {
-      const mob = mobileUsersStore.get(user.phone);
-      mob.credits = newBalance;
-      mobileUsersStore.set(user.phone, mob);
-      saveMobileUsersStore(mobileUsersStore);
-    }
-    if (supabaseAdmin && user.id) {
-      try {
-        if (user && user.email) { await supabaseAdmin.from("app_users").update({ credits: newBalance }).eq("id", user.id); }
-        await supabaseAdmin.from("profiles")
-          .update({ credits: newBalance, wallet_balance: newBalance })
-          .eq("id", user.id);
-
-        await supabaseAdmin.from("wallet_transactions").insert({
-          user_id: user.id,
-          user_email: user.email || "User",
-          service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
-          type: "Debit",
-          amount: lookupCost,
-          balance_after: newBalance
-        });
-      } catch (dbErr) {
-        console.error("[USER_LOOKUP] Failed to record upfront wallet debit:", dbErr);
-      }
-    }
-  }
-
-  // Instantly record search query to database (< 50ms) so user account history shows it immediately
-  try {
-    const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    if (supabaseAdmin) {
-      await supabaseAdmin.from("service_records").insert({
-        user_id: user.id,
-        client_name: user.email || (isAdmin ? "Admin" : "User"),
-        service_name: `Web Search: ${service.toUpperCase()}`,
-        reference_code: refCode,
-        status: "SUCCESS",
-        result_payload: { status: "PROCESSING", query: cleanedQuery, service },
-        log_number: Math.floor(100 + Math.random() * 900)
-      });
-    }
-    await logSearchHistory(req, service, cleanedQuery, 'PROCESSING', client, { status: "PROCESSING", query: cleanedQuery, service }, user.id, user.email);
-  } catch (upfrontLogErr) {
-    console.error("[USER_LOOKUP] Upfront log error:", upfrontLogErr);
-  }
-
   // Execute lookup using internal master authorization key
   const activeMasterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
   const path = `/api/lookup?key=${encodeURIComponent(activeMasterKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
@@ -3373,7 +3485,7 @@ app.get("/api/user-lookup", async (req, res) => {
         status: "error",
         error_type: data.error_type || "lookup_failed",
         message: data.message || data.error || "Sorry, we don't have data related to the query.",
-        remaining_balance: newBalance
+        remaining_balance: currentCredits
       });
     }
 
@@ -3383,8 +3495,8 @@ app.get("/api/user-lookup", async (req, res) => {
         status: "error",
         error_type: "no_data_found",
         message: "Sorry, we don't have data related to the query.",
-        remaining_balance: newBalance,
-        cost_deducted: isUnlimited ? 0 : lookupCost
+        remaining_balance: currentCredits,
+        cost_deducted: 0
       });
     }
 
@@ -3397,16 +3509,46 @@ app.get("/api/user-lookup", async (req, res) => {
         status: "error",
         error_type: "no_data_found",
         message: "Sorry, we don't have data related to the query.",
-        remaining_balance: newBalance,
-        cost_deducted: isUnlimited ? 0 : lookupCost
+        remaining_balance: currentCredits,
+        cost_deducted: 0
       });
+    }
+
+    // SUCCESS - Deduct balance now after results are found and ready to show to user
+    let newBalance = currentCredits;
+    if (!isUnlimited) {
+      newBalance = Math.max(0, currentCredits - lookupCost);
+      await updateUserCreditsAcrossAllStores(
+        user.id,
+        user.email,
+        user.phone,
+        newBalance,
+        profile.full_name,
+        profile.unlimited_expiry,
+        profile.user_discount_percent
+      );
+
+      if (supabaseAdmin) {
+        try {
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: user.id,
+            user_email: user.email || "User",
+            service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
+            type: "Debit",
+            amount: lookupCost,
+            balance_after: newBalance,
+            created_at: new Date().toISOString()
+          });
+        } catch (dbErr) {
+          console.error("[USER_LOOKUP] Failed to record wallet debit:", dbErr);
+        }
+      }
     }
 
     if (supabaseAdmin) {
       try {
         const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        
-          await supabaseAdmin.from("service_records").insert({
+        await supabaseAdmin.from("service_records").insert({
           user_id: user.id,
           client_name: user.email || (isAdmin ? "Admin" : "User"),
           service_name: `Web Search: ${service.toUpperCase()}`,
@@ -3434,12 +3576,11 @@ app.get("/api/user-lookup", async (req, res) => {
     await logSearchHistory(req, service, cleanedQuery, 'completed', client, { error: err.message }, user.id, user.email);
 
     return res.status(200).json({
-      status: "success",
-      service,
-      query: cleanedQuery,
-      results: { message: "Query processed. No response data available from server." },
-      remaining_balance: newBalance,
-      cost_deducted: isUnlimited ? 0 : lookupCost
+      status: "error",
+      error_type: "lookup_error",
+      message: "Sorry, an error occurred while processing your lookup.",
+      remaining_balance: currentCredits,
+      cost_deducted: 0
     });
   }
 });
@@ -3500,13 +3641,15 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
 
   const deduct = async () => {
     const newCredits = Math.max(0, currentCredits - lookupCost);
-    if (userProfile && userProfile.email) { 
-      await supabaseAdmin.from("app_users").update({ credits: newCredits }).eq("id", userProfile.id); 
-    }
-    await supabaseAdmin
-      .from("profiles")
-      .update({ credits: newCredits, wallet_balance: newCredits })
-      .eq("id", userProfile.id);
+    await updateUserCreditsAcrossAllStores(
+      userProfile.id,
+      userProfile.email,
+      userProfile.phone,
+      newCredits,
+      userProfile.full_name,
+      userProfile.unlimited_expiry,
+      userProfile.user_discount_percent
+    );
 
     try {
       await supabaseAdmin.from("wallet_transactions").insert({
@@ -5232,97 +5375,17 @@ async function fulfillOrder(
       const existingBalance = profile ? Math.max(Number(profile.wallet_balance || 0), Number(profile.credits || 0)) : 0;
       const newTotalBalance = existingBalance + creditsToAdd;
 
-      const profileUpsertPayload: any = {
-        id: finalUserId,
-        email: emailToUse,
-        full_name: nameToUse,
-        credits: newTotalBalance,
-        wallet_balance: newTotalBalance,
-        is_free_credit_claimed: true,
-        updated_at: new Date().toISOString()
-      };
-
-      if (profile?.unlimited_expiry) profileUpsertPayload.unlimited_expiry = profile.unlimited_expiry;
-      if (profile?.user_discount_percent) profileUpsertPayload.user_discount_percent = profile.user_discount_percent;
-
-      // 1. Upsert profiles table by id
-      try {
-        const { error: pErr } = await db.from("profiles").upsert(profileUpsertPayload, { onConflict: "id" });
-        if (pErr) {
-          console.warn("[FULFILL] profiles upsert error, trying update:", pErr.message);
-          await db.from("profiles").update({
-            credits: newTotalBalance,
-            wallet_balance: newTotalBalance,
-            updated_at: new Date().toISOString()
-          }).eq("id", finalUserId);
-        }
-      } catch (pEx) {
-        console.warn("[FULFILL] profiles table operation warning:", pEx);
-      }
-
-      // 2. Also update profiles by email to guarantee sync across queries
-      if (emailToUse && emailToUse.includes("@")) {
-        try {
-          await db.from("profiles").update({
-            credits: newTotalBalance,
-            wallet_balance: newTotalBalance,
-            updated_at: new Date().toISOString()
-          }).eq("email", emailToUse);
-        } catch (emEx) {
-          console.warn("[FULFILL] profiles email update warning:", emEx);
-        }
-      }
-
-      // 3. Upsert app_users table
-      try {
-        const { error: aErr } = await db.from("app_users").upsert({
-          id: finalUserId,
-          email: emailToUse,
-          full_name: nameToUse,
-          credits: newTotalBalance,
-          wallet_balance: newTotalBalance,
-          phone: cleanPhoneForStore || (profile?.phone || ""),
-          updated_at: new Date().toISOString()
-        }, { onConflict: "id" });
-
-        if (aErr && cleanPhoneForStore) {
-          await db.from("app_users").update({
-            credits: newTotalBalance,
-            wallet_balance: newTotalBalance,
-            updated_at: new Date().toISOString()
-          }).eq("phone", cleanPhoneForStore);
-        }
-      } catch (aEx) {
-        console.warn("[FULFILL] app_users upsert warning:", aEx);
-      }
-
-      if (emailToUse && emailToUse.includes("@")) {
-        try {
-          await db.from("app_users").update({
-            credits: newTotalBalance,
-            wallet_balance: newTotalBalance,
-            updated_at: new Date().toISOString()
-          }).eq("email", emailToUse);
-        } catch (aEmEx) {
-          console.warn("[FULFILL] app_users email update warning:", aEmEx);
-        }
-      }
-
-      // 4. Sync in-memory mobileUsersStore if applicable
-      if (cleanPhoneForStore && cleanPhoneForStore.length === 10) {
-        const existingMobile = mobileUsersStore.get(cleanPhoneForStore) || {};
-        mobileUsersStore.set(cleanPhoneForStore, {
-          ...existingMobile,
-          id: finalUserId,
-          phone: cleanPhoneForStore,
-          email: emailToUse,
-          full_name: nameToUse,
-          credits: newTotalBalance,
-          wallet_balance: newTotalBalance,
-          updated_at: new Date().toISOString()
-        });
-        saveMobileUsersStore(mobileUsersStore);
-      }
+      // Update all stores atomically
+      await updateUserCreditsAcrossAllStores(
+        finalUserId,
+        emailToUse,
+        cleanPhoneForStore || profile?.phone,
+        newTotalBalance,
+        nameToUse,
+        profile?.unlimited_expiry,
+        profile?.user_discount_percent,
+        true
+      );
 
       // 5. Update payment_claims to success with final credits and user
       try {
@@ -7479,7 +7542,7 @@ app.get("/api/panfind", async (req, res) => {
 const CONFIG_FILE_PATH = path.join(resolvedDirname, "data", "provider_config.json");
 
 const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
-  phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+  phone: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
   aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   ifsc: "https://ifsc.razorpay.com/{query}",
@@ -7488,7 +7551,7 @@ const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
   email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-  telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
+  telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
   family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
 };
 
@@ -7551,13 +7614,13 @@ async function loadProviderConfigsFromDatabase() {
 
     // Ensure our new primary endpoints are updated in DB
     const targetConfigs: Record<string, string> = {
-      phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+      phone: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
       aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
       adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
       vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
       veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
       veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-      telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}",
+      telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
       ifsc: "https://ifsc.razorpay.com/{query}",
       bnk: "https://ifsc.razorpay.com/{query}",
       family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
@@ -7637,6 +7700,8 @@ function getProviderUrl(serviceKey: string, query: string): string {
   if (normKey === 'rasion') alias = 'family';
   if (normKey === 'veh_owner_num') alias = 'veh_numm';
   if (normKey === 'veh_numm') alias = 'veh_owner_num';
+  if (normKey === 'number' || normKey === 'mobile' || normKey === 'num') alias = 'phone';
+  if (normKey === 'phone') alias = 'number';
 
   const template = (
     PROVIDER_CONFIGS[normKey] || 
@@ -7691,7 +7756,7 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(digi[\s\-_]*seva(?:\.in)?|@?digiseva|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|👑|\ud83d\udc51)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|👑|\ud83d\udc51)/gi, "")
       .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
@@ -7710,7 +7775,7 @@ function scrubAllBranding(obj: any): any {
         "branding", "brand", "brand_name", "api_info", "powered_by", "buy_api", 
         "owner_telegram", "developer", "developer_name", "provider", 
         "provider_info", "api_buy_link", "website_link", "buy", 
-        "digiseva", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot"
+        "digiseva", "digisevapoint", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot", "telegram_support"
       ].includes(lowerKey)) {
         continue;
       }
@@ -8802,106 +8867,15 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       updateObj.phone = cleanPhone;
     }
 
-    // 1. Update in profiles table (by id, and also sync by email/phone)
-    try {
-      const { error: profErr } = await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
-      if (profErr) {
-        delete updateObj.phone;
-        try {
-          await db.from("profiles").upsert(updateObj, { onConflict: 'id' });
-        } catch (e) {}
-      }
-      if (cleanEmail && !cleanEmail.endsWith("@tracexdata.com")) {
-        try {
-          await db.from("profiles").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            unlimited_expiry: expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          }).eq("email", cleanEmail);
-        } catch (e) {}
-      }
-      if (cleanPhone) {
-        try {
-          await db.from("profiles").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            unlimited_expiry: expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          }).eq("phone", cleanPhone);
-        } catch (e) {}
-      }
-    } catch (profCatch) {
-      console.warn("Profiles table update warning:", profCatch);
-    }
-
-    // 2. Sync app_users table (by id, and also sync by phone & email)
-    try {
-      const appUserObj: any = {
-        id: id,
-        full_name: nameToUse,
-        phone: cleanPhone || undefined,
-        credits: targetBalance,
-        wallet_balance: targetBalance,
-        unlimited_expiry: expiry,
-        user_discount_percent: Number(user_discount_percent || 0),
-        updated_at: nowIso
-      };
-      if (cleanEmail) appUserObj.email = cleanEmail;
-
-      const { error: appErr } = await db.from("app_users").upsert(appUserObj, { onConflict: 'id' });
-      if (appErr && cleanPhone) {
-        try {
-          await db.from("app_users").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            unlimited_expiry: expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          }).eq("phone", cleanPhone);
-        } catch (e) {}
-      }
-      if (cleanPhone) {
-        try {
-          await db.from("app_users").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            unlimited_expiry: expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          }).eq("phone", cleanPhone);
-        } catch (e) {}
-      }
-      if (cleanEmail) {
-        try {
-          await db.from("app_users").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            unlimited_expiry: expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          }).eq("email", cleanEmail);
-        } catch (e) {}
-      }
-    } catch (appCatch) {
-      if (cleanPhone) {
-        try {
-          await db.from("app_users").update({
-            full_name: nameToUse,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            updated_at: nowIso
-          }).eq("phone", cleanPhone);
-        } catch (e) {}
-      }
-    }
+    await updateUserCreditsAcrossAllStores(
+      id,
+      cleanEmail,
+      cleanPhone,
+      targetBalance,
+      nameToUse,
+      expiry,
+      Number(user_discount_percent || 0)
+    );
 
     // 3. Update Supabase Auth user metadata if available
     try {
@@ -8930,57 +8904,6 @@ app.put("/api/admin/profiles/:id", verifyAdminToken, async (req, res) => {
       }]);
     } catch (txLogErr) {
       // ignore if logging table unavailable
-    }
-
-    // 5. Sync mobileUsersStore immediately in-memory and persistent file
-    if (cleanPhone && cleanPhone.length === 10) {
-      const existing = mobileUsersStore.get(cleanPhone) || {};
-      mobileUsersStore.set(cleanPhone, {
-        ...existing,
-        id: id,
-        phone: cleanPhone,
-        email: cleanEmail,
-        full_name: nameToUse,
-        credits: targetBalance,
-        wallet_balance: targetBalance,
-        unlimited_expiry: expiry,
-        user_discount_percent: Number(user_discount_percent || 0),
-        updated_at: nowIso
-      });
-      saveMobileUsersStore(mobileUsersStore);
-    } else {
-      let foundInStore = false;
-      for (const [pKey, mUser] of mobileUsersStore.entries()) {
-        if (mUser.id === id || (cleanEmail && mUser.email === cleanEmail)) {
-          mobileUsersStore.set(pKey, {
-            ...mUser,
-            credits: targetBalance,
-            wallet_balance: targetBalance,
-            full_name: nameToUse || mUser.full_name,
-            unlimited_expiry: expiry || mUser.unlimited_expiry,
-            user_discount_percent: Number(user_discount_percent || 0),
-            updated_at: nowIso
-          });
-          saveMobileUsersStore(mobileUsersStore);
-          foundInStore = true;
-          break;
-        }
-      }
-      if (!foundInStore && cleanPhone) {
-        mobileUsersStore.set(cleanPhone, {
-          id: id,
-          phone: cleanPhone,
-          email: cleanEmail,
-          full_name: nameToUse,
-          credits: targetBalance,
-          wallet_balance: targetBalance,
-          unlimited_expiry: expiry,
-          user_discount_percent: Number(user_discount_percent || 0),
-          created_at: nowIso,
-          updated_at: nowIso
-        });
-        saveMobileUsersStore(mobileUsersStore);
-      }
     }
 
     return res.json({ 

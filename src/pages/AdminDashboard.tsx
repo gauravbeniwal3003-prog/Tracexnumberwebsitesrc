@@ -93,12 +93,12 @@ export default function AdminDashboard() {
 
   // Dynamic Provider API Mappings State
   const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({
-    phone: "https://exploitsindia.site/osintcallerbot/number.php?exploits={query}",
+    phone: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
     aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
     vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
     veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
     email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
-    telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}"
+    telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
   });
   const [isSavingProviders, setIsSavingProviders] = useState(false);
 

@@ -158,12 +158,12 @@ CREATE TABLE IF NOT EXISTS public.api_services (
 -- Seed default API services if empty
 INSERT INTO public.api_services (service_key, service_name, base_price, category, provider_url)
 VALUES 
-    ('phone', 'Mobile Number OSINT Lookup', 1.00, 'MOBILE', 'https://exploitsindia.site/osintcallerbot/number.php?exploits={query}'),
+    ('phone', 'Mobile Number OSINT Lookup', 1.00, 'MOBILE', 'https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}'),
     ('aadhaar', 'Aadhaar Card Intelligence', 1.00, 'IDENTITY', 'https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}'),
     ('ifsc', 'Bank IFSC Details Lookup', 1.00, 'BANKING', 'https://ifsc.razorpay.com/{query}'),
     ('vehicle', 'Vehicle RC Information', 1.00, 'VEHICLE', 'https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}'),
     ('email', 'Email OSINT Intelligence', 1.00, 'DIGITAL', 'https://exploitsindia.site/osintcallerbot/email.php?exploits={query}'),
-    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_7F5678EC&service=tg_to_number&telegram={query}'),
+    ('telegram', 'Telegram Account Intelligence', 1.00, 'SOCIAL', 'https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}'),
     ('family', 'Ration Card / Family Tree Lookup', 1.00, 'GOVT', 'https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}')
 ON CONFLICT (service_key) DO UPDATE 
 SET service_name = EXCLUDED.service_name;
