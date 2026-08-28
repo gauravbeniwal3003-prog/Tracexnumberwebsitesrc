@@ -58,8 +58,8 @@ DEFAULT_PROVIDER_CONFIGS = {
     "ifsc": "https://ifsc.razorpay.com/{query}",
     "bnk": "https://ifsc.razorpay.com/{query}",
     "vehicle": "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-    "veh_owner_num": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-    "veh_numm": "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+    "veh_owner_num": "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
+    "veh_numm": "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
     "email": "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
     "telegram": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
     "family": "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
@@ -886,6 +886,239 @@ async def log_visitor(request: Request):
         print(f"Error logging visitor: {e}")
         return {"status": "error", "message": str(e)}
 
+def update_user_credits_across_all_stores(
+    db,
+    user_id: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    target_bal: float = 0.0,
+    full_name: Optional[str] = None,
+    unlimited_expiry: Optional[str] = None,
+    user_discount_percent: float = 0.0
+) -> dict:
+    import re
+    from datetime import datetime
+
+    target_bal = max(0.0, round(float(target_bal), 2))
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    clean_phone = re.sub(r'\D', '', phone)[-10:] if phone else ""
+    if not clean_phone and user_id and "-" not in str(user_id) and len(str(user_id)) >= 10:
+        clean_phone = str(user_id)[-10:]
+    clean_email = email.strip().lower() if email and "@" in email else None
+    name_to_use = full_name or (clean_email.split("@")[0] if clean_email else "User")
+
+    if not db:
+        return {"success": False, "finalCredits": target_bal}
+
+    # 1. Update profiles table
+    prof_update_payload = {
+        "credits": target_bal,
+        "wallet_balance": target_bal,
+        "updated_at": now_iso
+    }
+    if full_name:
+        prof_update_payload["full_name"] = full_name
+    if unlimited_expiry is not None:
+        prof_update_payload["unlimited_expiry"] = unlimited_expiry
+    if user_discount_percent is not None:
+        prof_update_payload["user_discount_percent"] = float(user_discount_percent)
+
+    if user_id and is_valid_uuid(str(user_id)):
+        try:
+            db.table("profiles").update(prof_update_payload).eq("id", str(user_id)).execute()
+        except Exception as e:
+            print(f"[CREDIT_UPDATE] profiles eq id error: {e}")
+
+    if clean_email:
+        try:
+            db.table("profiles").update(prof_update_payload).eq("email", clean_email).execute()
+        except Exception as e:
+            print(f"[CREDIT_UPDATE] profiles eq email error: {e}")
+
+    if clean_phone:
+        try:
+            db.table("profiles").update(prof_update_payload).eq("phone", clean_phone).execute()
+        except Exception:
+            pass
+        try:
+            db.table("profiles").update(prof_update_payload).eq("email", f"{clean_phone}@tracexdata.com").execute()
+        except Exception:
+            pass
+
+    # 2. Update app_users table
+    app_update_payload = {
+        "credits": target_bal,
+        "wallet_balance": target_bal,
+        "updated_at": now_iso
+    }
+    if name_to_use:
+        app_update_payload["full_name"] = name_to_use
+    if clean_phone:
+        app_update_payload["phone"] = clean_phone
+    if clean_email:
+        app_update_payload["email"] = clean_email
+    if unlimited_expiry is not None:
+        app_update_payload["unlimited_expiry"] = unlimited_expiry
+    if user_discount_percent is not None:
+        app_update_payload["user_discount_percent"] = float(user_discount_percent)
+
+    if user_id and is_valid_uuid(str(user_id)):
+        try:
+            db.table("app_users").update(app_update_payload).eq("id", str(user_id)).execute()
+        except Exception:
+            pass
+    if clean_phone:
+        try:
+            db.table("app_users").update(app_update_payload).eq("phone", clean_phone).execute()
+        except Exception:
+            pass
+    if clean_email:
+        try:
+            db.table("app_users").update(app_update_payload).eq("email", clean_email).execute()
+        except Exception:
+            pass
+
+    # 3. Upsert if UUID exists to ensure rows exist in both stores
+    if user_id and is_valid_uuid(str(user_id)):
+        try:
+            db.table("profiles").upsert({
+                "id": str(user_id),
+                "email": clean_email or (f"{clean_phone}@tracexdata.com" if clean_phone else f"user_{str(user_id)[:8]}@tracexdata.com"),
+                "full_name": name_to_use,
+                "credits": target_bal,
+                "wallet_balance": target_bal,
+                "is_free_credit_claimed": True,
+                "unlimited_expiry": unlimited_expiry,
+                "user_discount_percent": float(user_discount_percent or 0),
+                "updated_at": now_iso
+            }, on_conflict="id").execute()
+        except Exception:
+            pass
+
+        try:
+            db.table("app_users").upsert({
+                "id": str(user_id),
+                "email": clean_email,
+                "phone": clean_phone if clean_phone else None,
+                "full_name": name_to_use,
+                "credits": target_bal,
+                "wallet_balance": target_bal,
+                "unlimited_expiry": unlimited_expiry,
+                "user_discount_percent": float(user_discount_percent or 0),
+                "updated_at": now_iso
+            }, on_conflict="id").execute()
+        except Exception:
+            pass
+
+    return {"success": True, "finalCredits": target_bal}
+
+def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[str] = None, phone: Optional[str] = None) -> Optional[dict]:
+    import re
+    from datetime import datetime
+
+    if not db:
+        return None
+
+    clean_phone = re.sub(r'\D', '', phone)[-10:] if phone else ""
+    if not clean_phone and user_id and "-" not in str(user_id) and len(str(user_id)) >= 10:
+        clean_phone = str(user_id)[-10:]
+    clean_email = email.strip().lower() if email and "@" in email else None
+
+    app_user_row = None
+    profile_row = None
+
+    # Query app_users
+    try:
+        if user_id and is_valid_uuid(str(user_id)):
+            res = db.table("app_users").select("*").eq("id", str(user_id)).execute()
+            if res.data and len(res.data) > 0:
+                app_user_row = res.data[0]
+        if not app_user_row and clean_phone:
+            res = db.table("app_users").select("*").eq("phone", clean_phone).execute()
+            if res.data and len(res.data) > 0:
+                app_user_row = res.data[0]
+        if not app_user_row and clean_email:
+            res = db.table("app_users").select("*").eq("email", clean_email).execute()
+            if res.data and len(res.data) > 0:
+                app_user_row = res.data[0]
+    except Exception as e:
+        print(f"[DB_PROFILE_FETCH] app_users query error: {e}")
+
+    # Query profiles
+    try:
+        if user_id and is_valid_uuid(str(user_id)):
+            res = db.table("profiles").select("*").eq("id", str(user_id)).execute()
+            if res.data and len(res.data) > 0:
+                profile_row = res.data[0]
+        if not profile_row and clean_email:
+            res = db.table("profiles").select("*").eq("email", clean_email).execute()
+            if res.data and len(res.data) > 0:
+                profile_row = res.data[0]
+        if not profile_row and clean_phone:
+            res = db.table("profiles").select("*").eq("phone", clean_phone).execute()
+            if res.data and len(res.data) > 0:
+                profile_row = res.data[0]
+            if not profile_row:
+                res = db.table("profiles").select("*").eq("email", f"{clean_phone}@tracexdata.com").execute()
+                if res.data and len(res.data) > 0:
+                    profile_row = res.data[0]
+    except Exception as e:
+        print(f"[DB_PROFILE_FETCH] profiles query error: {e}")
+
+    if not app_user_row and not profile_row:
+        return None
+
+    def parse_ts(row):
+        if not row: return 0
+        ts = row.get("updated_at") or row.get("created_at")
+        if not ts: return 0
+        try:
+            clean = str(ts).replace("Z", "")
+            if "+" in clean: clean = clean.split("+")[0]
+            return datetime.fromisoformat(clean).timestamp()
+        except:
+            return 0
+
+    prof_updated = parse_ts(profile_row)
+    app_updated = parse_ts(app_user_row)
+
+    final_credits = 10.00
+    if profile_row and app_user_row:
+        if prof_updated >= app_updated and profile_row.get("credits") is not None:
+            final_credits = float(profile_row.get("credits"))
+        elif app_user_row.get("credits") is not None:
+            final_credits = float(app_user_row.get("credits"))
+        elif profile_row.get("credits") is not None:
+            final_credits = float(profile_row.get("credits"))
+    elif profile_row and profile_row.get("credits") is not None:
+        final_credits = float(profile_row.get("credits"))
+    elif app_user_row and app_user_row.get("credits") is not None:
+        final_credits = float(app_user_row.get("credits"))
+
+    final_credits = max(0.0, round(final_credits, 2))
+
+    resolved_id = (str(user_id) if user_id and is_valid_uuid(str(user_id)) else None) or (profile_row.get("id") if profile_row else None) or (app_user_row.get("id") if app_user_row else None) or "user"
+    resolved_email = clean_email or (profile_row.get("email") if profile_row else None) or (app_user_row.get("email") if app_user_row else None)
+    resolved_phone = clean_phone or (app_user_row.get("phone") if app_user_row else None) or (profile_row.get("phone") if profile_row else None)
+    resolved_name = (profile_row.get("full_name") if profile_row else None) or (app_user_row.get("full_name") if app_user_row else None) or (resolved_email.split("@")[0] if resolved_email else "User")
+
+    return {
+        "id": resolved_id,
+        "email": resolved_email,
+        "phone": resolved_phone,
+        "full_name": resolved_name,
+        "credits": final_credits,
+        "wallet_balance": final_credits,
+        "unlimited_expiry": (profile_row.get("unlimited_expiry") if profile_row else None) or (app_user_row.get("unlimited_expiry") if app_user_row else None),
+        "user_discount_percent": float((profile_row.get("user_discount_percent") if profile_row else None) or (app_user_row.get("user_discount_percent") if app_user_row else 0)),
+        "avatar_url": profile_row.get("avatar_url") if profile_row else None,
+        "is_free_credit_claimed": (profile_row.get("is_free_credit_claimed") if profile_row and profile_row.get("is_free_credit_claimed") is not None else (app_user_row.get("is_free_credit_claimed") if app_user_row and app_user_row.get("is_free_credit_claimed") is not None else True)),
+        "last_daily_credit_at": profile_row.get("last_daily_credit_at") if profile_row else None,
+        "last_weekly_credit_at": profile_row.get("last_weekly_credit_at") if profile_row else None,
+        "created_at": (profile_row.get("created_at") if profile_row else None) or (app_user_row.get("created_at") if app_user_row else datetime.utcnow().isoformat() + "Z"),
+        "updated_at": (profile_row.get("updated_at") if profile_row else None) or (app_user_row.get("updated_at") if app_user_row else datetime.utcnow().isoformat() + "Z")
+    }
+
 @app.get("/api/profile")
 async def get_profile(request: Request):
     db = get_supabase()
@@ -899,35 +1132,31 @@ async def get_profile(request: Request):
     try:
         user_id_val = get_user_id(user)
         user_email_val = get_user_email(user)
-        profile_response = db.table("profiles").select("*").eq("id", user_id_val).execute()
-        profile_data = profile_response.data
+        user_phone_val = getattr(user, "phone", None)
         
         now_str = datetime.utcnow().isoformat() + "Z"
         client_ip = get_client_ip(request)
         
-        # Update last login IP address
-        try:
-            db.table("profiles").update({"last_login_ip": client_ip}).eq("id", user_id_val).execute()
-        except Exception as ip_err:
-            print(f"Error updating last_login_ip: {ip_err}")
+        profile = get_unified_user_profile(db, user_id=user_id_val, email=user_email_val, phone=user_phone_val)
         
-        if not profile_data:
+        if not profile:
             full_name = "User"
             avatar_url = None
             metadata = get_user_metadata(user)
             if metadata:
-                full_name = metadata.get("full_name") or user_email_val.split("@")[0] or "User"
+                full_name = metadata.get("full_name") or (user_email_val.split("@")[0] if user_email_val else "User")
                 avatar_url = metadata.get("avatar_url")
             elif user_email_val:
                 full_name = user_email_val.split("@")[0]
                 
-            is_mobile = str(user_id_val).startswith("usr_mob_")
             credits_val = 10.00
             
             new_profile = {
                 "id": user_id_val,
                 "email": user_email_val,
+                "phone": user_phone_val,
                 "credits": credits_val,
+                "wallet_balance": credits_val,
                 "unlimited_expiry": None,
                 "full_name": full_name,
                 "avatar_url": avatar_url,
@@ -936,45 +1165,24 @@ async def get_profile(request: Request):
                 "last_daily_credit_at": now_str,
                 "last_login_ip": client_ip
             }
-            try:
-                insert_response = db.table("profiles").insert(new_profile).execute()
-                if insert_response.data:
-                    return insert_response.data[0]
-            except Exception as ins_err:
-                print(f"[API_PROFILE_WARN] Could not insert new profile into database: {ins_err}")
+            
+            update_user_credits_across_all_stores(
+                db,
+                user_id=user_id_val,
+                email=user_email_val,
+                phone=user_phone_val,
+                target_bal=credits_val,
+                full_name=full_name
+            )
             return new_profile
         else:
-            profile = profile_data[0]
             profile["last_login_ip"] = client_ip
-            last_daily_str = profile.get("last_daily_credit_at")
-            should_give_daily = False
-            
-            if not last_daily_str:
-                should_give_daily = True
-            else:
+            # Keep both tables synced with last_login_ip
+            if is_valid_uuid(str(profile.get("id"))):
                 try:
-                    clean_last_daily = last_daily_str.replace("Z", "")
-                    if "+" in clean_last_daily:
-                        clean_last_daily = clean_last_daily.split("+")[0]
-                    last_daily_dt = datetime.fromisoformat(clean_last_daily)
-                    if datetime.utcnow() - last_daily_dt >= timedelta(hours=24):
-                        should_give_daily = True
-                except Exception as ex:
-                    print(f"Error parsing last_daily_credit_at: {ex}")
-                    should_give_daily = True
-                    
-            if should_give_daily:
-                updated_credits = profile.get("credits") if profile.get("credits") is not None else 0
-                update_payload = {
-                    "last_daily_credit_at": now_str
-                }
-                
-                try:
-                    update_response = db.table("profiles").update(update_payload).eq("id", user_id_val).execute()
-                    if update_response.data:
-                        return update_response.data[0]
-                except Exception as ex:
-                    print(f"Error updating daily credits: {ex}")
+                    db.table("profiles").update({"last_login_ip": client_ip}).eq("id", profile["id"]).execute()
+                except Exception:
+                    pass
             
             return profile
             
@@ -2340,10 +2548,18 @@ def clean_branding_recursive(obj):
     if isinstance(obj, dict):
         cleaned_dict = {}
         for k, v in obj.items():
-            # Skip keys that are purely promotional branding fields like "api_creator" or "api_by_link" or "brand"
-            if str(k).lower() in ["api_creator", "api_by_link", "website_link", "creator", "credit", "support", "brand", "brand_name", "branding", "powered_by", "buy_api", "owner_telegram", "developer", "developer_name", "provider", "provider_info"]:
+            k_str = str(k).lower()
+            # Skip keys that are purely promotional branding fields
+            if k_str in [
+                "api_creator", "api_by_link", "website_link", "creator", "credit", 
+                "support", "brand", "brand_name", "branding", "powered_by", "buy_api", 
+                "owner_telegram", "developer", "developer_name", "provider", "provider_info",
+                "footer", "contact", "asur", "asurpapa"
+            ]:
                 continue
-            cleaned_dict[k] = clean_branding_recursive(v)
+            cleaned_val = clean_branding_recursive(v)
+            if cleaned_val is not None:
+                cleaned_dict[k] = cleaned_val
         return cleaned_dict
     elif isinstance(obj, list):
         return [clean_branding_recursive(x) for x in obj]
@@ -2353,9 +2569,8 @@ def clean_branding_recursive(obj):
             return clean_branding_text_line_by_line(obj)
         else:
             import re
-            # Remove only precise known provider signatures, not general words like "anish", "vishal", "cyber", "soldier", "developer", "provider"
             pattern = re.compile(
-                r'(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51)',
+                r'(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal[\s\-_]*boss|vishal[\s\-_]*boss(?:\s*👑)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?|userxinfo|uersxinfo|techvishalboss\.com|exploitsindia\.site|techvishalboss|exploitsindia|@?vectraen|vectraen|osintcallerbot|👑|\ud83d\udc51|@?asurpapa|asur|powered\s*by\s*asur|https?:\/\/t\.me\/asur_about)',
                 re.IGNORECASE
             )
             val = pattern.sub("", obj)
@@ -2363,8 +2578,6 @@ def clean_branding_recursive(obj):
             val = re.sub(r'[ \t]+', ' ', val).strip()
             # Clean trailing and leading punctuation leftover from branding removal
             val = re.sub(r'^[:\-\s@]+|[:\-\s@]+$', '', val).strip()
-            if not val:
-                return "N/A"
             return val
     return obj
 
@@ -2814,18 +3027,15 @@ async def user_lookup(
     user_id_val = get_user_id(user)
     
     try:
-        profile_query = db.table("profiles").select("*").eq("id", user_id_val).execute()
-        profile_data = profile_query.data
+        profile = get_unified_user_profile(db, user_id=user_id_val, email=user_email_val, phone=getattr(user, 'phone', None))
         
-        if not profile_data:
-            # Create profile on-the-fly to be completely fail-proof
+        if not profile:
             now_str = datetime.utcnow().isoformat() + "Z"
-            user_email_val = get_user_email(user)
             full_name = "User"
             avatar_url = None
             metadata = get_user_metadata(user)
             if metadata:
-                full_name = metadata.get("full_name") or user_email_val.split("@")[0] or "User"
+                full_name = metadata.get("full_name") or (user_email_val.split("@")[0] if user_email_val else "User")
                 avatar_url = metadata.get("avatar_url")
             elif user_email_val:
                 full_name = user_email_val.split("@")[0]
@@ -2833,7 +3043,9 @@ async def user_lookup(
             new_profile = {
                 "id": user_id_val,
                 "email": user_email_val,
-                "credits": 10,
+                "phone": getattr(user, 'phone', None),
+                "credits": 10.0,
+                "wallet_balance": 10.0,
                 "unlimited_expiry": None,
                 "full_name": full_name,
                 "avatar_url": avatar_url,
@@ -2841,14 +3053,15 @@ async def user_lookup(
                 "last_weekly_credit_at": now_str,
                 "last_daily_credit_at": now_str
             }
-            try:
-                db.table("profiles").insert(new_profile).execute()
-                profile = new_profile
-            except Exception as ins_err:
-                print(f"[Auth profile insert err]: {ins_err}")
-                profile = new_profile
-        else:
-            profile = profile_data[0]
+            update_user_credits_across_all_stores(
+                db,
+                user_id=user_id_val,
+                email=user_email_val,
+                phone=getattr(user, 'phone', None),
+                target_bal=10.0,
+                full_name=full_name
+            )
+            profile = new_profile
             
     except Exception as profile_err:
         print(f"[Profile retrieve error]: {profile_err}")
@@ -2870,69 +3083,34 @@ async def user_lookup(
         except:
             pass
             
-    credit_cost = 3
+    credit_cost = 3.0
     if service_clean == 'phone':
-        credit_cost = 3
+        credit_cost = 3.0
     elif service_clean == 'telegram':
-        credit_cost = 5
+        credit_cost = 5.0
     elif service_clean == 'adhr':
-        credit_cost = 20
+        credit_cost = 20.0
     elif service_clean == 'bnk':
-        credit_cost = 5
+        credit_cost = 5.0
     elif service_clean == 'vehicle':
-        credit_cost = 10
+        credit_cost = 10.0
     elif service_clean == 'pancard':
-        credit_cost = 10
+        credit_cost = 10.0
     elif service_clean == 'aadhaar_to_pan':
-        credit_cost = 150
+        credit_cost = 150.0
     elif service_clean == 'email':
-        credit_cost = 20
+        credit_cost = 20.0
     elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
-        credit_cost = 20
+        credit_cost = 20.0
         
-    # Check if daily free credit top-up is due before evaluating current credits
-    from datetime import timedelta
-    last_daily_str = profile.get("last_daily_credit_at")
-    should_give_daily = False
-    now_str = datetime.utcnow().isoformat() + "Z"
-    
-    if not last_daily_str:
-        should_give_daily = True
-    else:
-        try:
-            clean_last_daily = last_daily_str.replace("Z", "")
-            if "+" in clean_last_daily:
-                clean_last_daily = clean_last_daily.split("+")[0]
-            last_daily_dt = datetime.fromisoformat(clean_last_daily)
-            if datetime.utcnow() - last_daily_dt >= timedelta(hours=24):
-                should_give_daily = True
-        except Exception as ex:
-            print(f"Error parsing last_daily_credit_at in user_lookup: {ex}")
-            should_give_daily = True
-            
-    if should_give_daily:
-        updated_credits = profile.get("credits") or 0
-        update_payload = {
-            "last_daily_credit_at": now_str
-        }
-        if updated_credits < 10:
-            update_payload["credits"] = 10
-            
-        try:
-            update_response = db.table("profiles").update(update_payload).eq("id", user.id).execute()
-            if update_response.data:
-                profile = update_response.data[0]
-        except Exception as ex:
-            print(f"Error updating daily credits in user_lookup: {ex}")
-            
-    current_credits = int(profile.get('credits') or 0)
+    current_credits = float(profile.get('credits') or 0.0)
     
     if not is_unlimited:
         if current_credits < credit_cost:
             return make_api_response({
                 "status": "error",
                 "error_type": "insufficient_balance",
-                "message": f"Insufficient Wallet Balance: This search requires ₹{credit_cost}.00, but you currently have ₹{current_credits}.00 in your wallet. Please recharge."
+                "message": f"Insufficient Wallet Balance: This search requires ₹{credit_cost:.2f}, but you currently have ₹{current_credits:.2f} in your wallet. Please recharge."
             })
 
     response_data = None
@@ -3048,8 +3226,8 @@ async def user_lookup(
                 try:
                     ref_code = f"TRX-REF-{int(time.time())}"
                     db.table("service_records").insert({
-                        "user_id": user.id,
-                        "client_name": getattr(user, 'email', None) or "User",
+                        "user_id": profile.get("id"),
+                        "client_name": profile.get("email") or "User",
                         "service_name": f"Web Search: {service_clean.upper()}",
                         "reference_code": ref_code,
                         "status": "REFUNDED",
@@ -3058,8 +3236,8 @@ async def user_lookup(
                     }).execute()
                     
                     db.table("wallet_transactions").insert({
-                        "user_id": user.id,
-                        "user_email": getattr(user, 'email', None) or "User",
+                        "user_id": profile.get("id"),
+                        "user_email": profile.get("email") or "User",
                         "service": f"Refund: {service_clean.upper()} ({cleaned_query})",
                         "type": "Refund",
                         "amount": credit_cost,
@@ -3071,23 +3249,32 @@ async def user_lookup(
             return make_api_response({
                 "status": "error",
                 "error_type": "no_data_refunded",
-                "message": f"Sorry, no records found for '{cleaned_query}'. The search fee of ₹{credit_cost}.00 has been refunded to your wallet.",
+                "message": f"Sorry, no records found for '{cleaned_query}'. The search fee of ₹{credit_cost:.2f} has been refunded to your wallet.",
                 "refunded": True,
                 "refund_amount": credit_cost,
                 "remaining_balance": current_credits,
                 "results": None
             })
             
-        # Real data found - Deduct credits from user profile
+        # Real data found - Deduct credits across all stores
         new_balance = current_credits
         if not is_unlimited:
-            new_balance = max(0, current_credits - credit_cost)
+            new_balance = max(0.0, current_credits - credit_cost)
             try:
-                db.table("profiles").update({"credits": new_balance, "wallet_balance": new_balance}).eq("id", user.id).execute()
+                update_user_credits_across_all_stores(
+                    db,
+                    user_id=profile.get("id"),
+                    email=profile.get("email"),
+                    phone=profile.get("phone"),
+                    target_bal=new_balance,
+                    full_name=profile.get("full_name"),
+                    unlimited_expiry=profile.get("unlimited_expiry")
+                )
+                
                 ref_code = f"TRX-{int(time.time())}"
                 db.table("service_records").insert({
-                    "user_id": user.id,
-                    "client_name": getattr(user, 'email', None) or "User",
+                    "user_id": profile.get("id"),
+                    "client_name": profile.get("email") or "User",
                     "service_name": f"Web Search: {service_clean.upper()}",
                     "reference_code": ref_code,
                     "status": "SUCCESS",
@@ -3096,8 +3283,8 @@ async def user_lookup(
                 }).execute()
                 
                 db.table("wallet_transactions").insert({
-                    "user_id": user.id,
-                    "user_email": getattr(user, 'email', None) or "User",
+                    "user_id": profile.get("id"),
+                    "user_email": profile.get("email") or "User",
                     "service": f"Web Search: {service_clean.upper()} ({cleaned_query})",
                     "type": "Debit",
                     "amount": credit_cost,
@@ -3137,15 +3324,15 @@ async def user_lookup(
         return make_api_response({
             "status": "error",
             "error_type": "gateway_error_refunded",
-            "message": f"Search gateway temporarily unavailable. The search fee of ₹{credit_cost}.00 has been refunded to your wallet.",
+            "message": f"Search gateway temporarily unavailable. The search fee of ₹{credit_cost:.2f} has been refunded to your wallet.",
             "refunded": True,
             "refund_amount": credit_cost,
             "remaining_balance": current_credits,
             "results": None
         })
 
-def check_user_wallet_and_deduct(db, license, service_type: str):
-    if not license or license.get('id') == 'system':
+def check_user_wallet_and_deduct(db, license, service_type: str, query_text: str = ""):
+    if not license or license.get('id') in ['system', 'master']:
         return True, "", 0, 999999
 
     user_id = license.get('user_id')
@@ -3158,31 +3345,18 @@ def check_user_wallet_and_deduct(db, license, service_type: str):
         'pancard': 10, 'pan': 10, 'aadhaar_to_pan': 150,
         'email': 20, 'veh_owner_num': 20, 'veh_numm': 20
     }
-    required_cost = cost_map.get(str(service_type or 'phone').lower(), 3)
+    required_cost = float(cost_map.get(str(service_type or 'phone').lower(), 3))
 
     plan_name = str(license.get('plan_name') or "").upper()
     if any(p in plan_name for p in ["VIP", "INTERNAL", "SYSTEM", "UNLIMITED"]):
         return True, "", required_cost, 999999
 
-    profile = None
-    if user_id:
-        p_res = db.table("profiles").select("*").eq("id", user_id).execute()
-        if p_res.data:
-            profile = p_res.data[0]
-    if not profile and user_email and user_email != "N/A":
-        p_res = db.table("profiles").select("*").eq("email", user_email).execute()
-        if p_res.data:
-            profile = p_res.data[0]
-
-    if not profile and user_id:
-        u_res = db.table("app_users").select("*").eq("id", user_id).execute()
-        if u_res.data:
-            profile = u_res.data[0]
+    profile = get_unified_user_profile(db, user_id=user_id, email=user_email)
 
     if not profile:
         return True, "", required_cost, 0
 
-    current_balance = int(profile.get('credits') or 0)
+    current_balance = float(profile.get('credits') or 0.0)
     
     unlimited_exp = profile.get('unlimited_expiry')
     if unlimited_exp:
@@ -3197,16 +3371,45 @@ def check_user_wallet_and_deduct(db, license, service_type: str):
             pass
 
     if current_balance < required_cost:
-        err_msg = f"Insufficient Wallet Balance: Your API key is connected to your account wallet. This '{service_type}' query requires ₹{required_cost}, but your current wallet balance is ₹{current_balance}. Please recharge your account."
+        err_msg = f"Insufficient Wallet Balance: Your API key is connected to your account wallet. This '{service_type}' query requires ₹{required_cost:.2f}, but your current wallet balance is ₹{current_balance:.2f}. Please recharge your account."
         return False, err_msg, required_cost, current_balance
 
     try:
-        new_balance = max(0, current_balance - required_cost)
-        db.table("profiles").update({"credits": new_balance}).eq("id", profile['id']).execute()
+        new_balance = max(0.0, current_balance - required_cost)
+        update_user_credits_across_all_stores(
+            db,
+            user_id=profile.get("id"),
+            email=profile.get("email"),
+            phone=profile.get("phone"),
+            target_bal=new_balance,
+            full_name=profile.get("full_name"),
+            unlimited_expiry=profile.get("unlimited_expiry")
+        )
+        
+        # Save service record and wallet transaction for API owner
+        ref_code = f"API-TRX-{int(time.time())}"
+        db.table("service_records").insert({
+            "user_id": profile.get("id"),
+            "client_name": profile.get("email") or "API User",
+            "service_name": f"API Search: {str(service_type).upper()} ({query_text})",
+            "reference_code": ref_code,
+            "status": "SUCCESS",
+            "result_payload": {"service": service_type, "query": query_text, "key_id": license.get("id")},
+            "log_number": int(time.time() % 1000)
+        }).execute()
+        
+        db.table("wallet_transactions").insert({
+            "user_id": profile.get("id"),
+            "user_email": profile.get("email") or "API User",
+            "service": f"API Search: {str(service_type).upper()} ({query_text})",
+            "type": "Debit",
+            "amount": required_cost,
+            "balance_after": new_balance
+        }).execute()
     except Exception as e:
         print(f"[Deduct Error] {e}")
 
-    return True, "", required_cost, current_balance
+    return True, "", required_cost, new_balance
 
 @app.get("/api/lookup")
 async def saas_lookup(
@@ -5383,10 +5586,10 @@ def scrub_all_branding(obj):
     if isinstance(obj, str):
         import re
         # Case-insensitive removal of any provider/developer related brand words
-        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?)', '', obj, flags=re.IGNORECASE)
+        res = re.sub(r'(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|u(?:ers|ser)xinfo(?:\.in)?|asurpapa|@?asurpapa|asur_about|powered by asur|asur)', '', obj, flags=re.IGNORECASE)
         res = re.sub(r'💳\s+BUY\s+API\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
         res = re.sub(r'🆘\s+SUPPORT\s*:\s*@?\w+', '', res, flags=re.IGNORECASE)
-        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '')
+        res = res.replace('Powered_by', '').replace('Contact', '').replace('Buy_API', '').replace('Powered by ASUR', '')
         return res.strip()
     if isinstance(obj, list):
         return [scrub_all_branding(item) for item in obj]
@@ -5397,7 +5600,8 @@ def scrub_all_branding(obj):
             if lower_k in [
                 "branding", "success", "status", "found", "message", "api_info", "powered_by", 
                 "owner", "contact", "buy_api", "support", "owner_telegram", "developer", 
-                "provider", "api_buy_link", "website_link", "buy"
+                "provider", "api_buy_link", "website_link", "buy", "credit", "credits", "footer",
+                "asur", "asurpapa"
             ]:
                 continue
             cleaned[k] = scrub_all_branding(v)

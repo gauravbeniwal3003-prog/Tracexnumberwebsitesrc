@@ -533,8 +533,9 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         data = await lookupEmail(targetVal);
       }
 
-      if (data?.remaining_balance !== undefined && profile) {
+      if (data?.remaining_balance !== undefined) {
         updateProfileCredits(data.remaining_balance);
+        refreshProfile().catch(() => {});
       }
 
       if (!data || data.status === false) {

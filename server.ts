@@ -7548,8 +7548,8 @@ const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   ifsc: "https://ifsc.razorpay.com/{query}",
   bnk: "https://ifsc.razorpay.com/{query}",
   vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-  veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-  veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+  veh_owner_num: "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
+  veh_numm: "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
   email: "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
   telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
   family: "https://exploitsindia.site/hdhddhjdjddjdjdjdndnddnnccndndhejdmdnnd/family.php?exploits={query}"
@@ -7618,8 +7618,8 @@ async function loadProviderConfigsFromDatabase() {
       aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
       adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
       vehicle: "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-      veh_owner_num: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-      veh_numm: "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
+      veh_owner_num: "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
+      veh_numm: "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}",
       telegram: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
       ifsc: "https://ifsc.razorpay.com/{query}",
       bnk: "https://ifsc.razorpay.com/{query}",
@@ -7756,8 +7756,8 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
-      .replace(/(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|👑|\ud83d\udc51)/gi, "")
-      .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|credits_to)/gi, "")
+      .replace(/(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|asurpapa|@?asurpapa|asur_about|powered by asur|asur|👑|\ud83d\udc51)/gi, "")
+      .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|powered\s+by|credits_to|credit)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
       .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
       .replace(/[━─═║╔╗╚╝├┤┬┴┼]{3,}/g, "")
@@ -7774,8 +7774,9 @@ function scrubAllBranding(obj: any): any {
       if ([
         "branding", "brand", "brand_name", "api_info", "powered_by", "buy_api", 
         "owner_telegram", "developer", "developer_name", "provider", 
-        "provider_info", "api_buy_link", "website_link", "buy", 
-        "digiseva", "digisevapoint", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot", "telegram_support"
+        "provider_info", "api_buy_link", "website_link", "buy", "credit", "credits", "footer",
+        "digiseva", "digisevapoint", "techvishalboss", "osintcaller", "userxinfo", "credits_to", "vectraen", "osintcallerbot", "telegram_support",
+        "asur", "asurpapa"
       ].includes(lowerKey)) {
         continue;
       }

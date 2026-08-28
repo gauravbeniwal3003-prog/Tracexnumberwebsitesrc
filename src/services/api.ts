@@ -201,12 +201,10 @@ const DIRECT_PROVIDERS: Record<string, string[]> = {
     "https://exploitsindia.site/osint-api/vehicle.php?exploits={query}"
   ],
   veh_owner_num: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
+    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
   ],
   veh_numm: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-no.php?exploits={query}",
-    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=vehicle"
+    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
   ],
   email: [
     "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=email",
