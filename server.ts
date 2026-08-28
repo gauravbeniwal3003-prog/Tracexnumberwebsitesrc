@@ -1597,23 +1597,30 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   const deduped: any[] = [];
   const seen = new Set<string>();
   for (const row of candidateRows) {
-    const key = `${row.id || ''}_${row.email || ''}_${row.credits ?? ''}_${row.unlimited_expiry || ''}`;
+    const key = `${row.id || ''}_${row.email || ''}_${row.phone || ''}_${row.credits ?? ''}_${row.unlimited_expiry || ''}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(row);
     }
   }
 
-  // 3. Find highest credits across all matching records
-  const allCredits: number[] = [];
-  for (const r of deduped) {
-    const cVal = r.credits !== undefined && r.credits !== null ? r.credits : r.wallet_balance;
-    if (cVal !== undefined && cVal !== null && !isNaN(Number(cVal))) {
-      allCredits.push(Number(cVal));
-    }
+  // 3. Find primary authoritative row
+  let primaryRow = deduped[0];
+  if (userId && userId.includes('-')) {
+    const directMatch = deduped.find(r => r.id === userId);
+    if (directMatch) primaryRow = directMatch;
+  } else if (cleanEmail) {
+    const emailMatch = deduped.find(r => r.email && r.email.toLowerCase() === cleanEmail);
+    if (emailMatch) primaryRow = emailMatch;
+  } else if (cleanPhone) {
+    const phoneMatch = deduped.find(r => r.phone === cleanPhone);
+    if (phoneMatch) primaryRow = phoneMatch;
   }
-  let finalCredits = allCredits.length > 0 ? Math.max(...allCredits) : 10.00;
-  finalCredits = Math.max(0, Number(finalCredits.toFixed(2)));
+
+  const rawCredits = primaryRow.credits !== undefined && primaryRow.credits !== null 
+    ? primaryRow.credits 
+    : (primaryRow.wallet_balance !== undefined && primaryRow.wallet_balance !== null ? primaryRow.wallet_balance : 10.00);
+  let finalCredits = Math.max(0, Number(Number(rawCredits || 0).toFixed(2)));
 
   // 4. Find best active unlimited expiry
   let bestUnlimitedExpiry: string | null = null;
@@ -1649,14 +1656,6 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     if (avatar && !bestAvatar) bestAvatar = avatar;
     const disc = Number(r.user_discount_percent || 0);
     if (!isNaN(disc)) bestDiscount = Math.max(bestDiscount, disc);
-  }
-
-  let primaryRow = deduped[0];
-  for (const r of deduped) {
-    if (r.credits === finalCredits || r.unlimited_expiry === bestUnlimitedExpiry) {
-      primaryRow = r;
-      break;
-    }
   }
 
   const resolvedId = (userId && userId.includes('-') ? userId : null) || primaryRow.id || (cleanPhone ? `user_${cleanPhone}` : "user");
@@ -1695,8 +1694,8 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   if (db) {
     try {
       const syncPayload: any = {
-        credits: Math.round(finalCredits),
-        wallet_balance: Math.round(finalCredits),
+        credits: Number(finalCredits.toFixed(2)),
+        wallet_balance: Number(finalCredits.toFixed(2)),
         unlimited_expiry: bestUnlimitedExpiry,
         full_name: resolvedName,
         updated_at: new Date().toISOString()
@@ -3440,16 +3439,11 @@ app.get("/api/user-lookup", async (req, res) => {
       profile = dbProf;
       if (checkIsAdmin(user.email)) {
         profile.is_admin = true;
-        profile.credits = 99999.00;
-        profile.wallet_balance = 99999.00;
-        profile.unlimited_expiry = "2099-12-31T23:59:59.000Z";
       }
     } else {
       profile = { ...user, credits: user.credits !== undefined ? user.credits : 10.00 };
       if (checkIsAdmin(user.email)) {
         profile.is_admin = true;
-        profile.credits = 99999.00;
-        profile.wallet_balance = 99999.00;
       }
     }
   } catch (err) {
@@ -3480,12 +3474,12 @@ app.get("/api/user-lookup", async (req, res) => {
   const lookupCost = await getEffectiveServicePrice(serviceKey, user.id, user.email) || LOOKUP_RATES[service] || 2.0;
   
   const isAdmin = checkIsAdmin(user.email);
-  let currentCredits = isAdmin ? 99999.00 : Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0));
-  const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+  let currentCredits = Math.max(Number(profile?.wallet_balance !== undefined ? profile.wallet_balance : (profile?.credits || 0)), 0);
+  const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
   // Auto-activate welcome bonus if user has 0 balance or is new
   if (!isUnlimited && currentCredits < lookupCost) {
-    if (!profile?.is_free_credit_claimed || currentCredits === 0) {
+    if (!profile?.is_free_credit_claimed && currentCredits === 0) {
       const freeBonus = 25.00;
       currentCredits = freeBonus;
       if (user.phone && mobileUsersStore.has(user.phone)) {
@@ -3552,45 +3546,75 @@ app.get("/api/user-lookup", async (req, res) => {
       }
     }
 
-    // Handle error payloads from downstream provider or proxy
-    if (data && (data.status === "error" || data.error_type === "insufficient_balance" || data.error_type === "protected_record")) {
-      return res.status(200).json({
-        status: "error",
-        error_type: data.error_type || "lookup_failed",
-        message: data.message || data.error || "Sorry, we don't have data related to the query.",
-        remaining_balance: currentCredits
-      });
-    }
+    // Identify if the result is a true system / provider backend failure vs a processed lookup (even with no records)
+    let isSystemError = false;
+    let systemErrorMessage = "An internal network or provider error occurred. Please try again in a moment.";
 
     if (!data) {
-      await logSearchHistory(req, service, cleanedQuery, 'completed', client, { message: "No data returned" }, user.id, user.email);
+      isSystemError = true;
+      systemErrorMessage = "Unable to connect to search provider. Your wallet was not charged. [ERR_CONN_PROVIDER_FAILED]";
+    } else if (data.status === "error" || data.error_type === "insufficient_balance" || data.error_type === "database_offline") {
+      const errorMsg = String(data.message || data.error || "").toLowerCase();
+      // If the error message is simply stating "no records", it is NOT a system failure, it is a valid search run!
+      const isActuallyNoData = errorMsg.includes("no data") || 
+                               errorMsg.includes("not found") || 
+                               errorMsg.includes("no record") || 
+                               errorMsg.includes("invalid query") || 
+                               errorMsg.includes("invalid mobile") || 
+                               errorMsg.includes("invalid vehicle") || 
+                               errorMsg.includes("invalid aadhar") ||
+                               errorMsg.includes("invalid parameter");
+
+      if (!isActuallyNoData) {
+        isSystemError = true;
+        // Clean and refine error messages
+        if (data.error_type === "insufficient_balance") {
+          systemErrorMessage = "API Service temporarily unavailable due to system limit. Your wallet was not charged.";
+        } else {
+          systemErrorMessage = data.message || data.error || "A system error occurred while processing the request. Your wallet was not charged.";
+        }
+      }
+    }
+
+    // 1. REFUND/NO CHARGE ONLY IF SYSTEM FAILS
+    if (isSystemError) {
+      await logSearchHistory(req, service, cleanedQuery, 'failed', client, { error: systemErrorMessage }, user.id, user.email);
       return res.status(200).json({
         status: "error",
-        error_type: "no_data_found",
-        message: "Sorry, we don't have data related to the query.",
+        error_type: "lookup_failed",
+        message: systemErrorMessage,
         remaining_balance: currentCredits,
         cost_deducted: 0
       });
     }
 
+    // 2. OTHERWISE, PROCESSING IS SUCCESSFUL -> Deduct balance correctly in real-time from Supabase
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
 
-    // Check if extracted results indicate "no data found"
-    if (cleanedResults && typeof cleanedResults === 'object' && cleanedResults.message && String(cleanedResults.message).toLowerCase().includes('no data')) {
-      return res.status(200).json({
-        status: "error",
-        error_type: "no_data_found",
-        message: "Sorry, we don't have data related to the query.",
-        remaining_balance: currentCredits,
-        cost_deducted: 0
-      });
+    // Deep scanning check to see if we have actual meaningful records to return
+    let isMeaningfulData = false;
+    if (cleanedResults) {
+      if (typeof cleanedResults === 'object' && !Array.isArray(cleanedResults)) {
+        const keys = Object.keys(cleanedResults);
+        const nonMetaKeys = keys.filter(k => !['error', 'message', 'status', 'success', 'msg', 'found'].includes(k.toLowerCase()));
+        if (nonMetaKeys.length > 0 && !cleanedResults.error) {
+          isMeaningfulData = true;
+        }
+      } else if (Array.isArray(cleanedResults) && cleanedResults.length > 0) {
+        isMeaningfulData = true;
+      } else if (typeof cleanedResults === 'string' && cleanedResults.trim().length > 0) {
+        const lower = cleanedResults.toLowerCase();
+        if (!lower.includes('no data') && !lower.includes('not found') && !lower.includes('no record') && !lower.includes('error')) {
+          isMeaningfulData = true;
+        }
+      }
     }
 
-    // SUCCESS - Deduct balance now after results are found and ready to show to user
+    // SUCCESSFUL RUN DEDUCTION - Perform real-time deduction from Supabase profile and memory stores
     let newBalance = currentCredits;
     if (!isUnlimited) {
-      newBalance = Math.max(0, currentCredits - lookupCost);
+      newBalance = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
       await updateUserCreditsAcrossAllStores(
         user.id,
         user.email,
@@ -3626,32 +3650,54 @@ app.get("/api/user-lookup", async (req, res) => {
           client_name: user.email || (isAdmin ? "Admin" : "User"),
           service_name: `Web Search: ${service.toUpperCase()}`,
           reference_code: refCode,
-          status: "SUCCESS",
-          result_payload: cleanedResults,
+          status: isMeaningfulData ? "SUCCESS" : "NO_DATA",
+          result_payload: cleanedResults || { message: "No records found" },
           log_number: Math.floor(100 + Math.random() * 900)
         });
       } catch (e) {}
     }
 
-    await logSearchHistory(req, service, cleanedQuery, 'success', client, cleanedResults, user.id, user.email);
+    await logSearchHistory(
+      req, 
+      service, 
+      cleanedQuery, 
+      isMeaningfulData ? 'success' : 'completed', 
+      client, 
+      cleanedResults || { message: "No data returned" }, 
+      user.id, 
+      user.email
+    );
 
-    return res.status(200).json({
-      status: "success",
-      service,
-      query: cleanedQuery,
-      results: cleanedResults,
-      remaining_balance: newBalance,
-      cost_deducted: isUnlimited ? 0 : lookupCost,
-      raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
-    });
+    if (isMeaningfulData) {
+      return res.status(200).json({
+        status: "success",
+        service,
+        query: cleanedQuery,
+        results: cleanedResults,
+        remaining_balance: newBalance,
+        cost_deducted: isUnlimited ? 0 : lookupCost,
+        raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
+      });
+    } else {
+      // Successfully processed, but no record found in the database. Refined error message & charge correctly.
+      return res.status(200).json({
+        status: "success",
+        results_found: 0,
+        results: { error: `Sorry, we don't have data related to the query '${cleanedQuery}'.` },
+        error: `Sorry, we don't have data related to the query '${cleanedQuery}'.`,
+        message: `Sorry, we don't have data related to the query '${cleanedQuery}'.`,
+        remaining_balance: newBalance,
+        cost_deducted: isUnlimited ? 0 : lookupCost
+      });
+    }
   } catch (err: any) {
     console.error("[USER_LOOKUP] Lookup execution error:", err);
-    await logSearchHistory(req, service, cleanedQuery, 'completed', client, { error: err.message }, user.id, user.email);
+    await logSearchHistory(req, service, cleanedQuery, 'failed', client, { error: err.message }, user.id, user.email);
 
     return res.status(200).json({
       status: "error",
       error_type: "lookup_error",
-      message: "Sorry, an error occurred while processing your lookup.",
+      message: `System encountered an issue retrieving data for '${cleanedQuery}'. Your balance was not charged. [ERR_BACKEND_CRASH]`,
       remaining_balance: currentCredits,
       cost_deducted: 0
     });
@@ -3677,10 +3723,6 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   const dbProf = await getUnifiedUserProfile(targetId, targetEmail);
   if (dbProf) {
     userProfile = dbProf;
-    if (checkIsAdmin(userProfile.email)) {
-      userProfile.credits = 99999.00;
-      userProfile.unlimited_expiry = "2099-12-31T23:59:59.000Z";
-    }
   }
 
   if (!userProfile) {

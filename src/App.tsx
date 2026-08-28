@@ -455,13 +455,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
     }
 
-    const ADMIN_EMAILS = [
-      'yashwinderbeniwaldm@gmail.com', 
-      'gaurav_beniwal_0001@example.com',
-      'gauravbeniwal30003@gmail.com'
-    ];
-    const isAdmin = Boolean(user?.email && ADMIN_EMAILS.some(e => e.toLowerCase() === user.email?.toLowerCase()));
-    const isUnlimited = isAdmin || Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+    const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
     let creditCost = 2;
     if (activeService === 'phone' || activeService === 'number' || activeService === 'mobile') {

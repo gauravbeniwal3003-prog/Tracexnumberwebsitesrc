@@ -1155,13 +1155,21 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
             seen.add(row_key)
             deduped.append(row)
 
-    # 3. Find highest credits across all matching records
-    all_credits = []
-    for r in deduped:
-        c_val = r.get("credits") if r.get("credits") is not None else r.get("wallet_balance")
+    # Sort candidates by updated_at descending (newest first)
+    def parse_time(r):
+        up = r.get("updated_at")
+        if not up: return 0
+        try: return datetime.fromisoformat(str(up).replace("Z", "")).timestamp()
+        except: return 0
+
+    deduped.sort(key=parse_time, reverse=True)
+
+    final_credits = 10.00
+    if deduped:
+        top_row = deduped[0]
+        c_val = top_row.get("credits") if top_row.get("credits") is not None else top_row.get("wallet_balance")
         if c_val is not None:
-            all_credits.append(safe_float(c_val, 0.0))
-    final_credits = max(all_credits) if all_credits else 10.00
+            final_credits = safe_float(c_val, 10.00)
     final_credits = max(0.0, round(final_credits, 2))
 
     # 4. Find best active unlimited expiry
@@ -1231,8 +1239,8 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
     try:
         now_iso = datetime.utcnow().isoformat() + "Z"
         sync_payload = {
-            "credits": int(round(final_credits)),
-            "wallet_balance": int(round(final_credits)),
+            "credits": float(round(final_credits, 2)),
+            "wallet_balance": float(round(final_credits, 2)),
             "unlimited_expiry": best_unlimited_expiry,
             "full_name": resolved_name,
             "updated_at": now_iso
