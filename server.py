@@ -886,6 +886,18 @@ async def log_visitor(request: Request):
         print(f"Error logging visitor: {e}")
         return {"status": "error", "message": str(e)}
 
+def safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        import math
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
+
 def update_user_credits_across_all_stores(
     db,
     user_id: Optional[str] = None,
@@ -894,18 +906,19 @@ def update_user_credits_across_all_stores(
     target_bal: float = 0.0,
     full_name: Optional[str] = None,
     unlimited_expiry: Optional[str] = None,
-    user_discount_percent: float = 0.0
+    user_discount_percent: Optional[float] = 0.0
 ) -> dict:
     import re
     from datetime import datetime
 
-    target_bal = max(0.0, round(float(target_bal), 2))
+    target_bal = max(0.0, round(safe_float(target_bal, 0.0), 2))
     now_iso = datetime.utcnow().isoformat() + "Z"
     clean_phone = re.sub(r'\D', '', phone)[-10:] if phone else ""
     if not clean_phone and user_id and "-" not in str(user_id) and len(str(user_id)) >= 10:
         clean_phone = str(user_id)[-10:]
     clean_email = email.strip().lower() if email and "@" in email else None
     name_to_use = full_name or (clean_email.split("@")[0] if clean_email else "User")
+    discount_num = safe_float(user_discount_percent, 0.0)
 
     if not db:
         return {"success": False, "finalCredits": target_bal}
@@ -921,7 +934,7 @@ def update_user_credits_across_all_stores(
     if unlimited_expiry is not None:
         prof_update_payload["unlimited_expiry"] = unlimited_expiry
     if user_discount_percent is not None:
-        prof_update_payload["user_discount_percent"] = float(user_discount_percent)
+        prof_update_payload["user_discount_percent"] = discount_num
 
     if user_id and is_valid_uuid(str(user_id)):
         try:
@@ -960,7 +973,7 @@ def update_user_credits_across_all_stores(
     if unlimited_expiry is not None:
         app_update_payload["unlimited_expiry"] = unlimited_expiry
     if user_discount_percent is not None:
-        app_update_payload["user_discount_percent"] = float(user_discount_percent)
+        app_update_payload["user_discount_percent"] = discount_num
 
     if user_id and is_valid_uuid(str(user_id)):
         try:
@@ -989,7 +1002,7 @@ def update_user_credits_across_all_stores(
                 "wallet_balance": target_bal,
                 "is_free_credit_claimed": True,
                 "unlimited_expiry": unlimited_expiry,
-                "user_discount_percent": float(user_discount_percent or 0),
+                "user_discount_percent": discount_num,
                 "updated_at": now_iso
             }, on_conflict="id").execute()
         except Exception:
@@ -1004,7 +1017,7 @@ def update_user_credits_across_all_stores(
                 "credits": target_bal,
                 "wallet_balance": target_bal,
                 "unlimited_expiry": unlimited_expiry,
-                "user_discount_percent": float(user_discount_percent or 0),
+                "user_discount_percent": discount_num,
                 "updated_at": now_iso
             }, on_conflict="id").execute()
         except Exception:
@@ -1084,18 +1097,28 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
 
     final_credits = 10.00
     if profile_row and app_user_row:
-        if prof_updated >= app_updated and profile_row.get("credits") is not None:
-            final_credits = float(profile_row.get("credits"))
-        elif app_user_row.get("credits") is not None:
-            final_credits = float(app_user_row.get("credits"))
-        elif profile_row.get("credits") is not None:
-            final_credits = float(profile_row.get("credits"))
-    elif profile_row and profile_row.get("credits") is not None:
-        final_credits = float(profile_row.get("credits"))
-    elif app_user_row and app_user_row.get("credits") is not None:
-        final_credits = float(app_user_row.get("credits"))
+        prof_c = profile_row.get("credits") if profile_row.get("credits") is not None else profile_row.get("wallet_balance")
+        app_c = app_user_row.get("credits") if app_user_row.get("credits") is not None else app_user_row.get("wallet_balance")
+        if prof_updated >= app_updated and prof_c is not None:
+            final_credits = safe_float(prof_c, 10.00)
+        elif app_c is not None:
+            final_credits = safe_float(app_c, 10.00)
+        elif prof_c is not None:
+            final_credits = safe_float(prof_c, 10.00)
+    elif profile_row and (profile_row.get("credits") is not None or profile_row.get("wallet_balance") is not None):
+        final_credits = safe_float(profile_row.get("credits") if profile_row.get("credits") is not None else profile_row.get("wallet_balance"), 10.00)
+    elif app_user_row and (app_user_row.get("credits") is not None or app_user_row.get("wallet_balance") is not None):
+        final_credits = safe_float(app_user_row.get("credits") if app_user_row.get("credits") is not None else app_user_row.get("wallet_balance"), 10.00)
 
     final_credits = max(0.0, round(final_credits, 2))
+
+    prof_disc = profile_row.get("user_discount_percent") if profile_row else None
+    app_disc = app_user_row.get("user_discount_percent") if app_user_row else None
+    final_discount = 0.0
+    if prof_disc is not None:
+        final_discount = safe_float(prof_disc, 0.0)
+    elif app_disc is not None:
+        final_discount = safe_float(app_disc, 0.0)
 
     resolved_id = (str(user_id) if user_id and is_valid_uuid(str(user_id)) else None) or (profile_row.get("id") if profile_row else None) or (app_user_row.get("id") if app_user_row else None) or "user"
     resolved_email = clean_email or (profile_row.get("email") if profile_row else None) or (app_user_row.get("email") if app_user_row else None)
@@ -1110,7 +1133,7 @@ def get_unified_user_profile(db, user_id: Optional[str] = None, email: Optional[
         "credits": final_credits,
         "wallet_balance": final_credits,
         "unlimited_expiry": (profile_row.get("unlimited_expiry") if profile_row else None) or (app_user_row.get("unlimited_expiry") if app_user_row else None),
-        "user_discount_percent": float((profile_row.get("user_discount_percent") if profile_row else None) or (app_user_row.get("user_discount_percent") if app_user_row else 0)),
+        "user_discount_percent": final_discount,
         "avatar_url": profile_row.get("avatar_url") if profile_row else None,
         "is_free_credit_claimed": (profile_row.get("is_free_credit_claimed") if profile_row and profile_row.get("is_free_credit_claimed") is not None else (app_user_row.get("is_free_credit_claimed") if app_user_row and app_user_row.get("is_free_credit_claimed") is not None else True)),
         "last_daily_credit_at": profile_row.get("last_daily_credit_at") if profile_row else None,
@@ -3025,6 +3048,7 @@ async def user_lookup(
         })
         
     user_id_val = get_user_id(user)
+    user_email_val = get_user_email(user)
     
     try:
         profile = get_unified_user_profile(db, user_id=user_id_val, email=user_email_val, phone=getattr(user, 'phone', None))
@@ -3103,7 +3127,7 @@ async def user_lookup(
     elif service_clean == 'veh_owner_num' or service_clean == 'veh_numm':
         credit_cost = 20.0
         
-    current_credits = float(profile.get('credits') or 0.0)
+    current_credits = safe_float(profile.get('credits'), 0.0)
     
     if not is_unlimited:
         if current_credits < credit_cost:
@@ -3356,7 +3380,7 @@ def check_user_wallet_and_deduct(db, license, service_type: str, query_text: str
     if not profile:
         return True, "", required_cost, 0
 
-    current_balance = float(profile.get('credits') or 0.0)
+    current_balance = safe_float(profile.get('credits'), 0.0)
     
     unlimited_exp = profile.get('unlimited_expiry')
     if unlimited_exp:
