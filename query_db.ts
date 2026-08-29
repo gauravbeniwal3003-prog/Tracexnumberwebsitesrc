@@ -9,22 +9,75 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || proce
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 async function run() {
-  const userId = "5f66534b-de6b-4ef9-9a08-816a86ab1c99";
-  console.log(`=== Querying database records for user ID ${userId} ===`);
+  const nowStr = new Date().toISOString();
+  console.log(`Current Time: ${nowStr}`);
 
-  const { data: profile, error: pErr } = await supabaseAdmin
+  // 1. Fetch active profiles with unlimited_expiry in the future
+  console.log("\n=== Fetching profiles with active unlimited_expiry ===");
+  const { data: profiles, error: pErr } = await supabaseAdmin
     .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-  console.log("\n--- Profile:", profile, pErr);
+    .select("id, email, unlimited_expiry, full_name")
+    .gt("unlimited_expiry", nowStr);
 
-  const { data: appUser, error: aErr } = await supabaseAdmin
-    .from("app_users")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-  console.log("\n--- App User:", appUser, aErr);
+  if (pErr) {
+    console.error("Error fetching profiles:", pErr);
+    return;
+  }
+
+  console.log(`Found ${profiles?.length || 0} profiles with active unlimited plans:`);
+  console.log(profiles);
+
+  if (profiles && profiles.length > 0) {
+    console.log("\n=== Expiring active unlimited plans for profiles ===");
+    for (const prof of profiles) {
+      const { data, error } = await supabaseAdmin
+        .from("profiles")
+        .update({ unlimited_expiry: null })
+        .eq("id", prof.id)
+        .select();
+
+      if (error) {
+        console.error(`Error expiring profile ${prof.email}:`, error);
+      } else {
+        console.log(`Successfully expired unlimited plan for profile: ${prof.email}`);
+      }
+    }
+  }
+
+  // 2. Fetch active api_keys with unlimited plans (e.g. status active, and plan includes unlimited or 600, or expires in future)
+  console.log("\n=== Fetching api_keys with active unlimited/future plans ===");
+  const { data: apiKeys, error: kErr } = await supabaseAdmin
+    .from("api_keys")
+    .select("id, api_key, user_email, plan_name, expires_at, status")
+    .eq("status", "active")
+    .gt("expires_at", nowStr);
+
+  if (kErr) {
+    console.error("Error fetching api_keys:", kErr);
+    return;
+  }
+
+  console.log(`Found ${apiKeys?.length || 0} active API keys with future expiration:`);
+  console.log(apiKeys);
+
+  if (apiKeys && apiKeys.length > 0) {
+    console.log("\n=== Expiring active unlimited/future API Keys ===");
+    for (const key of apiKeys) {
+      // We expire them by setting expires_at to a past date (now) or null
+      const pastDate = new Date(Date.now() - 24 * 3600 * 1000).toISOString(); // 1 day ago
+      const { error } = await supabaseAdmin
+        .from("api_keys")
+        .update({ expires_at: pastDate, status: "expired" })
+        .eq("id", key.id);
+
+      if (error) {
+        console.error(`Error expiring API key ${key.api_key} (${key.user_email}):`, error);
+      } else {
+        console.log(`Successfully expired API Key ${key.api_key} for user ${key.user_email}`);
+      }
+    }
+  }
 }
 
 run().catch(console.error);
+
