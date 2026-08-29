@@ -26,7 +26,8 @@ import {
   CreditCard,
   Mail,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Crown
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, IS_TESTING_MODE } from '../services/AuthContext';
@@ -49,6 +50,41 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState<number>(IS_TESTING_MODE ? 120 : 86);
   const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+  const [unlimitedCountdown, setUnlimitedCountdown] = useState<string>('');
+
+  useEffect(() => {
+    if (!profile?.unlimited_expiry) {
+      setUnlimitedCountdown('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const expiry = new Date(profile.unlimited_expiry).getTime();
+      const now = Date.now();
+      const diff = expiry - now;
+      if (diff <= 0) {
+        setUnlimitedCountdown('');
+        return;
+      }
+      
+      const secs = Math.floor(diff / 1000);
+      const mins = Math.floor(secs / 60);
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      
+      if (days > 0) {
+        setUnlimitedCountdown(`${days}d ${hours % 24}h ${mins % 60}m`);
+      } else if (hours > 0) {
+        setUnlimitedCountdown(`${hours}h ${mins % 60}m ${secs % 60}s`);
+      } else {
+        setUnlimitedCountdown(`${mins}m ${secs % 60}s`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [profile?.unlimited_expiry]);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -136,7 +172,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                 title="Wallet Balance — Click to Add Balance"
               >
                 <Coins className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="font-mono whitespace-nowrap">{isUnlimited ? "Unlimited" : `₹${Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0)).toFixed(2)}`}</span>
+                <span className="font-mono whitespace-nowrap">{isUnlimited ? (unlimitedCountdown ? `Unlimited (${unlimitedCountdown})` : "Unlimited") : `₹${Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0)).toFixed(2)}`}</span>
               </button>
             ) : (
               <button
@@ -230,7 +266,7 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                         className="text-[11px] font-black font-mono bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Coins className="w-3 h-3 text-emerald-600" />
-                        <span>{isUnlimited ? "Unlimited" : `₹${Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0)).toFixed(2)}`}</span>
+                        <span>{isUnlimited ? (unlimitedCountdown ? `Unlimited (${unlimitedCountdown})` : "Unlimited") : `₹${Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0)).toFixed(2)}`}</span>
                       </button>
                     </div>
                   </div>
@@ -292,6 +328,17 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                   </button>
 
                   <button
+                    onClick={() => { setIsSidebarOpen(false); navigate('/unlimited-plans'); }}
+                    className={navItemClass(currentPath === '/unlimited-plans' || currentPath === '/unlimited')}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Crown className="w-4.5 h-4.5 text-amber-500" />
+                      <span>Unlimited Plans</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                  </button>
+
+                  <button
                     onClick={() => { setIsSidebarOpen(false); navigate('/referral'); }}
                     className={navItemClass(currentPath === '/referral')}
                   >
@@ -317,62 +364,18 @@ export default function HeaderNavbar({ title, subtitle }: HeaderNavbarProps) {
                       <Smartphone className="w-4 h-4 text-cyan-600" />
                       <span>Number Lookup</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹2</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹5</span>
                   </button>
 
                   <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/email_osint'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Mail className="w-4 h-4 text-indigo-600" />
-                      <span>Email Lookup</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹20</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/telegram_osint'); }}
+                    onClick={() => { setIsSidebarOpen(false); navigate('/service/telegram-lookup'); }}
                     className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5">
                       <Send className="w-4 h-4 text-sky-500" />
                       <span>Telegram Intelligence</span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹5</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/adhr_basic'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <ShieldCheck className="w-4 h-4 text-amber-600" />
-                      <span>Aadhar Lookup</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹25</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/vehicle_rc'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Car className="w-4 h-4 text-orange-600" />
-                      <span>Vehicle RC Details</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹12</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsSidebarOpen(false); navigate('/service/veh_owner_num'); }}
-                    className="w-full p-2.5 rounded-xl font-bold text-xs text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Car className="w-4 h-4 text-orange-700" />
-                      <span>Vehicle To Owner Number</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹25</span>
+                    <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">₹10</span>
                   </button>
                 </div>
 

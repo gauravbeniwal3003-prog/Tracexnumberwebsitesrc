@@ -8,10 +8,10 @@ import HeaderNavbar from '../components/HeaderNavbar';
 import { supabase } from '../services/supabase.ts';
 import { getApiBaseUrl, getAuthToken } from '../services/api';
 
-const PRESET_AMOUNTS = [1, 20, 50, 100, 200, 500, 1000, 2000];
+const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
 
 export function getRechargeBonus(amount: number) {
-  if (amount < 1) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
+  if (amount < 50) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
   if (amount < 100) return { bonusPercent: 0, bonusAmount: 0, totalAmount: amount };
   if (amount >= 1000) {
     const bonusPercent = 100;
@@ -43,6 +43,105 @@ export default function BuyCredits() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [txLoading, setTxLoading] = useState(false);
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+
+  // Unlimited Plan Purchase State
+  const [isBuyingUnlimited, setIsBuyingUnlimited] = useState(false);
+  const [unlimitedStatus, setUnlimitedStatus] = useState<{ status: 'idle' | 'success' | 'failed', message: string }>({ status: 'idle', message: '' });
+  const [unlimitedCountdown, setUnlimitedCountdown] = useState<string>('');
+
+  useEffect(() => {
+    if (!profile?.unlimited_expiry) {
+      setUnlimitedCountdown('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const expiry = new Date(profile.unlimited_expiry).getTime();
+      const now = Date.now();
+      const diff = expiry - now;
+      if (diff <= 0) {
+        setUnlimitedCountdown('');
+        return;
+      }
+      
+      const secs = Math.floor(diff / 1000);
+      const mins = Math.floor(secs / 60);
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      
+      if (days > 0) {
+        setUnlimitedCountdown(`${days}d ${hours % 24}h ${mins % 60}m`);
+      } else if (hours > 0) {
+        setUnlimitedCountdown(`${hours}h ${mins % 60}m ${secs % 60}s`);
+      } else {
+        setUnlimitedCountdown(`${mins}m ${secs % 60}s`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [profile?.unlimited_expiry]);
+
+  const handleBuyUnlimitedPlan = async (days: number) => {
+    if (!user) {
+      window.dispatchEvent(new CustomEvent('open-login'));
+      return;
+    }
+
+    const price = days === 1 ? 100 : days === 7 ? 400 : 1200;
+    const currentCredits = Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0));
+
+    if (currentCredits < price) {
+      setUnlimitedStatus({
+        status: 'failed',
+        message: `Insufficient balance! You need ₹${price} to buy this plan, but your wallet only has ₹${currentCredits.toFixed(2)}. Please recharge your wallet first.`
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const confirmed = window.confirm(`Are you sure you want to purchase the ${days === 1 ? "1 Day" : days === 7 ? "7 Days" : "1 Month"} Unlimited Search Plan for ₹${price}? This will be deducted from your wallet balance.`);
+    if (!confirmed) return;
+
+    try {
+      setIsBuyingUnlimited(true);
+      setUnlimitedStatus({ status: 'idle', message: '' });
+      const token = await getAuthToken();
+      if (!token) throw new Error("Authentication token expired. Please sign in again.");
+
+      const response = await fetch(`${getApiBaseUrl()}/api/unlimited-plan/buy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ days })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.status === 'success') {
+        setUnlimitedStatus({
+          status: 'success',
+          message: data.message || `Successfully purchased the Unlimited plan! Your new expiry date is ${new Date(data.unlimited_expiry).toLocaleDateString()}.`
+        });
+        await refreshProfile();
+        fetchTransactions();
+      } else {
+        setUnlimitedStatus({
+          status: 'failed',
+          message: data.error || data.message || 'Failed to complete purchase. Please try again.'
+        });
+      }
+    } catch (err: any) {
+      setUnlimitedStatus({
+        status: 'failed',
+        message: err.message || 'An error occurred during the transaction. Please try again.'
+      });
+    } finally {
+      setIsBuyingUnlimited(false);
+    }
+  };
 
   const fetchTransactions = async () => {
     if (!user) return;
@@ -231,8 +330,8 @@ export default function BuyCredits() {
       return;
     }
 
-    if (!amountToPay || amountToPay < 1) {
-      alert("Please enter a valid amount (minimum ₹1)");
+    if (!amountToPay || amountToPay < 50) {
+      alert("Please enter a valid amount (minimum ₹50)");
       return;
     }
 
@@ -381,7 +480,7 @@ export default function BuyCredits() {
             <div>
               <span className="text-[10px] uppercase tracking-widest font-extrabold text-sky-100">Current Wallet Balance</span>
               <div className="text-4xl font-black font-mono text-white mt-1">
-                {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? "Unlimited" : `₹${profile?.credits || 0}.00`}
+                {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? (unlimitedCountdown ? `Unlimited (${unlimitedCountdown})` : "Unlimited") : `₹${Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0)).toFixed(2)}`}
               </div>
             </div>
             <div className="px-4 py-2 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs">
@@ -426,7 +525,7 @@ export default function BuyCredits() {
                       </span>
                     ) : (
                       <span className="text-[10px] text-slate-400 font-bold">
-                        {amt === 1 ? 'Min. Recharge' : 'No Bonus'}
+                        {amt === 50 ? 'Min. Recharge' : 'No Bonus'}
                       </span>
                     )}
                   </button>
@@ -446,9 +545,9 @@ export default function BuyCredits() {
               <input
                 id="buy-credits-custom-amount"
                 type="number"
-                min="1"
+                min="50"
                 max="100000"
-                placeholder="Enter custom amount (minimum ₹1)"
+                placeholder="Enter custom amount (minimum ₹50)"
                 value={customAmountInput}
                 onChange={(e) => {
                   setCustomAmountInput(e.target.value);

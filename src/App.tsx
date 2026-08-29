@@ -41,6 +41,7 @@ import { DashboardServicesView } from './components/DashboardServicesView.tsx';
 
 import LandingPage from './pages/LandingPage.tsx';
 import ProtectRecordPage from './pages/ProtectRecordPage.tsx';
+import UnlimitedPlans from './pages/UnlimitedPlans.tsx';
 
 export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -123,6 +124,8 @@ export default function App() {
         <Route path="/buy-api/:planId" element={<ApiDocs />} />
         <Route path="/pricing" element={<BuyCredits />} />
         <Route path="/buy-credits" element={<BuyCredits />} />
+        <Route path="/unlimited-plans" element={<UnlimitedPlans />} />
+        <Route path="/unlimited" element={<UnlimitedPlans />} />
         <Route path="/account/api" element={<ApiDocs />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/:tab" element={<AdminDashboard />} />

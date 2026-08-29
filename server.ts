@@ -638,11 +638,11 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 2.0,            // Number lookup: ₹2.00 per lookup
-  number: 2.0,
-  mobile: 2.0,
-  telegram: 5.0,         // Telegram lookup: ₹5.00 per lookup
-  tg: 5.0,
+  phone: 5.0,            // Number lookup: ₹5.00 per lookup
+  number: 5.0,
+  mobile: 5.0,
+  telegram: 10.0,        // Telegram lookup: ₹10.00 per lookup
+  tg: 10.0,
   email: 20.0,           // Gmail / Email lookup: ₹20.00 per lookup
   mail: 20.0,
   gmail: 20.0,
@@ -1109,12 +1109,42 @@ function normalizeProviderRecord(rawItem: any, type: string, queryStr: string = 
   // Transfer all remaining dynamic provider keys safely
   for (const k of itemKeys) {
     const lowerK = k.toLowerCase();
+    
+    // Strict block of any branding, developer, support, link, or provider metadata keys
     if ([
-      'branding', 'brand', 'api_info', 'powered_by', 'buy_api', 
+      'branding', 'brand', 'brand_name', 'api_info', 'powered_by', 'buy_api', 
       'owner_telegram', 'developer', 'developer_name', 'provider', 
       'provider_info', 'api_buy_link', 'website_link', 'buy', 
       'digiseva', 'digisevapoint', 'techvishalboss', 'osintcaller', 'userxinfo', 'credits_to', 'telegram_support'
     ].includes(lowerK)) continue;
+
+    // Reject keys containing dynamic provider-related patterns to keep API response perfectly white-labeled
+    if (
+      lowerK.includes("link") || 
+      lowerK.includes("url") || 
+      lowerK.includes("support") || 
+      lowerK.includes("creator") || 
+      lowerK.includes("creater") || 
+      lowerK.includes("key") || 
+      lowerK.includes("token") || 
+      lowerK.includes("auth") || 
+      lowerK.includes("status") || 
+      lowerK.includes("msg") || 
+      lowerK.includes("message") || 
+      lowerK.includes("error") || 
+      lowerK.includes("by") || 
+      lowerK.includes("site") || 
+      lowerK.includes("bot") || 
+      lowerK.includes("channel") || 
+      lowerK.includes("group") || 
+      lowerK.includes("join") || 
+      lowerK.includes("admin") || 
+      lowerK.includes("owner_") ||
+      lowerK.includes("telegram_") ||
+      lowerK.includes("developer_")
+    ) {
+      continue;
+    }
 
     if (normalized[k] === undefined && item[k] !== undefined && item[k] !== null) {
       let val = item[k];
@@ -1539,17 +1569,17 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     try {
       if (userId && userId.includes('-')) {
         const { data: p1 } = await db.from("profiles").select("*").eq("id", userId);
-        if (p1 && p1.length > 0) candidateRows.push(...p1);
+        if (p1 && p1.length > 0) candidateRows.push(...p1.map(r => ({ ...r, is_from_db: true })));
       }
       if (cleanEmail) {
         const { data: p2 } = await db.from("profiles").select("*").ilike("email", cleanEmail);
-        if (p2 && p2.length > 0) candidateRows.push(...p2);
+        if (p2 && p2.length > 0) candidateRows.push(...p2.map(r => ({ ...r, is_from_db: true })));
       }
       if (cleanPhone) {
         const { data: p3 } = await db.from("profiles").select("*").eq("phone", cleanPhone);
-        if (p3 && p3.length > 0) candidateRows.push(...p3);
+        if (p3 && p3.length > 0) candidateRows.push(...p3.map(r => ({ ...r, is_from_db: true })));
         const { data: p4 } = await db.from("profiles").select("*").eq("email", `${cleanPhone}@tracexdata.com`);
-        if (p4 && p4.length > 0) candidateRows.push(...p4);
+        if (p4 && p4.length > 0) candidateRows.push(...p4.map(r => ({ ...r, is_from_db: true })));
       }
     } catch (e) {
       console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
@@ -1559,15 +1589,15 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     try {
       if (userId && userId.includes('-')) {
         const { data: u1 } = await db.from("app_users").select("*").eq("id", userId);
-        if (u1 && u1.length > 0) candidateRows.push(...u1);
+        if (u1 && u1.length > 0) candidateRows.push(...u1.map(r => ({ ...r, is_from_db: true })));
       }
       if (cleanPhone) {
         const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone);
-        if (u2 && u2.length > 0) candidateRows.push(...u2);
+        if (u2 && u2.length > 0) candidateRows.push(...u2.map(r => ({ ...r, is_from_db: true })));
       }
       if (cleanEmail) {
         const { data: u3 } = await db.from("app_users").select("*").ilike("email", cleanEmail);
-        if (u3 && u3.length > 0) candidateRows.push(...u3);
+        if (u3 && u3.length > 0) candidateRows.push(...u3.map(r => ({ ...r, is_from_db: true })));
       }
     } catch (e) {
       console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
@@ -1578,12 +1608,12 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   let mobStoreUser: any = null;
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
     mobStoreUser = mobileUsersStore.get(cleanPhone);
-    if (mobStoreUser) candidateRows.push(mobStoreUser);
+    if (mobStoreUser) candidateRows.push({ ...mobStoreUser, is_from_db: false });
   } else {
     for (const [pKey, mUser] of mobileUsersStore.entries()) {
       if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail)) {
         mobStoreUser = mUser;
-        candidateRows.push(mobStoreUser);
+        candidateRows.push({ ...mUser, is_from_db: false });
         break;
       }
     }
@@ -1619,22 +1649,25 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     }
   }
 
-  // 3. Find primary authoritative row
-  let primaryRow = deduped[0];
+  // 3. Find primary authoritative row - Prioritize genuine database rows over local backup files
+  const dbRows = deduped.filter(r => r.is_from_db);
+  const rowsToUse = dbRows.length > 0 ? dbRows : deduped;
+
+  let primaryRow = rowsToUse[0];
   if (userId && userId.includes('-')) {
-    const directMatch = deduped.find(r => r.id === userId);
+    const directMatch = rowsToUse.find(r => r.id === userId);
     if (directMatch) primaryRow = directMatch;
   } else if (cleanEmail) {
-    const emailMatch = deduped.find(r => r.email && r.email.toLowerCase() === cleanEmail);
+    const emailMatch = rowsToUse.find(r => r.email && r.email.toLowerCase() === cleanEmail);
     if (emailMatch) primaryRow = emailMatch;
   } else if (cleanPhone) {
-    const phoneMatch = deduped.find(r => r.phone === cleanPhone);
+    const phoneMatch = rowsToUse.find(r => r.phone === cleanPhone);
     if (phoneMatch) primaryRow = phoneMatch;
   }
 
   const rawCredits = primaryRow.credits !== undefined && primaryRow.credits !== null 
     ? primaryRow.credits 
-    : (primaryRow.wallet_balance !== undefined && primaryRow.wallet_balance !== null ? primaryRow.wallet_balance : 10.00);
+    : (primaryRow.wallet_balance !== undefined && primaryRow.wallet_balance !== null ? primaryRow.wallet_balance : 0.00);
   let finalCredits = Math.max(0, Number(Number(rawCredits || 0).toFixed(2)));
 
   // 4. Find best active unlimited expiry
@@ -1771,7 +1804,7 @@ app.get("/api/profile", async (req, res) => {
     if (user.phone && mobileUsersStore.has(user.phone)) {
       const mob = mobileUsersStore.get(user.phone);
       if (mob) {
-        const mobCredits = mob.credits !== undefined ? mob.credits : 10.00;
+        const mobCredits = mob.credits !== undefined ? mob.credits : 0.00;
         return res.json({
           id: user.id,
           email: user.email,
@@ -1784,7 +1817,7 @@ app.get("/api/profile", async (req, res) => {
       }
     }
 
-    const freeCredits = 25.00;
+    const freeCredits = 0.00;
     const newProfile = {
       id: user.id,
       email: user.email,
@@ -1858,7 +1891,7 @@ app.post("/api/profile/update", async (req, res) => {
         email: user.email,
         full_name: updateData.full_name || (user.user_metadata as any)?.full_name || "User",
         avatar_url: updateData.avatar_url || (user.user_metadata as any)?.avatar_url || null,
-        credits: 10,
+        credits: 0,
       };
       return res.json(mockUpdated);
     }
@@ -1931,7 +1964,7 @@ export async function syncMobileUserToDatabases(userObj: {
     : getUuidForPhone(cleanPhone);
   const userEmail = userObj.email || `${cleanPhone}@tracexdata.com`;
   const nameToUse = userObj.full_name || `User ${cleanPhone.slice(-4)}`;
-  const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 10.00;
+  const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 0.00;
   const nowIso = userObj.created_at || new Date().toISOString();
 
   let existingDbCredits: number | null = null;
@@ -2183,7 +2216,7 @@ app.post("/api/mobile-auth/signup", async (req, res) => {
       password_hash: passwordHash,
       full_name: nameToUse,
       email: `${cleanPhone}@tracexdata.com`,
-      credits: 10.00,
+      credits: 0.00,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -2428,6 +2461,290 @@ app.get("/api/user-keys", async (req, res) => {
 
     return res.json(data);
   } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// POST /api/user-keys/buy - Buy an unlimited API plan using wallet balance
+app.post("/api/user-keys/buy", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const user = await getUserFromToken(token);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+
+    const { planId } = req.body;
+    if (planId !== "api_number_600" && planId !== "api_telegram_600") {
+      return res.status(400).json({ error: "Invalid plan identifier." });
+    }
+
+    const planPrice = 600.00;
+    const planName = planId === "api_number_600" ? "Number API" : "Telegram API";
+    const planLabel = planId === "api_number_600" ? "Number API - ₹600/mo" : "Telegram API - ₹600/mo";
+
+    // Fetch unified user profile to get latest wallet balance
+    const userProfile = await getUnifiedUserProfile(user.id, user.email);
+    if (!userProfile) {
+      return res.status(404).json({ error: "User profile not found." });
+    }
+
+    const currentBalance = Number(userProfile.credits !== undefined ? userProfile.credits : 0);
+    if (currentBalance < planPrice) {
+      return res.status(400).json({
+        error: "insufficient_balance",
+        message: `Insufficient balance: ${planName} requires ₹${planPrice.toFixed(2)}, but you only have ₹${currentBalance.toFixed(2)} in your wallet.`
+      });
+    }
+
+    // Deduct balance
+    const newBalance = Math.max(0, currentBalance - planPrice);
+    await updateUserCreditsAcrossAllStores(
+      userProfile.id,
+      userProfile.email,
+      userProfile.phone,
+      newBalance,
+      userProfile.full_name,
+      userProfile.unlimited_expiry,
+      userProfile.is_free_credit_claimed
+    );
+
+    // Record wallet transaction
+    await supabaseAdmin.from("wallet_transactions").insert({
+      user_id: user.id,
+      user_email: user.email || "N/A",
+      type: "Debit",
+      amount: planPrice,
+      service: `Bought API Sub: ${planName} (1 Month)`,
+      status: "SUCCESS"
+    });
+
+    // Generate unique API Key
+    const apiKey = generate8DigitApiKey();
+
+    // Insert new API Key
+    const { data: insertedKey, error: keyErr } = await supabaseAdmin.from("api_keys").insert({
+      user_id: user.id,
+      user_email: user.email || "N/A",
+      api_key: apiKey,
+      plan_name: planLabel,
+      request_limit: null,
+      status: "active",
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }).select("*");
+
+    if (keyErr) {
+      console.error("[KEY_CREATE_FAIL]", keyErr);
+      return res.status(500).json({ error: "Failed to provision API Key. Please contact support." });
+    }
+
+    return res.json({
+      status: "success",
+      message: `Successfully purchased ${planName} Plan!`,
+      apiKey,
+      remaining_balance: newBalance
+    });
+
+  } catch (err: any) {
+    console.error("[BUY_API_PLAN_ERR]", err);
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// POST /api/unlimited-plan/buy - Buy a global unlimited lookup plan using wallet balance
+app.post("/api/unlimited-plan/buy", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const user = await getUserFromToken(token);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+
+    const { days } = req.body;
+    if (days !== 1 && days !== 7 && days !== 30) {
+      return res.status(400).json({ error: "Invalid plan duration." });
+    }
+
+    const planPrice = days === 1 ? 100.00 : days === 7 ? 400.00 : 1200.00;
+    const planName = days === 1 ? "1 Day Unlimited" : days === 7 ? "7 Days Unlimited" : "1 Month Unlimited";
+
+    // Fetch unified user profile to get latest wallet balance
+    const userProfile = await getUnifiedUserProfile(user.id, user.email);
+    if (!userProfile) {
+      return res.status(404).json({ error: "User profile not found." });
+    }
+
+    const currentBalance = Number(userProfile.credits !== undefined ? userProfile.credits : 0);
+    if (currentBalance < planPrice) {
+      return res.status(400).json({
+        error: "insufficient_balance",
+        message: `Insufficient balance: ${planName} requires ₹${planPrice.toFixed(2)}, but you only have ₹${currentBalance.toFixed(2)} in your wallet.`
+      });
+    }
+
+    // Deduct balance
+    const newBalance = Math.max(0, currentBalance - planPrice);
+    
+    // Calculate new unlimited expiry
+    const now = Date.now();
+    const currentExpiry = userProfile.unlimited_expiry ? new Date(userProfile.unlimited_expiry).getTime() : 0;
+    const baseTime = currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(baseTime + days * 24 * 60 * 60 * 1000).toISOString();
+
+    await updateUserCreditsAcrossAllStores(
+      userProfile.id,
+      userProfile.email,
+      userProfile.phone,
+      newBalance,
+      userProfile.full_name,
+      newExpiry,
+      userProfile.user_discount_percent || 0,
+      userProfile.is_free_credit_claimed
+    );
+
+    // Record wallet transaction
+    await supabaseAdmin.from("wallet_transactions").insert({
+      user_id: user.id,
+      user_email: user.email || "N/A",
+      type: "Debit",
+      amount: planPrice,
+      service: `Bought Unlimited Plan: ${planName}`,
+      status: "SUCCESS"
+    });
+
+    return res.json({
+      status: "success",
+      message: `Successfully purchased ${planName} Plan!`,
+      unlimited_expiry: newExpiry,
+      remaining_balance: newBalance
+    });
+
+  } catch (err: any) {
+    console.error("[BUY_UNLIMITED_PLAN_ERR]", err);
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// POST /api/user-keys/renew - Renew/recharge an existing API key using wallet balance
+app.post("/api/user-keys/renew", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "") : "";
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token missing" });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: "Database offline" });
+    }
+    const user = await getUserFromToken(token);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+
+    const { apiKeyId } = req.body;
+    if (!apiKeyId) {
+      return res.status(400).json({ error: "API Key ID is required." });
+    }
+
+    // Fetch the key record
+    const { data: keyRecords, error: keyFetchErr } = await supabaseAdmin
+      .from("api_keys")
+      .select("*")
+      .eq("id", apiKeyId)
+      .eq("user_id", user.id);
+
+    const keyRecord = keyRecords?.[0];
+    if (keyFetchErr || !keyRecord) {
+      return res.status(404).json({ error: "API key subscription not found or unauthorized." });
+    }
+
+    const planLabel = keyRecord.plan_name || "";
+    if (!planLabel.includes("Number API") && !planLabel.includes("Telegram API")) {
+      return res.status(400).json({ error: "Only Number API or Telegram API plans can be renewed." });
+    }
+
+    const planPrice = 600.00;
+    const planName = planLabel.includes("Number") ? "Number API" : "Telegram API";
+
+    // Fetch unified user profile to get latest wallet balance
+    const userProfile = await getUnifiedUserProfile(user.id, user.email);
+    if (!userProfile) {
+      return res.status(404).json({ error: "User profile not found." });
+    }
+
+    const currentBalance = Number(userProfile.credits !== undefined ? userProfile.credits : 0);
+    if (currentBalance < planPrice) {
+      return res.status(400).json({
+        error: "insufficient_balance",
+        message: `Insufficient balance: Renewing ${planName} requires ₹${planPrice.toFixed(2)}, but you only have ₹${currentBalance.toFixed(2)} in your wallet.`
+      });
+    }
+
+    // Calculate new expiration date
+    const now = Date.now();
+    const currentExpiry = keyRecord.expires_at ? new Date(keyRecord.expires_at).getTime() : 0;
+    const baseTime = currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(baseTime + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Deduct balance
+    const newBalance = Math.max(0, currentBalance - planPrice);
+    await updateUserCreditsAcrossAllStores(
+      userProfile.id,
+      userProfile.email,
+      userProfile.phone,
+      newBalance,
+      userProfile.full_name,
+      userProfile.unlimited_expiry,
+      userProfile.is_free_credit_claimed
+    );
+
+    // Record wallet transaction
+    await supabaseAdmin.from("wallet_transactions").insert({
+      user_id: user.id,
+      user_email: user.email || "N/A",
+      type: "Debit",
+      amount: planPrice,
+      service: `Renewed API Sub: ${planName} (1 Month)`,
+      status: "SUCCESS"
+    });
+
+    // Update API key record
+    const { error: keyUpdateErr } = await supabaseAdmin.from("api_keys").update({
+      status: "active",
+      expires_at: newExpiry
+    }).eq("id", apiKeyId);
+
+    if (keyUpdateErr) {
+      console.error("[KEY_RENEW_FAIL]", keyUpdateErr);
+      return res.status(500).json({ error: "Failed to renew API key. Please contact support." });
+    }
+
+    return res.json({
+      status: "success",
+      message: `Successfully renewed ${planName} Plan for 30 more days!`,
+      expires_at: newExpiry,
+      remaining_balance: newBalance
+    });
+
+  } catch (err: any) {
+    console.error("[RENEW_API_PLAN_ERR]", err);
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
 });
@@ -3747,58 +4064,54 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
   const serviceKey = lookupType === 'adhr' ? 'aadhaar' : lookupType === 'bnk' ? 'ifsc' : lookupType;
   const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 2.0;
   const planUpper = String(keyRecord.plan_name || "").toUpperCase();
-  const isUnlimited = planUpper.includes("UNLIMITED") || (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
+
+  // Enforce service-specific unlimited plan restrictions
+  if (planUpper.includes("NUMBER")) {
+    if (lookupType !== "phone") {
+      return {
+        authorized: false,
+        userProfile,
+        errorResponse: {
+          status: "error",
+          error_type: "plan_restriction",
+          message: `Access Denied: This API key is under the Number API Plan and is restricted to Number Lookup ('phone') service queries only.`
+        }
+      };
+    }
+  } else if (planUpper.includes("TELEGRAM")) {
+    if (lookupType !== "telegram") {
+      return {
+        authorized: false,
+        userProfile,
+        errorResponse: {
+          status: "error",
+          error_type: "plan_restriction",
+          message: `Access Denied: This API key is under the Telegram API Plan and is restricted to Telegram Lookup ('telegram') service queries only.`
+        }
+      };
+    }
+  }
+
+  const isUnlimited = planUpper.includes("UNLIMITED") || 
+                      planUpper.includes("NUMBER") || 
+                      planUpper.includes("TELEGRAM") || 
+                      (userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > new Date());
 
   if (isUnlimited) {
     return { authorized: true, userProfile };
   }
 
-  const currentCredits = Number(userProfile.credits !== undefined ? userProfile.credits : 0);
-  if (currentCredits < lookupCost) {
-    return {
-      authorized: false,
-      userProfile,
-      errorResponse: {
-        status: "error",
-        error_type: "insufficient_balance",
-        message: `Insufficient Wallet Balance: Your API key is connected directly to your account wallet. This '${lookupType}' query requires ₹${lookupCost.toFixed(2)}, but your current wallet balance is ₹${currentCredits.toFixed(2)}. Please recharge your account.`,
-        required_cost: lookupCost,
-        wallet_balance: currentCredits,
-        recharge_url: "/pricing"
-      }
-    };
-  }
-
-  const deduct = async () => {
-    const newCredits = Math.max(0, currentCredits - lookupCost);
-    await updateUserCreditsAcrossAllStores(
-      userProfile.id,
-      userProfile.email,
-      userProfile.phone,
-      newCredits,
-      userProfile.full_name,
-      userProfile.unlimited_expiry,
-      userProfile.user_discount_percent
-    );
-
-    try {
-      await supabaseAdmin.from("wallet_transactions").insert({
-        user_id: userProfile.id,
-        user_email: userProfile.email || "API User",
-        service: `API Request: ${lookupType.toUpperCase()}`,
-        type: "Debit",
-        amount: lookupCost,
-        balance_after: newCredits,
-        created_at: new Date().toISOString()
-      });
-    } catch (wtErr) {
-      console.error("Failed to insert wallet_transaction for API deduction:", wtErr);
+  // Per-search API does not work anymore. Block the user.
+  return {
+    authorized: false,
+    userProfile,
+    errorResponse: {
+      status: "error",
+      error_type: "insufficient_balance",
+      message: `Access Denied: Per-lookup billing is discontinued for Developer APIs. An active Unlimited API Plan or Account Unlimited Plan is required to perform searches.`,
+      recharge_url: "/unlimited-plans"
     }
-
-    return { newCredits, lookupCost };
   };
-
-  return { authorized: true, userProfile, deduct };
 }
 
 async function upfrontDeductAndLog(
@@ -3934,11 +4247,22 @@ app.all("/api/lookup", async (req, res) => {
         request_limit: null
       };
     } else {
-      const { data: keyRecords, error: keyErr } = 
+      let { data: keyRecords, error: keyErr } = 
           await supabaseAdmin
         .from("api_keys")
         .select("*")
         .eq("api_key", key);
+
+      // Fallback: Check case-insensitively in case the developer specified it in a different case
+      if ((!keyRecords || keyRecords.length === 0) && key) {
+        const { data: altRecords } = await supabaseAdmin
+          .from("api_keys")
+          .select("*")
+          .ilike("api_key", key);
+        if (altRecords && altRecords.length > 0) {
+          keyRecords = altRecords;
+        }
+      }
 
       keyRecord = keyRecords?.[0];
 
@@ -5347,6 +5671,9 @@ async function fulfillOrder(
         }
       }
 
+      const cleanPhoneForStore = customer_phone ? customer_phone.replace(/\D/g, "").slice(-10) : "";
+      const cleanEmailCandidate = (user_email || emailCandidate || "").trim().toLowerCase();
+
       if (plan_id.startsWith('protect_')) {
         const parts = plan_id.split('_');
         let st = parts[1] || 'phone';
@@ -5384,6 +5711,81 @@ async function fulfillOrder(
 
         await db.from("payment_claims").update({ status: "success", user_id: finalUserId }).eq("payment_id", orderId);
         console.log(`[SaaS] Record protection fulfilled successfully for ${st}:${cleanVal}`);
+        return;
+      }
+
+      // 1. Direct Unlimited Search Plan Fulfillment (Paid via Cashfree, bypasses wallet)
+      if (plan_id.startsWith('unlimited_')) {
+        const matchDays = plan_id.match(/^unlimited_(\d+)/i);
+        let days = 1;
+        if (matchDays) {
+          days = parseInt(matchDays[1], 10);
+        } else if (plan_id.includes('7')) {
+          days = 7;
+        } else if (plan_id.includes('30')) {
+          days = 30;
+        }
+
+        let userProfile = null;
+        if (finalUserId) {
+          userProfile = await getUnifiedUserProfile(finalUserId, user_email || "");
+        }
+
+        const now = Date.now();
+        const currentExpiry = userProfile?.unlimited_expiry ? new Date(userProfile.unlimited_expiry).getTime() : 0;
+        const baseTime = currentExpiry > now ? currentExpiry : now;
+        const newExpiry = new Date(baseTime + days * 24 * 60 * 60 * 1000).toISOString();
+
+        const emailToUse = userProfile?.email || cleanEmailCandidate || (cleanPhoneForStore ? `${cleanPhoneForStore}@tracexdata.com` : `user_${finalUserId.slice(0, 8)}@tracexdata.online`);
+        const nameToUse = userProfile?.full_name || (emailToUse ? emailToUse.split("@")[0] : `User ${finalUserId.slice(0, 4)}`);
+
+        await updateUserCreditsAcrossAllStores(
+          finalUserId,
+          emailToUse,
+          cleanPhoneForStore || userProfile?.phone,
+          Math.max(Number(userProfile?.wallet_balance || 0), Number(userProfile?.credits || 0)),
+          nameToUse,
+          newExpiry,
+          userProfile?.user_discount_percent || 0,
+          userProfile?.is_free_credit_claimed !== undefined ? userProfile.is_free_credit_claimed : true
+        );
+
+        await db.from("payment_claims").update({
+          user_id: finalUserId,
+          amount: orderAmount || (days === 1 ? 100 : days === 7 ? 400 : 1200),
+          status: "success",
+          updated_at: new Date().toISOString()
+        }).eq("payment_id", orderId);
+
+        console.log(`[FULFILL GUARANTEE] Unlimited search plan (${days} days) activated for ${finalUserId} until ${newExpiry}`);
+        return;
+      }
+
+      // 2. Direct API Subscription Renewal (Paid via Cashfree, bypasses wallet)
+      if (plan_id.startsWith('api_renew_')) {
+        const apiKeyId = plan_id.replace('api_renew_', '');
+        const { data: keyRecords } = await db
+          .from("api_keys")
+          .select("*")
+          .eq("id", apiKeyId);
+
+        const keyRecord = keyRecords?.[0];
+        if (keyRecord) {
+          const now = Date.now();
+          const currentExpiry = keyRecord.expires_at ? new Date(keyRecord.expires_at).getTime() : 0;
+          const baseTime = currentExpiry > now ? currentExpiry : now;
+          const newExpiry = new Date(baseTime + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+          await db
+            .from("api_keys")
+            .update({ expires_at: newExpiry, status: "active" })
+            .eq("id", apiKeyId);
+
+          await db.from("payment_claims").update({ status: "success", user_id: finalUserId || keyRecord.user_id }).eq("payment_id", orderId);
+          console.log(`[SaaS] API Key subscription renewed successfully for key ID: ${apiKeyId} until ${newExpiry}`);
+        } else {
+          console.warn(`[SaaS] API Key renewal failed - subscription not found for ID: ${apiKeyId}`);
+        }
         return;
       }
 
@@ -5452,8 +5854,6 @@ async function fulfillOrder(
       }
 
       // Wallet refill & tiered bonus credit topup logic
-      const cleanPhoneForStore = customer_phone ? customer_phone.replace(/\D/g, "").slice(-10) : "";
-      const cleanEmailCandidate = (user_email || emailCandidate || "").trim().toLowerCase();
 
       let { data: profile } = await db.from("profiles").select("*").eq("id", finalUserId).maybeSingle();
 
@@ -5744,8 +6144,8 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     const { user_id, user_email, plan_id, amount, customer_phone, customer_name, return_url } = req.body;
     
     // Strict input validation
-    if (!amount || typeof amount !== 'number' || amount < 1 || amount > 100000) {
-      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹1." });
+    if (!amount || typeof amount !== 'number' || amount < 50 || amount > 100000) {
+      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹50." });
     }
     if (plan_id !== "pgpay_manual" && plan_id !== "panfind" ) {
       if (!user_id || typeof user_id !== 'string') {
@@ -7886,6 +8286,8 @@ function scrubAllBranding(obj: any): any {
   if (!obj) return obj;
   if (typeof obj === "string") {
     return obj
+      .replace(/(while\s+result\s*(?:-\s*)?(?:https?:\/\/(?:www\.)?)?digisevapoint\.com)/gi, "")
+      .replace(/while\s+result\s*(?:-\s*)?/gi, "")
       .replace(/(digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|vishal[\s\-_]*boss(?:\s*👑)?|osint[\s\-_]*caller(?:bot)?|@?osintcaller(?:bot)?|u(?:ers|ser)xinfo(?:\.in)?|@?u(?:ers|ser)xinfo|anish[\s\-_]*exploits|exploitsindia(?:\.site)?|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|@?userxinfo|@?vectraen|vectraen|asurpapa|@?asurpapa|asur_about|powered by asur|asur|👑|\ud83d\udc51)/gi, "")
       .replace(/(by\s+api|developer|developer_name|provider_name|provider_info|buy_api|website_link|api_buy_link|owner_telegram|contact|support|powered_by|powered\s+by|credits_to|credit)/gi, "")
       .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")

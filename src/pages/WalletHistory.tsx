@@ -24,6 +24,41 @@ export default function WalletHistory() {
 
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [unlimitedCountdown, setUnlimitedCountdown] = useState<string>('');
+
+  useEffect(() => {
+    if (!profile?.unlimited_expiry) {
+      setUnlimitedCountdown('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const expiry = new Date(profile.unlimited_expiry).getTime();
+      const now = Date.now();
+      const diff = expiry - now;
+      if (diff <= 0) {
+        setUnlimitedCountdown('');
+        return;
+      }
+      
+      const secs = Math.floor(diff / 1000);
+      const mins = Math.floor(secs / 60);
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      
+      if (days > 0) {
+        setUnlimitedCountdown(`${days}d ${hours % 24}h ${mins % 60}m`);
+      } else if (hours > 0) {
+        setUnlimitedCountdown(`${hours}h ${mins % 60}m ${secs % 60}s`);
+      } else {
+        setUnlimitedCountdown(`${mins}m ${secs % 60}s`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [profile?.unlimited_expiry]);
 
   const balance = Math.max(Number(profile?.credits || 0), Number(profile?.wallet_balance || 0));
 
@@ -71,7 +106,7 @@ export default function WalletHistory() {
               Current Balance
             </span>
             <h1 className="text-3xl sm:text-5xl font-mono font-black tracking-tight">
-              {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? "Unlimited" : `₹${balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+              {profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date() ? (unlimitedCountdown ? `Unlimited (${unlimitedCountdown})` : "Unlimited") : `₹${balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
             </h1>
           </div>
 

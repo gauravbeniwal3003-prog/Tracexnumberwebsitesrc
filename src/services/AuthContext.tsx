@@ -68,7 +68,7 @@ const demoUserObj = {
 const demoProfileObj = {
   id: 'demo-user-id',
   email: 'demo.user@digiseva.in',
-  credits: 10,
+  credits: 0,
   unlimited_expiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   full_name: 'Demo User (Test Mode)',
   avatar_url: '',
@@ -196,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id: dbProf.id,
               email: dbProf.email,
               full_name: dbProf.full_name || 'User',
-              credits: dbProf.credits !== undefined ? Number(dbProf.credits) : 10.00,
+              credits: dbProf.credits !== undefined ? Number(dbProf.credits) : 0.00,
               unlimited_expiry: dbProf.unlimited_expiry || null,
               avatar_url: dbProf.avatar_url || '',
               is_free_credit_claimed: dbProf.is_free_credit_claimed ?? true,
@@ -225,7 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 id: parsed.user.id,
                 email: parsed.user.email || 'user@example.com',
                 full_name: parsed.user.full_name || 'User',
-                credits: parsed.user.credits !== undefined ? parsed.user.credits : 10.00,
+                credits: parsed.user.credits !== undefined ? parsed.user.credits : 0.00,
                 avatar_url: '',
                 is_free_credit_claimed: true,
                 last_weekly_credit_at: new Date().toISOString()
@@ -301,7 +301,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: fallbackUser.id,
             email: fallbackUser.email || 'user@tracexdata.online',
             full_name: fallbackUser.user_metadata?.full_name || 'TRACEXDATA User',
-            credits: savedUser?.credits !== undefined ? savedUser.credits : 25.00,
+            credits: savedUser?.credits !== undefined ? savedUser.credits : 0.00,
             unlimited_expiry: null,
             avatar_url: '',
             is_free_credit_claimed: true,
@@ -393,7 +393,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: parsed.user.id,
             email: parsed.user.email,
             full_name: parsed.user.full_name,
-            credits: parsed.user.credits !== undefined ? parsed.user.credits : 10.00,
+            credits: parsed.user.credits !== undefined ? parsed.user.credits : 0.00,
             avatar_url: '',
             is_free_credit_claimed: true,
             last_weekly_credit_at: new Date().toISOString()
@@ -435,7 +435,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   id: parsed.user.id,
                   email: parsed.user.email,
                   full_name: parsed.user.full_name,
-                  credits: parsed.user.credits !== undefined ? parsed.user.credits : 10.00,
+                  credits: parsed.user.credits !== undefined ? parsed.user.credits : 0.00,
                   avatar_url: '',
                   is_free_credit_claimed: true,
                   last_weekly_credit_at: new Date().toISOString()
@@ -492,7 +492,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 id: newRow.id || prev?.id || curUser?.id || '',
                 email: newRow.email || prev?.email || curUser?.email || '',
                 full_name: newRow.full_name || prev?.full_name || 'User',
-                credits: newRow.credits !== undefined ? Number(newRow.credits) : (prev?.credits ?? 10.00),
+                credits: newRow.credits !== undefined ? Number(newRow.credits) : (prev?.credits ?? 0.00),
                 unlimited_expiry: newRow.unlimited_expiry ?? prev?.unlimited_expiry ?? null,
                 avatar_url: newRow.avatar_url || prev?.avatar_url || '',
                 is_free_credit_claimed: newRow.is_free_credit_claimed ?? prev?.is_free_credit_claimed ?? true,
@@ -592,7 +592,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 id: parsedReg.user.id,
                 email: parsedReg.user.email,
                 full_name: parsedReg.user.full_name,
-                credits: parsedReg.user.credits !== undefined ? parsedReg.user.credits : 10.00,
+                credits: parsedReg.user.credits !== undefined ? parsedReg.user.credits : 0.00,
                 avatar_url: '',
                 is_free_credit_claimed: true,
                 last_weekly_credit_at: new Date().toISOString()
@@ -627,7 +627,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: data.user.id,
         email: data.user.email,
         full_name: data.user.full_name,
-        credits: data.user.credits !== undefined ? data.user.credits : 10.00,
+        credits: data.user.credits !== undefined ? data.user.credits : 0.00,
         avatar_url: '',
         is_free_credit_claimed: true,
         last_weekly_credit_at: new Date().toISOString()
@@ -658,7 +658,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id: parsedReg.user.id,
               email: parsedReg.user.email,
               full_name: parsedReg.user.full_name,
-              credits: parsedReg.user.credits !== undefined ? parsedReg.user.credits : 10.00,
+              credits: parsedReg.user.credits !== undefined ? parsedReg.user.credits : 0.00,
               avatar_url: '',
               is_free_credit_claimed: true,
               last_weekly_credit_at: new Date().toISOString()
@@ -712,7 +712,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: data.user.id,
         email: data.user.email,
         full_name: data.user.full_name,
-        credits: data.user.credits !== undefined ? data.user.credits : 10.00,
+        credits: data.user.credits !== undefined ? data.user.credits : 0.00,
         avatar_url: '',
         is_free_credit_claimed: true,
         last_weekly_credit_at: new Date().toISOString()

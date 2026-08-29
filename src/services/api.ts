@@ -144,6 +144,8 @@ export const scrubBranding = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'string') {
     let cleaned = obj
+      .replace(/(while\s+result\s*(?:-\s*)?(?:https?:\/\/(?:www\.)?)?digisevapoint\.com)/gi, '')
+      .replace(/while\s+result\s*(?:-\s*)?/gi, '')
       .replace(/(vishal[\s\-_]*boss(?:\s*👑)?|tech[\s\-_]*vishal(?:[\s\-_]*boss)?|techvishalboss(?:\.com)?|digi[\s\-_]*seva(?:point)?(?:\.in|\.com)?|@?digiseva(?:point)?|👑|\ud83d\udc51)/gi, '')
       .replace(/(gaurav[\s\-_]*beniwal|seekhlebhai(?:\.in)?|exploitsindia(?:\.site)?|osintcaller(?:bot)?)/gi, '');
     for (const word of BANNED_WORDS) {
