@@ -5,7 +5,6 @@ import {
   Key,
   Copy,
   Check,
-  RefreshCw,
   AlertCircle,
   Wallet,
   ShieldCheck,
@@ -26,7 +25,6 @@ export default function ApiDocs() {
   const [apiKey, setApiKey] = useState<string>("be46807e4885358a1adcc55a73038d7f");
   const [userKeys, setUserKeys] = useState<any[]>([]);
   const [isCopiedToken, setIsCopiedToken] = useState<boolean>(false);
-  const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
 
   // Live Interactive Testing states
@@ -291,36 +289,6 @@ export default function ApiDocs() {
     setTimeout(() => setIsCopiedToken(false), 2000);
   };
 
-  // Regenerate Token
-  const handleRegenerateKey = async () => {
-    setIsRegenerating(true);
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let newKey = "";
-    for (let i = 0; i < 8; i++) {
-      newKey += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || "";
-      if (token && user?.id) {
-        await supabase.from("api_keys").insert([{
-          api_key: newKey,
-          user_id: user.id,
-          user_email: user.email || "N/A",
-          plan_name: "Account Wallet API (8-Digit)",
-          status: "active"
-        }]);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-    setApiKey(newKey);
-    setTimeout(() => {
-      setIsRegenerating(false);
-      alert(`New 8-Digit API Key (${newKey}) generated successfully!`);
-    }, 400);
-  };
-
   const walletAmount = profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date()
     ? "Unlimited"
     : (profile?.credits !== undefined ? `₹${profile.credits.toLocaleString("en-IN")}` : "₹0.00");
@@ -388,22 +356,13 @@ export default function ApiDocs() {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex gap-2">
                 <button
                   onClick={handleCopyKey}
-                  className="flex-1 py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-98"
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-98"
                 >
                   {isCopiedToken ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  <span>{isCopiedToken ? "Copied!" : "Copy Key"}</span>
-                </button>
-
-                <button
-                  onClick={handleRegenerateKey}
-                  disabled={isRegenerating}
-                  className="py-3 px-4 rounded-xl text-slate-500 hover:text-slate-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-200 hover:bg-slate-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`} />
-                  <span>Regenerate (Free)</span>
+                  <span>{isCopiedToken ? "Copied to Clipboard!" : "Copy API Key"}</span>
                 </button>
               </div>
 

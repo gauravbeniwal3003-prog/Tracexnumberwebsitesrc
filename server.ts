@@ -4057,67 +4057,82 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
     userProfile = dbProf;
   }
 
+  if (!userProfile) {
+    return { authorized: true };
+  }
+
   const now = new Date();
   const planUpper = String(keyRecord.plan_name || "").toUpperCase();
   const keyExpiry = keyRecord.expires_at ? new Date(keyRecord.expires_at) : null;
-  const isKeyActive = keyRecord.status === 'active' && (!keyExpiry || keyExpiry > now);
+  const isKeyActive = (keyRecord.status === 'active' || keyRecord.is_active === true) && (!keyExpiry || keyExpiry > now);
 
-  // Enforce service-specific API plan restrictions (for Number API vs Telegram API)
-  if (planUpper.includes("NUMBER") || planUpper.includes("PHONE")) {
-    if (lookupType !== "phone") {
-      return {
-        authorized: false,
-        userProfile,
-        errorResponse: {
-          status: "error",
-          error_type: "plan_restriction",
-          message: "Access Denied: This API key is under the Number API Plan (₹600/mo) and is restricted to Number Lookup ('phone') queries only. Buy the Telegram API Plan or Unlimited Plan at https://tracexdata.online/api-docs",
-          buy_url: "https://tracexdata.online/api-docs"
-        }
-      };
-    }
-  } else if (planUpper.includes("TELEGRAM") || planUpper.includes("TG")) {
-    if (lookupType !== "telegram") {
-      return {
-        authorized: false,
-        userProfile,
-        errorResponse: {
-          status: "error",
-          error_type: "plan_restriction",
-          message: "Access Denied: This API key is under the Telegram API Plan (₹600/mo) and is restricted to Telegram Lookup ('telegram') queries only. Buy the Number API Plan or Unlimited Plan at https://tracexdata.online/api-docs",
-          buy_url: "https://tracexdata.online/api-docs"
-        }
-      };
+  // 1. Check if the API key has an ACTIVE UNLIMITED API PLAN for this specific service
+  let isApiPlanUnlimited = false;
+
+  if (isKeyActive) {
+    if (planUpper.includes("NUMBER") || planUpper.includes("PHONE")) {
+      if (lookupType === "phone") {
+        isApiPlanUnlimited = true;
+      }
+    } else if (planUpper.includes("TELEGRAM") || planUpper.includes("TG")) {
+      if (lookupType === "telegram") {
+        isApiPlanUnlimited = true;
+      }
+    } else if (
+      planUpper.includes("UNLIMITED") || 
+      planUpper.includes("ALL_IN_ONE") || 
+      (planUpper.includes("600") && !planUpper.includes("WALLET"))
+    ) {
+      isApiPlanUnlimited = true;
     }
   }
 
-  // Check if API key has an active monthly/yearly unlimited plan
-  const isKeyUnlimited = isKeyActive && (
-    planUpper.includes("600") || 
-    planUpper.includes("NUMBER") || 
-    planUpper.includes("TELEGRAM") || 
-    planUpper.includes("UNLIMITED") || 
-    (!planUpper.includes("WALLET") && keyRecord.request_limit === null)
-  );
-
-  // Check if user account has an active account-wide unlimited subscription
-  const isProfileUnlimited = !!(userProfile && userProfile.unlimited_expiry && new Date(userProfile.unlimited_expiry) > now);
-
-  if (isKeyUnlimited || isProfileUnlimited) {
-    // 100% Unlimited searches with NO per-search wallet deduction
+  // If the user has an active Unlimited API Plan:
+  // Zero (₹0.00) amount is deducted from their wallet! All searches are completely unlimited.
+  if (isApiPlanUnlimited) {
     return { authorized: true, userProfile };
   }
 
-  // If no active Unlimited Plan (₹600/mo) is active on key or account, block search
+  // 2. If NO Unlimited API Plan is active on this key:
+  // Deduct the respective per-search amount from the user's wallet balance
+  const serviceKey = lookupType === 'adhr' ? 'aadhaar' : lookupType === 'bnk' ? 'ifsc' : lookupType;
+  const lookupCost = await getEffectiveServicePrice(serviceKey, userProfile.id, userProfile.email) || LOOKUP_RATES[lookupType] || 2.0;
+
+  const currentCredits = Math.max(
+    Number(userProfile.wallet_balance !== undefined ? userProfile.wallet_balance : (userProfile.credits || 0)), 
+    0
+  );
+
+  if (currentCredits >= lookupCost) {
+    const deduct = async () => {
+      const newCredits = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
+      await updateUserCreditsAcrossAllStores(
+        userProfile.id,
+        userProfile.email,
+        userProfile.phone,
+        newCredits,
+        userProfile.full_name,
+        userProfile.unlimited_expiry,
+        userProfile.user_discount_percent
+      );
+      return { newCredits, lookupCost };
+    };
+
+    return { authorized: true, userProfile, deduct };
+  }
+
+  // Insufficient Balance Block
   return {
     authorized: false,
     userProfile,
     errorResponse: {
       status: "error",
-      error_type: "unlimited_plan_required",
-      message: "Access Denied: An active Unlimited API Plan (₹600/month) is required to use this API. Per-search wallet balance billing is discontinued. Once purchased from your account, all searches are 100% unlimited with no per-search charges. Please purchase an API plan at https://tracexdata.online/api-docs or https://tracexdata.online/unlimited-plans",
-      buy_url: "https://tracexdata.online/api-docs",
-      recharge_url: "https://tracexdata.online/unlimited-plans"
+      error_type: "insufficient_balance",
+      message: `Insufficient Wallet Balance: This lookup costs ₹${lookupCost.toFixed(2)}, but you currently have ₹${currentCredits.toFixed(2)} in your wallet. Please recharge your wallet at https://tracexdata.online/wallet-recharge or purchase an Unlimited API Plan (₹600/month) at https://tracexdata.online/api-docs for unlimited searches with zero per-search cost.`,
+      required_balance: lookupCost,
+      current_balance: currentCredits,
+      recharge_url: "https://tracexdata.online/wallet-recharge",
+      buy_api_plan_url: "https://tracexdata.online/api-docs"
     }
   };
 }
