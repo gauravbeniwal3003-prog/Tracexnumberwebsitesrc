@@ -21,7 +21,7 @@ const resolvedDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirn
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 async function fetchLocalApi(path: string, options?: any): Promise<any> {
   const portsToTry = [PORT];
