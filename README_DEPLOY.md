@@ -19,8 +19,18 @@ You need to wrap the Express app in a Cloud Function.
 2. It will automatically detect `npm start` and run the Express server.
 3. Your proxy will work perfectly and keys will be hidden.
 
-### Option C: Vercel / Railway / Render
-These services automatically detect the `server.ts` or `package.json` and host the full-stack app.
+### Option C: Render Deployment (Zero-Crash Configuration)
+
+**If deploying as a Node.js Web Service on Render (Recommended):**
+- **Runtime**: Node
+- **Build Command**: `npm install && npm run build`
+- **Start Command**: `npm start` (or `node dist/server.cjs`)
+
+**If deploying as a Python Web Service on Render (using `server.py`):**
+- **Runtime**: Python 3
+- **Build Command**: `npm install && npm run build && pip install -r requirements.txt`
+- **Start Command**: `python server.py` (or `uvicorn server:app --host 0.0.0.0 --port $PORT`)
+- *Note*: Even if you only specify `pip install -r requirements.txt`, `server.py` now automatically detects and installs npm dependencies on boot with self-healing auto-respawn and uptime monitoring.
 
 ---
 
