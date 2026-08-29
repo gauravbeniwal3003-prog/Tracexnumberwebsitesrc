@@ -250,7 +250,7 @@ export function DashboardServicesView({
   // LEVEL 3: TERMINAL FORM VIEW (Screenshot 1)
   if (selectedSubService) {
     return (
-      <div className="w-full relative min-h-[80vh] flex flex-col items-center justify-start py-4 pb-28 px-3 sm:px-4">
+      <div className="w-full relative flex flex-col items-center justify-start py-2 sm:py-3 px-3 sm:px-4">
         {/* Dotted Grid Background */}
         <div 
           className="absolute inset-0 pointer-events-none rounded-3xl opacity-60"
@@ -260,33 +260,33 @@ export function DashboardServicesView({
           }}
         />
 
-        {/* Centered Terminal Container (Screenshot 1) */}
+        {/* Centered Terminal Container */}
         <div className="w-full max-w-md relative z-10 flex flex-col items-center">
           
           {/* Top Service Icon Box */}
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-blue-50/90 border border-blue-100/90 flex items-center justify-center p-3 shadow-xs mb-3 text-blue-600">
-            <CategoryIcon name={selectedSubService.categoryId} className="w-10 h-10" />
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50/90 border border-blue-100/90 flex items-center justify-center p-2.5 shadow-xs mb-2 text-blue-600">
+            <CategoryIcon name={selectedSubService.categoryId} className="w-8 h-8 sm:w-9 sm:h-9" />
           </div>
 
           {/* Service Title */}
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight text-center">
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight text-center">
             {selectedSubService.title}
           </h1>
 
           {/* Badges Row (Fee & Plan) */}
-          <div className="flex items-center gap-2.5 mt-2.5 mb-6">
-            <span className="px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100/90 text-indigo-700 text-xs font-black flex items-center gap-1.5 shadow-2xs">
-              <Coins className="w-3.5 h-3.5 text-indigo-600" />
+          <div className="flex items-center gap-2 mt-1.5 mb-3">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100/90 text-indigo-700 text-[11px] font-black flex items-center gap-1 shadow-2xs">
+              <Coins className="w-3 h-3 text-indigo-600" />
               <span>Fee: ₹{selectedSubService.fee}.00</span>
             </span>
-            <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs font-black flex items-center gap-1.5 shadow-2xs">
-              <UserIcon className="w-3.5 h-3.5 text-slate-500" />
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-black flex items-center gap-1 shadow-2xs">
+              <UserIcon className="w-3 h-3 text-slate-500" />
               <span>Plan: {selectedSubService.plan}</span>
             </span>
           </div>
 
-          {/* Main White Card Box (Screenshot 1) */}
-          <div className="w-full bg-white/60 backdrop-blur-xl border border-white/50 rounded-3xl p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 space-y-4 border-t-4 border-t-blue-500">
+          {/* Main White Card Box */}
+          <div className="w-full bg-white/70 backdrop-blur-xl border border-white/50 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.05)] ring-1 ring-slate-900/5 space-y-3 border-t-4 border-t-blue-500">
             
             <form onSubmit={(e) => handleSearch(e, undefined, selectedSubService.serviceType)} className="space-y-4">
               <div>

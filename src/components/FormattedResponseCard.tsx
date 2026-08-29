@@ -162,7 +162,7 @@ function getFieldConfig(key: string, valueStr: string): { label: string; icon: R
 }
 
 export default function FormattedResponseCard({ data, serviceType, onReset }: FormattedResponseCardProps) {
-  const [activeTab, setActiveTab] = useState<'visual' | 'json'>('visual');
+  const [activeTab, setActiveTab] = useState<'json' | 'visual'>('json');
   const [copiedJson, setCopiedJson] = useState(false);
   const navigate = useNavigate();
 
@@ -308,6 +308,17 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
         <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800/80">
           <button
             type="button"
+            onClick={() => setActiveTab('json')}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'json'
+                ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                : 'text-slate-400 hover:text-slate-100'
+            }`}
+          >
+            💻 Raw JSON
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('visual')}
             className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'visual'
@@ -316,17 +327,6 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
             }`}
           >
             📊 Formatted Card
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('json')}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'json'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-100'
-            }`}
-          >
-            💻 Developer JSON
           </button>
         </div>
       </div>

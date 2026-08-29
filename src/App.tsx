@@ -609,7 +609,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       <HeaderNavbar />
 
       {/* 4. MAIN CONTENT AREA (Exact multi-level views matching Screenshots 1, 2, & 3) */}
-      <main className="flex-1 max-w-4xl mx-auto px-4 py-6 relative z-10 w-full space-y-6">
+      <main className="flex-1 max-w-4xl mx-auto px-4 py-3 sm:py-4 relative z-10 w-full space-y-3">
         <DashboardServicesView
           initialService={service}
           user={user}
@@ -639,7 +639,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-3 p-4 mb-8 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm font-semibold shadow-sm"
+              className="flex items-center gap-3 p-3.5 mb-2 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm font-semibold shadow-sm"
             >
               <AlertCircle size={18} className="shrink-0 text-red-500" />
               <span 
@@ -671,11 +671,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         </AnimatePresence>
 
         {/* Search Results */}
-        <div className="min-h-[100px]">
+        <div className="w-full">
           {isLoading ? (
             <Skeleton message={loadingMessage} />
           ) : (aadhaarPanResult || result) ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <FormattedResponseCard
                 data={getFormattedResponse()}
                 serviceType={service}

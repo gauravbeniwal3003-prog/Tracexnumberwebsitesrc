@@ -241,6 +241,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // 1-hour Auto Logout Check
+  useEffect(() => {
+    const checkAutoLogout = () => {
+      const loginTimeStr = localStorage.getItem('tracex_login_time');
+      if (loginTimeStr) {
+        const loginTime = Number(loginTimeStr);
+        const now = Date.now();
+        const oneHour = 60 * 60 * 1000; // 1 hour in ms
+        if (now - loginTime >= oneHour) {
+          console.log("[AUTO_LOGOUT] 1 hour elapsed since login. Automatically logging out.");
+          localStorage.removeItem('tracex_mobile_session');
+          localStorage.removeItem('tracex_login_time');
+          supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setProfile(null);
+          // Redirect to login page
+          window.location.href = '/login';
+        }
+      }
+    };
+
+    const autoLogoutInterval = setInterval(checkAutoLogout, 5000); // Check every 5 seconds
+    return () => clearInterval(autoLogoutInterval);
+  }, []);
+
   useEffect(() => {
     if (IS_TESTING_MODE) {
       setUser(dummyUser);
@@ -249,6 +274,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     let mounted = true;
+
+    // Starting Me no account login: Clear session on first mount unless returning from standard OAuth callback
+    const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
+    if (!hasOAuthParams) {
+      localStorage.removeItem('tracex_mobile_session');
+      localStorage.removeItem('tracex_login_time');
+      supabase.auth.signOut().catch(() => {});
+    }
 
     // Handle OAuth Callback / ?code= in URL with maximum resilience
     const processCodeFlow = async () => {
@@ -414,6 +447,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session) {
           setUser(session.user);
           fetchProfile(session.user.id).catch(err => console.error('Profile fetch error:', err));
+          if (!localStorage.getItem('tracex_login_time')) {
+            localStorage.setItem('tracex_login_time', Date.now().toString());
+          }
         } else {
           const savedMobileSession = localStorage.getItem('tracex_mobile_session');
           if (savedMobileSession) {
@@ -577,6 +613,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const parsedReg = JSON.parse(localReg);
             if (parsedReg.password === password && parsedReg.user) {
               localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: `local_tok_${cleanPhone}_` + Date.now(), user: parsedReg.user }));
+              localStorage.setItem('tracex_login_time', Date.now().toString());
               setUser({
                 id: parsedReg.user.id,
                 email: parsedReg.user.email,
@@ -610,6 +647,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Save mobile session locally
       localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: data.token, user: data.user }));
       localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify({ phone: cleanPhone, password, fullName: data.user.full_name, user: data.user }));
+      localStorage.setItem('tracex_login_time', Date.now().toString());
       
       setUser({
         id: data.user.id,
@@ -643,6 +681,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsedReg = JSON.parse(localReg);
           if (parsedReg.password === password && parsedReg.user) {
             localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: `local_tok_${cleanPhone}_` + Date.now(), user: parsedReg.user }));
+            localStorage.setItem('tracex_login_time', Date.now().toString());
             setUser({
               id: parsedReg.user.id,
               email: parsedReg.user.email,
@@ -695,6 +734,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Save session and account backup locally
       localStorage.setItem('tracex_mobile_session', JSON.stringify({ token: data.token, user: data.user }));
       localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify({ phone: cleanPhone, password, fullName, user: data.user }));
+      localStorage.setItem('tracex_login_time', Date.now().toString());
 
       setUser({
         id: data.user.id,
@@ -726,6 +766,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     localStorage.removeItem('tracex_mobile_session');
+    localStorage.removeItem('tracex_login_time');
     exitDemoMode();
     if (IS_TESTING_MODE) {
       console.log("Sign-out disabled during active Testing Mode.");

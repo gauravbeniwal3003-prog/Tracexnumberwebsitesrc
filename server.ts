@@ -427,19 +427,23 @@ const securityGuard = (req: express.Request, res: express.Response, next: expres
 
 app.use(securityGuard);
 
-// Skip function for local/internal requests
+// Skip function for admin / local / internal requests
 const isLocalOrInternal = (req: express.Request): boolean => {
+  const path = req.path || req.originalUrl || "";
+  // Always exempt all admin management endpoints
+  if (path.startsWith("/api/admin")) return true;
+
   const ip = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "";
   const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip.includes('localhost');
   const activeKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
-  const hasMasterKey = req.query?.key === activeKey || req.body?.key === activeKey;
+  const hasMasterKey = req.query?.key === activeKey || req.body?.key === activeKey || req.headers['x-master-key'] === activeKey;
   return isLocal || hasMasterKey;
 };
 
-// Rate Limiting (Adjusted for smooth user experience while protecting against DDoS)
+// Rate Limiting (Configured with high, flexible limits to never block legitimate users or admins)
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // 500 requests per IP
+  max: 10000, // 10,000 requests per IP (super flexible)
   message: { status: "error", message: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -447,11 +451,11 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
-// Specific Rate Limiters for lookup and search endpoints
+// Specific Rate Limiters for lookup and search endpoints (high throughput)
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 60, // 60 requests per minute per IP (prevents DDoS without interrupting normal users & API keys)
-  message: { status: "error", message: "Rate limit exceeded. Maximum 60 API searches per minute allowed." },
+  max: 300, // 300 requests per minute per IP (very flexible)
+  message: { status: "error", message: "Rate limit exceeded. Maximum 300 API searches per minute allowed." },
   skip: isLocalOrInternal,
 });
 app.use('/api/user-lookup', searchLimiter);
@@ -465,13 +469,13 @@ app.use('/api/user/pricing', searchLimiter);
 app.use('/api/services/pricing', searchLimiter);
 
 const sensitiveLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 100, // 100 sensitive requests per hour
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 2000, // 2,000 sensitive requests per 15 minutes
   message: { status: "error", message: "Too many sensitive requests from this IP, please try again later." },
   skip: isLocalOrInternal,
 });
 app.use('/api/cashfree', sensitiveLimiter);
-app.use('/api/admin', sensitiveLimiter);
+// Note: /api/admin is strictly protected by verifyAdminToken and is completely exempt from sensitiveLimiter
 
 // Strict JSON parsing
 app.use(express.json({ limit: '10kb' }));
@@ -3498,13 +3502,13 @@ app.all("/api/support-lookup", async (req, res) => {
   // Reset failed attempts on valid code
   SUPPORT_FAILED_ATTEMPTS.delete(clientIp);
 
-  // 3. Search Rate Limit (Max 25 searches per minute per IP)
+  // 3. Search Rate Limit (Max 100 searches per minute per IP)
   const rateRecord = SUPPORT_RATE_LIMITS.get(clientIp);
   if (rateRecord && rateRecord.resetAt > now) {
-    if (rateRecord.count >= 25) {
+    if (rateRecord.count >= 100) {
       return res.status(429).json({
         status: false,
-        error: "Rate limit exceeded (Max 25 searches per minute). Please wait 60 seconds."
+        error: "Rate limit exceeded (Max 100 searches per minute). Please wait 60 seconds."
       });
     }
     rateRecord.count += 1;
