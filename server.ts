@@ -541,7 +541,7 @@ function filterApiResponse(rawData: any, query: string, planName: string, expire
 
   return {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    buy_api: "https://tracexdata.online/buy-api",
+    buy_api: "https://tracexdata.online/api-docs",
     website: "https://tracexdata.online",
     query: query,
     api_status: {
@@ -1220,7 +1220,7 @@ function formatUnifiedSaaSResponse({
 
   const resObj: any = {
     status: cleanedData.length > 0 ? "success" : "not_found",
-    buy_api: "https://tracexdata.online/buy-api",
+    buy_api: "https://tracexdata.online/api-docs",
     website: "https://tracexdata.online",
     query: query,
     api_status: {
@@ -4101,15 +4101,36 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
     return { authorized: true, userProfile };
   }
 
-  // Per-search API does not work anymore. Block the user.
+  // Support wallet-based B2B developer API keys
+  const currentCredits = Math.max(Number(userProfile.wallet_balance !== undefined ? userProfile.wallet_balance : (userProfile.credits || 0)), 0);
+
+  if (currentCredits >= lookupCost) {
+    const deduct = async () => {
+      const newCredits = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
+      await updateUserCreditsAcrossAllStores(
+        userProfile.id,
+        userProfile.email,
+        userProfile.phone,
+        newCredits,
+        userProfile.full_name,
+        userProfile.unlimited_expiry,
+        userProfile.user_discount_percent
+      );
+      return { newCredits, lookupCost };
+    };
+
+    return { authorized: true, userProfile, deduct };
+  }
+
+  // Insufficient Balance Block
   return {
     authorized: false,
     userProfile,
     errorResponse: {
       status: "error",
       error_type: "insufficient_balance",
-      message: `Access Denied: Per-lookup billing is discontinued for Developer APIs. An active Unlimited API Plan or Account Unlimited Plan is required to perform searches.`,
-      recharge_url: "/unlimited-plans"
+      message: `Insufficient Wallet Balance: This lookup costs ₹${lookupCost.toFixed(2)}, but you currently have ₹${currentCredits.toFixed(2)} in your wallet. Please recharge at https://tracexdata.online/api-docs`,
+      recharge_url: "https://tracexdata.online/api-docs"
     }
   };
 }
@@ -4265,6 +4286,7 @@ app.all("/api/lookup", async (req, res) => {
       }
 
       keyRecord = keyRecords?.[0];
+      console.log("[DEBUG_KEY_RECORD] key:", key, "record:", JSON.stringify(keyRecord));
 
       if (keyErr || !keyRecord) {
         console.error("[AUTH_FAIL]", keyErr);
