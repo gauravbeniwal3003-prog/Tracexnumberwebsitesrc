@@ -4268,7 +4268,11 @@ app.all("/api/lookup", async (req, res) => {
 
       if (keyErr || !keyRecord) {
         console.error("[AUTH_FAIL]", keyErr);
-        return res.status(401).json({ status: "error", message: "Access Denied: Invalid or unauthorized API key" });
+        return res.status(401).json({ 
+          status: "error", 
+          message: "Access Denied: Invalid or unauthorized API key. Please check your key or buy a new one at https://tracexdata.online/api-docs",
+          buy_url: "https://tracexdata.online/api-docs"
+        });
       }
 
       // Status & Quota Check
@@ -4277,8 +4281,8 @@ app.all("/api/lookup", async (req, res) => {
       if ((expiryDate && expiryDate < now) || keyRecord.status !== 'active') {
         return res.status(403).json({ 
           status: "error", 
-          message: "Subscription Blocked: API key expired or suspended",
-          buy_url: "/buy-api"
+          message: "API key expired, please recharge again. Buy or renew your plan at https://tracexdata.online/api-docs",
+          buy_url: "https://tracexdata.online/api-docs"
         });
       }
 
@@ -4286,7 +4290,11 @@ app.all("/api/lookup", async (req, res) => {
       const requestLimit = keyRecord.request_limit;
 
       if (requestLimit !== null && requestsUsed >= requestLimit) {
-        return res.status(403).json({ status: "error", message: "Quota Exhausted: Lookup limit reached" });
+        return res.status(403).json({ 
+          status: "error", 
+          message: "Quota Exhausted: Lookup limit reached. Please upgrade your plan at https://tracexdata.online/api-docs",
+          buy_url: "https://tracexdata.online/api-docs"
+        });
       }
     }
 
