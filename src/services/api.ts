@@ -8,19 +8,7 @@ import { supabase } from './supabase.ts';
 export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
 
 export const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined' && import.meta.env.VITE_RENDER_BACKEND_URL) {
-    const customUrl = import.meta.env.VITE_RENDER_BACKEND_URL.trim();
-    if (customUrl) {
-      try {
-        const parsed = new URL(customUrl, window.location.origin);
-        if (parsed.origin === window.location.origin) {
-          return '';
-        }
-      } catch (e) {}
-      return customUrl.replace(/\/$/, "");
-    }
-  }
-  return ''; // Return relative path for safer network fetching
+  return ''; // Always return relative path for safer network fetching and complete backend URL hiding
 };
 
 export const getAbsoluteBaseUrl = (): string => {
@@ -268,12 +256,12 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
 
   const token = await getAuthToken();
   const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}/api/user-lookup?service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanQ)}`;
+  const url = `${baseUrl}/api/user-lookup`;
 
   try {
     const headers: Record<string, string> = {
       'Accept': 'application/json,text/plain,*/*',
-      'X-Render-Master-Key': RENDER_MASTER_UNLIMITED_API_KEY
+      'Content-Type': 'application/json'
     };
 
     if (token) {
@@ -281,8 +269,9 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     }
 
     const response = await fetch(url, {
-      method: 'GET',
+      method: 'POST',
       headers,
+      body: JSON.stringify({ service, query: cleanQ }),
       mode: 'cors'
     });
 

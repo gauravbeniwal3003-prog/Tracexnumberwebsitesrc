@@ -3721,11 +3721,54 @@ app.all("/api/support-lookup", async (req, res) => {
 });
 
 // Public SaaS API Endpoint (Smart Unified Lookup proxy executing via internal master proxy with user-level balance checks)
-app.get("/api/user-lookup", async (req, res) => {
+app.all("/api/user-lookup", async (req, res) => {
+  // Domain/Referer authorization check to block external misuse
+  const referer = req.headers.referer || "";
+  const origin = req.headers.origin || "";
+  const host = req.headers.host || "";
+
+  const isAuthorizedOrigin = (urlStr: string) => {
+    if (!urlStr) return true;
+    try {
+      const parsedUrl = new URL(urlStr);
+      const hostname = parsedUrl.hostname.toLowerCase();
+      return (
+        hostname === "tracexdata.online" ||
+        hostname.endsWith(".tracexdata.online") ||
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname.includes("run.app")
+      );
+    } catch {
+      return (
+        urlStr.toLowerCase().includes("tracexdata.online") ||
+        urlStr.toLowerCase().includes("localhost") ||
+        urlStr.toLowerCase().includes("127.0.0.1") ||
+        urlStr.toLowerCase().includes("run.app")
+      );
+    }
+  };
+
+  const isHostAllowed = 
+    host.toLowerCase().includes("tracexdata.online") ||
+    host.toLowerCase().includes("localhost") ||
+    host.toLowerCase().includes("127.0.0.1") ||
+    host.toLowerCase().includes("run.app");
+
+  if ((referer && !isAuthorizedOrigin(referer)) || (origin && !isAuthorizedOrigin(origin)) || !isHostAllowed) {
+    return res.status(403).json({
+      status: "error",
+      error_type: "external_access_restricted",
+      message: "External API access restricted. To integrate our high-speed lookup APIs in your own application, please purchase an API Key at https://tracexdata.online/api-docs",
+      buy_api_link: "https://tracexdata.online/api-docs"
+    });
+  }
+
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   
-  const { service, query } = req.query;
+  const service = req.method === "POST" ? req.body?.service : req.query?.service;
+  const query = req.method === "POST" ? req.body?.query : req.query?.query;
   if (['pancard', 'pan', 'pan_to_name_dob', 'aadhaar_to_pan', 'panfind', 'pan_find'].includes(String(service))) {
     return res.status(410).json({
       status: "error",

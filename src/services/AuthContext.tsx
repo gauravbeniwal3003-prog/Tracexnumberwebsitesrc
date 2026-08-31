@@ -499,15 +499,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Live polling & focus listener for instant DB wallet balance sync
-    const pollInterval = setInterval(() => {
-      refreshProfile();
-    }, 1000);
-
-    const handleFocus = () => {
-      refreshProfile();
-    };
-    window.addEventListener('focus', handleFocus);
+    // Live polling is completely removed to prevent unnecessary network requests as per user guidelines.
+    // We only refresh profile when user explicitly takes action (like lookups or credit recharges).
 
     // Supabase Realtime subscription for instantaneous profile/balance updates
     const profileRealtimeChannel = supabase
@@ -534,17 +527,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 is_free_credit_claimed: newRow.is_free_credit_claimed ?? prev?.is_free_credit_claimed ?? true,
                 last_weekly_credit_at: newRow.last_weekly_credit_at || prev?.last_weekly_credit_at || new Date().toISOString()
               } as UserProfile));
+              refreshProfile(); // Only refresh if it is our own profile that was updated!
             }
           }
-          refreshProfile();
         }
       )
       .subscribe();
 
     return () => {
       mounted = false;
-      clearInterval(pollInterval);
-      window.removeEventListener('focus', handleFocus);
       subscription.unsubscribe();
       supabase.removeChannel(profileRealtimeChannel);
     };
