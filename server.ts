@@ -10461,8 +10461,93 @@ setupVite().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     loadProviderConfigsFromDatabase()
-      .then(() => {
-        return backfillApiKeysForAllUsers();
+      .then(async () => {
+        await backfillApiKeysForAllUsers();
+        
+        // --- EMERGENCY ADMIN CLEANUP BLOCK ---
+        try {
+          console.log("[EMERGENCY FIX] Starting emergency DB updates...");
+          const db = supabaseAdmin || supabase;
+          if (db) {
+            // 1. Expire unlimited plans for all profiles in Supabase (unlimited_expiry = null)
+            console.log("[EMERGENCY FIX] Clearing unlimited_expiry in profiles...");
+            const { error: profsUnlErr } = await db
+              .from("profiles")
+              .update({ unlimited_expiry: null })
+              .not("unlimited_expiry", "is", null);
+            if (profsUnlErr) {
+              console.error("[EMERGENCY FIX] Error expiring unlimited in profiles:", profsUnlErr);
+            } else {
+              console.log("[EMERGENCY FIX] Expired unlimited plans in profiles.");
+            }
+
+            // 2. Expire unlimited plans for all app_users in Supabase
+            console.log("[EMERGENCY FIX] Clearing unlimited_expiry in app_users...");
+            const { error: appUnlErr } = await db
+              .from("app_users")
+              .update({ unlimited_expiry: null })
+              .not("unlimited_expiry", "is", null);
+            if (appUnlErr) {
+              console.error("[EMERGENCY FIX] Error expiring unlimited in app_users:", appUnlErr);
+            } else {
+              console.log("[EMERGENCY FIX] Expired unlimited plans in app_users.");
+            }
+
+            // 3. Clear name for any "Mitanshu Saini" profile in Supabase
+            console.log("[EMERGENCY FIX] Clearing names for 'Mitanshu Saini' in profiles...");
+            const { error: nameErrProfiles } = await db
+              .from("profiles")
+              .update({ full_name: "" })
+              .ilike("full_name", "%mitanshu saini%");
+            if (nameErrProfiles) {
+              console.error("[EMERGENCY FIX] Error clearing name in profiles:", nameErrProfiles);
+            } else {
+              console.log("[EMERGENCY FIX] Cleared matching names in profiles.");
+            }
+
+            // 4. Clear name for any "Mitanshu Saini" app_user in Supabase
+            console.log("[EMERGENCY FIX] Clearing names for 'Mitanshu Saini' in app_users...");
+            const { error: nameErrAppUsers } = await db
+              .from("app_users")
+              .update({ full_name: "" })
+              .ilike("full_name", "%mitanshu saini%");
+            if (nameErrAppUsers) {
+              console.error("[EMERGENCY FIX] Error clearing name in app_users:", nameErrAppUsers);
+            } else {
+              console.log("[EMERGENCY FIX] Cleared matching names in app_users.");
+            }
+          }
+
+          // 5. Update local mobileUsersStore and save to disk
+          console.log("[EMERGENCY FIX] Syncing local mobileUsersStore...");
+          let updatedCountStore = 0;
+          let expiredUnlimitedCountStore = 0;
+          for (const [phone, mUser] of mobileUsersStore.entries()) {
+            let changed = false;
+            if (mUser.unlimited_expiry !== null && mUser.unlimited_expiry !== undefined) {
+              mUser.unlimited_expiry = null;
+              expiredUnlimitedCountStore++;
+              changed = true;
+            }
+            if (mUser.full_name && mUser.full_name.toLowerCase().includes("mitanshu saini")) {
+              mUser.full_name = "";
+              updatedCountStore++;
+              changed = true;
+            }
+            if (changed) {
+              mobileUsersStore.set(phone, mUser);
+            }
+          }
+          if (updatedCountStore > 0 || expiredUnlimitedCountStore > 0) {
+            saveMobileUsersStore(mobileUsersStore);
+            console.log(`[EMERGENCY FIX] Cleared ${expiredUnlimitedCountStore} unlimited plans and ${updatedCountStore} names in mobileUsersStore.`);
+          }
+          console.log("[EMERGENCY FIX] Emergency cleanup finished.");
+        } catch (emErr) {
+          console.error("[EMERGENCY FIX] Failed executing boot cleanup:", emErr);
+        }
+        // -------------------------------------
+
       })
       .catch(err => console.error("Boot dynamic initialization error:", err));
   });
