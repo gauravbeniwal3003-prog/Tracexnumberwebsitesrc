@@ -262,6 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    checkAutoLogout(); // Run immediately on mount to auto-logout stale sessions instantly
     const autoLogoutInterval = setInterval(checkAutoLogout, 5000); // Check every 5 seconds
     return () => clearInterval(autoLogoutInterval);
   }, []);
@@ -274,14 +275,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     let mounted = true;
-
-    // Starting Me no account login: Clear session on first mount unless returning from standard OAuth callback
-    const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
-    if (!hasOAuthParams) {
-      localStorage.removeItem('tracex_mobile_session');
-      localStorage.removeItem('tracex_login_time');
-      supabase.auth.signOut().catch(() => {});
-    }
 
     // Handle OAuth Callback / ?code= in URL with maximum resilience
     const processCodeFlow = async () => {
