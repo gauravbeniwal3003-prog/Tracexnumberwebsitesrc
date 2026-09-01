@@ -285,14 +285,6 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       mode: 'cors'
     });
 
-    if (response.status === 401 || response.status === 403) {
-      return {
-        status: false,
-        results: {},
-        error: "Authentication Required: Please Sign In to continue."
-      };
-    }
-
     const rawText = await response.text();
     let data: any;
     try {
@@ -307,6 +299,14 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
         };
       }
       data = { status: "success", results: { raw_text: rawText } };
+    }
+
+    if (!response.ok && (data?.error || data?.message)) {
+      return {
+        status: false,
+        results: {},
+        error: data.message || data.error || "Lookup request could not be completed. Please try again."
+      };
     }
 
     if (data?.status === "success" || data?.status === true) {

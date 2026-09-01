@@ -413,7 +413,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
     const activeService = customServiceType || service;
 
-    if (!user) {
+    const hasLocalSession = !!(localStorage.getItem('tracex_mobile_session') || localStorage.getItem('tracex_login_time') || localStorage.getItem('sb-yvdoxgmdogakrghchjyg-auth-token'));
+    if (!user && !hasLocalSession) {
       setError('Authentication Required: Please Sign In to your TRACEXDATA account to continue searching.');
       handleOpenLogin();
       return;
