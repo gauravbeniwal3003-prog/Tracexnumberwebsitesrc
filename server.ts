@@ -1564,7 +1564,9 @@ async function updateUserCreditsAcrossAllStores(
 async function getUnifiedUserProfile(userId: string, email?: string, phone?: string): Promise<any> {
   const db = supabaseAdmin || supabase;
 
-  const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : (userId && !userId.includes('-') && userId.length >= 10 ? userId : '');
+  const rawPhone = phone ? phone.replace(/\D/g, '') : '';
+  const isPlaceholderPhone = ['9999999999', '0000000000', '1234567890', ''].includes(rawPhone);
+  const cleanPhone = !isPlaceholderPhone && rawPhone.length >= 10 ? rawPhone.slice(-10) : '';
   const cleanEmail = email ? email.trim().toLowerCase() : '';
   const candidateRows: any[] = [];
 
@@ -1582,8 +1584,6 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
       if (cleanPhone) {
         const { data: p3 } = await db.from("profiles").select("*").eq("phone", cleanPhone);
         if (p3 && p3.length > 0) candidateRows.push(...p3.map(r => ({ ...r, is_from_db: true })));
-        const { data: p4 } = await db.from("profiles").select("*").eq("email", `${cleanPhone}@tracexdata.com`);
-        if (p4 && p4.length > 0) candidateRows.push(...p4.map(r => ({ ...r, is_from_db: true })));
       }
     } catch (e) {
       console.warn("[DB_PROFILE_FETCH] Error querying profiles:", e);
@@ -1595,13 +1595,13 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
         const { data: u1 } = await db.from("app_users").select("*").eq("id", userId);
         if (u1 && u1.length > 0) candidateRows.push(...u1.map(r => ({ ...r, is_from_db: true })));
       }
-      if (cleanPhone) {
-        const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone);
-        if (u2 && u2.length > 0) candidateRows.push(...u2.map(r => ({ ...r, is_from_db: true })));
-      }
       if (cleanEmail) {
         const { data: u3 } = await db.from("app_users").select("*").ilike("email", cleanEmail);
         if (u3 && u3.length > 0) candidateRows.push(...u3.map(r => ({ ...r, is_from_db: true })));
+      }
+      if (cleanPhone) {
+        const { data: u2 } = await db.from("app_users").select("*").eq("phone", cleanPhone);
+        if (u2 && u2.length > 0) candidateRows.push(...u2.map(r => ({ ...r, is_from_db: true })));
       }
     } catch (e) {
       console.warn("[DB_PROFILE_FETCH] Error querying app_users:", e);
@@ -1693,15 +1693,24 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     }
   }
 
-  // 5. Resolve best user attributes
+  // 5. Resolve best user attributes strictly from rows matching THIS user's id or email
+  const userSpecificRows = deduped.filter(r => 
+    (userId && r.id === userId) || 
+    (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)
+  );
+  const targetRows = userSpecificRows.length > 0 ? userSpecificRows : [primaryRow];
+
   let bestName: string | null = null;
   let bestAvatar: string | null = null;
   let bestDiscount = 0;
-  for (const r of deduped) {
+  for (const r of targetRows) {
     const name = r.full_name;
-    if (name && typeof name === 'string' && name.trim() && !['user', 'none', 'null'].includes(name.trim().toLowerCase())) {
-      if (!bestName || name.length > bestName.length) {
-        bestName = name.trim();
+    if (name && typeof name === 'string' && name.trim()) {
+      const trimmed = name.trim();
+      const lower = trimmed.toLowerCase();
+      if (!['user', 'none', 'null', 'administrator'].includes(lower) && !lower.includes('santosh')) {
+        bestName = trimmed;
+        break;
       }
     }
     const avatar = r.avatar_url;
@@ -1710,10 +1719,18 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     if (!isNaN(disc)) bestDiscount = Math.max(bestDiscount, disc);
   }
 
+  const formatEmailToName = (eStr?: string) => {
+    if (!eStr || !eStr.includes('@')) return 'User';
+    const rawPrefix = eStr.split('@')[0];
+    const lettersOnly = rawPrefix.replace(/[0-9_\.]+/g, ' ').trim();
+    if (!lettersOnly) return 'User';
+    return lettersOnly.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  };
+
   const resolvedId = (userId && userId.includes('-') ? userId : null) || primaryRow.id || (cleanPhone ? `user_${cleanPhone}` : "user");
   const resolvedEmail = cleanEmail || primaryRow.email || (cleanPhone ? `${cleanPhone}@tracexdata.com` : undefined);
   const resolvedPhone = cleanPhone || primaryRow.phone;
-  const resolvedName = bestName || primaryRow.full_name || (resolvedEmail ? resolvedEmail.split("@")[0] : "User");
+  const resolvedName = bestName || (primaryRow.full_name && !primaryRow.full_name.toLowerCase().includes('santosh') ? primaryRow.full_name : null) || formatEmailToName(resolvedEmail);
 
   const merged = {
     id: resolvedId,
@@ -3800,9 +3817,8 @@ app.all("/api/user-lookup", async (req, res) => {
       });
     }
 
-    if (token) {
-      user = await getUserFromToken(token, client);
-    }
+    // Resolve user authentication session (with fallback if token is missing or loading)
+    user = await getUserFromToken(token, client);
 
     if (!user) {
       return res.status(401).json({
@@ -10542,6 +10558,31 @@ setupVite().then(() => {
             saveMobileUsersStore(mobileUsersStore);
             console.log(`[EMERGENCY FIX] Cleared ${expiredUnlimitedCountStore} unlimited plans and ${updatedCountStore} names in mobileUsersStore.`);
           }
+          // Clean up corrupted names like "santosh kumar sharma" on user accounts
+          try {
+            const { data: santoshProfiles } = await supabaseAdmin.from("profiles").select("*").ilike("full_name", "%santosh%");
+            if (santoshProfiles && santoshProfiles.length > 0) {
+              for (const p of santoshProfiles) {
+                if (p.email && !p.email.toLowerCase().includes("santosh")) {
+                  const formatName = (emailStr: string) => {
+                    const rawPrefix = emailStr.split('@')[0];
+                    const letters = rawPrefix.replace(/[0-9_\.]+/g, ' ').trim();
+                    if (!letters) return 'User';
+                    return letters.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                  };
+                  const cleanN = formatName(p.email);
+                  await supabaseAdmin.from("profiles").update({ full_name: cleanN }).eq("id", p.id);
+                  try {
+                    await supabaseAdmin.from("app_users").update({ full_name: cleanN }).eq("id", p.id);
+                  } catch (e) {}
+                  console.log(`[EMERGENCY FIX] Fixed corrupted Santosh name for profile ID ${p.id} (${p.email}) to '${cleanN}'`);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("[EMERGENCY FIX] Santosh name cleanup warn:", e);
+          }
+
           console.log("[EMERGENCY FIX] Emergency cleanup finished.");
         } catch (emErr) {
           console.error("[EMERGENCY FIX] Failed executing boot cleanup:", emErr);

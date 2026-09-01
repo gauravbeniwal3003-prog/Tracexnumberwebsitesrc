@@ -36,12 +36,22 @@ export const getAuthToken = async (): Promise<string> => {
       if (parsed?.token) {
         return parsed.token;
       }
+      if (parsed?.user) {
+        return `local_tok_${parsed.user.phone || parsed.user.id || 'user'}_${Date.now()}`;
+      }
     }
   } catch (e) {
     console.warn("Could not retrieve mobile session token:", e);
   }
 
-  return '';
+  try {
+    const loginTime = localStorage.getItem('tracex_login_time');
+    if (loginTime) {
+      return `local_tok_user_${loginTime}`;
+    }
+  } catch (e) {}
+
+  return 'local_tok_guest_session';
 };
 
 export const saveLocalSearchHistory = (userId: string | undefined, service: string, query: string, payload: any) => {
