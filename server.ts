@@ -1430,8 +1430,14 @@ async function updateUserCreditsAcrossAllStores(
 ): Promise<{ success: boolean; finalCredits: number }> {
   const db = supabaseAdmin || supabase;
   const nowIso = new Date().toISOString();
-  const cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
+  let cleanPhone = phone ? String(phone).replace(/\D/g, "").slice(-10) : "";
   const cleanEmail = email ? String(email).trim().toLowerCase() : (cleanPhone ? `${cleanPhone}@tracexdata.com` : "");
+  if (!cleanPhone && cleanEmail && cleanEmail.includes("@")) {
+    const pfx = cleanEmail.split("@")[0].replace(/\D/g, "");
+    if (pfx.length === 10) {
+      cleanPhone = pfx;
+    }
+  }
   const targetBal = Math.max(0, Number(Number(targetBalance).toFixed(2)));
   const nameToUse = fullName?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
 
@@ -1453,7 +1459,7 @@ async function updateUserCreditsAcrossAllStores(
     saveMobileUsersStore(mobileUsersStore);
   }
   for (const [pKey, mUser] of mobileUsersStore.entries()) {
-    if ((userId && mUser.id === userId) || (cleanEmail && mUser.email === cleanEmail)) {
+    if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail) || (cleanPhone && pKey === cleanPhone)) {
       mobileUsersStore.set(pKey, {
         ...mUser,
         credits: targetBal,
@@ -1526,13 +1532,14 @@ async function updateUserCreditsAcrossAllStores(
       } catch (e) {}
     }
 
-    // If userId is provided, ensure rows exist
+    // If userId is provided, ensure rows exist with a safe non-null phone
     if (userId) {
       try {
+        const safePhone = cleanPhone || (cleanEmail && cleanEmail.includes("@") ? cleanEmail.split("@")[0].replace(/\D/g, "") : "") || "9999999999";
         await db.from("app_users").upsert({
           id: userId,
-          email: cleanEmail,
-          phone: cleanPhone || undefined,
+          email: cleanEmail || `${safePhone}@tracexdata.com`,
+          phone: safePhone,
           full_name: nameToUse,
           credits: targetBal,
           wallet_balance: targetBal,
@@ -1566,8 +1573,14 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
 
   const rawPhone = phone ? phone.replace(/\D/g, '') : '';
   const isPlaceholderPhone = ['9999999999', '0000000000', '1234567890', ''].includes(rawPhone);
-  const cleanPhone = !isPlaceholderPhone && rawPhone.length >= 10 ? rawPhone.slice(-10) : '';
+  let cleanPhone = !isPlaceholderPhone && rawPhone.length >= 10 ? rawPhone.slice(-10) : '';
   const cleanEmail = email ? email.trim().toLowerCase() : '';
+  if (!cleanPhone && cleanEmail && cleanEmail.includes('@')) {
+    const pfx = cleanEmail.split('@')[0].replace(/\D/g, '');
+    if (pfx.length === 10) {
+      cleanPhone = pfx;
+    }
+  }
   const candidateRows: any[] = [];
 
   if (db) {
@@ -1669,10 +1682,34 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     if (phoneMatch) primaryRow = phoneMatch;
   }
 
-  const rawCredits = primaryRow.credits !== undefined && primaryRow.credits !== null 
-    ? primaryRow.credits 
-    : (primaryRow.wallet_balance !== undefined && primaryRow.wallet_balance !== null ? primaryRow.wallet_balance : 0.00);
-  let finalCredits = Math.max(0, Number(Number(rawCredits || 0).toFixed(2)));
+  let maxCandidateCredits = 0;
+  for (const r of deduped) {
+    const c = Math.max(Number(r.credits || 0), Number(r.wallet_balance || 0));
+    if (c > maxCandidateCredits) maxCandidateCredits = c;
+  }
+  let finalCredits = Math.max(0, Number(maxCandidateCredits.toFixed(2)));
+
+  // Check wallet_transactions for authoritative balance_after
+  if (db && (userId || cleanEmail)) {
+    try {
+      const qConditions: string[] = [];
+      if (userId && userId.includes('-')) qConditions.push(`user_id.eq.${userId}`);
+      if (cleanEmail) qConditions.push(`user_email.eq.${cleanEmail}`);
+      if (qConditions.length > 0) {
+        const { data: txList } = await db.from("wallet_transactions")
+          .select("balance_after")
+          .or(qConditions.join(","))
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (txList && txList.length > 0 && txList[0].balance_after !== null && txList[0].balance_after !== undefined) {
+          const txBal = Number(txList[0].balance_after);
+          if (txBal > finalCredits) {
+            finalCredits = txBal;
+          }
+        }
+      }
+    } catch (e) {}
+  }
 
   // 4. Find best active unlimited expiry
   let bestUnlimitedExpiry: string | null = null;
@@ -1764,6 +1801,7 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
       mob.wallet_balance = finalCredits;
       mob.unlimited_expiry = bestUnlimitedExpiry;
       mobileUsersStore.set(cleanPhone, mob);
+      saveMobileUsersStore(mobileUsersStore);
     }
   }
 
@@ -1778,10 +1816,15 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
         updated_at: new Date().toISOString()
       };
       if (resolvedId && resolvedId.includes('-')) {
-        await db.from("profiles").update(syncPayload).eq("id", resolvedId);
+        try { await db.from("profiles").update(syncPayload).eq("id", resolvedId); } catch (e) {}
+        try { await db.from("app_users").update(syncPayload).eq("id", resolvedId); } catch (e) {}
       }
       if (resolvedEmail) {
-        await db.from("profiles").update(syncPayload).ilike("email", resolvedEmail);
+        try { await db.from("profiles").update(syncPayload).ilike("email", resolvedEmail); } catch (e) {}
+        try { await db.from("app_users").update(syncPayload).ilike("email", resolvedEmail); } catch (e) {}
+      }
+      if (resolvedPhone) {
+        try { await db.from("app_users").update(syncPayload).eq("phone", resolvedPhone); } catch (e) {}
       }
     } catch (syncErr) {
       console.warn("[DB_PROFILE_SYNC_NOTICE]", syncErr);
@@ -2017,6 +2060,18 @@ export async function syncMobileUserToDatabases(userObj: {
         const uCred = Number(uData.credits);
         if (existingDbCredits === null || uCred > existingDbCredits) {
           existingDbCredits = uCred;
+        }
+      }
+
+      const { data: txData } = await supabaseAdmin.from("wallet_transactions")
+        .select("balance_after")
+        .or(`user_id.eq.${userUuid},user_email.eq.${userEmail}`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (txData && txData.length > 0 && txData[0].balance_after !== null && txData[0].balance_after !== undefined) {
+        const txBal = Number(txData[0].balance_after);
+        if (existingDbCredits === null || txBal > existingDbCredits) {
+          existingDbCredits = txBal;
         }
       }
     } catch (e) {
@@ -2814,6 +2869,13 @@ app.get("/api/wallet/history", async (req, res) => {
     }
 
     // Fetch fresh transactions and claims
+    const claimsConditions = [`user_id.eq.${userId}`];
+    if (userEmail) claimsConditions.push(`user_email.eq.${userEmail}`);
+    if (user && user.phone) {
+      const cleanP = user.phone.replace(/\D/g, "").slice(-10);
+      if (cleanP) claimsConditions.push(`customer_phone.ilike.%${cleanP}%`);
+    }
+
     const [txResponse, claimsResponse] = await Promise.all([
       supabaseAdmin
         .from("wallet_transactions")
@@ -2824,7 +2886,7 @@ app.get("/api/wallet/history", async (req, res) => {
       supabaseAdmin
         .from("payment_claims")
         .select("*")
-        .eq("user_id", userId)
+        .or(claimsConditions.join(","))
         .gte("created_at", threeDaysAgo)
         .order("created_at", { ascending: false })
     ]);
@@ -2837,21 +2899,32 @@ app.get("/api/wallet/history", async (req, res) => {
 
     // 1. Process wallet transactions (both debits and successful credits)
     txData.forEach((t: any, idx: number) => {
+      let resolvedOrderId = t.reference_id || t.payment_id || t.order_id || "";
+      if (!resolvedOrderId || resolvedOrderId === "N/A") {
+        const match = String(t.service_name || "").match(/(order_[a-zA-Z0-9_-]+)/i) ||
+                      String(t.description || "").match(/(order_[a-zA-Z0-9_-]+)/i);
+        if (match) {
+          resolvedOrderId = match[1];
+        }
+      }
+      if (!resolvedOrderId) resolvedOrderId = "N/A";
+
       const isCredit = (t.type || "Debit").toLowerCase() === "credit";
+      const isCredited = isCredit ? (!t.status || t.status.toUpperCase() === "SUCCESS" || t.status.toUpperCase().startsWith("SUCCESS")) : false;
       const item: any = {
         id: t.id || `tx_${idx}_${Date.now()}`,
-        order_id: t.reference_id || "N/A",
+        order_id: resolvedOrderId,
         service: t.service_name || t.description || (isCredit ? "Wallet Recharge" : "Search Query Lookup"),
         type: isCredit ? "Credit" : "Debit",
         amount: Number(t.amount || 0),
         balanceAfter: Number(t.balance_after || 0),
         status: t.status ? t.status.toUpperCase() : "SUCCESS",
-        credited: isCredit && (t.status || "").toUpperCase() === "SUCCESS",
+        credited: isCredited,
         date: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString()
       };
       // If we have an order_id, map it there
-      if (t.reference_id && t.reference_id !== "N/A") {
-        unifiedMap.set(t.reference_id, item);
+      if (resolvedOrderId && resolvedOrderId !== "N/A") {
+        unifiedMap.set(resolvedOrderId, item);
       } else {
         unifiedMap.set(`nonref_${t.id || idx}`, item);
       }
@@ -2867,7 +2940,7 @@ app.get("/api/wallet/history", async (req, res) => {
         // Complement existing credit transaction with exact claim info
         const existing = unifiedMap.get(orderId);
         existing.status = isSuccess ? "SUCCESS" : claimStatus;
-        existing.credited = isSuccess;
+        existing.credited = isSuccess || existing.credited;
       } else {
         // Create new item for pending/failed/processing claims
         const item = {
@@ -5931,6 +6004,29 @@ async function fulfillOrder(
         }
       }
 
+      // Check app_users for users missing profiles record
+      if (!profile) {
+        try {
+          const conditions = [`id.eq.${finalUserId}`];
+          if (cleanEmailCandidate) conditions.push(`email.eq.${cleanEmailCandidate}`);
+          if (cleanPhoneForStore) conditions.push(`phone.eq.${cleanPhoneForStore}`);
+          const { data: appUser } = await db.from("app_users").select("*").or(conditions.join(",")).limit(1).maybeSingle();
+          if (appUser) {
+            profile = appUser;
+            if (appUser.id) finalUserId = appUser.id;
+          }
+        } catch (e) {}
+      }
+
+      // Check mobileUsersStore fallback
+      if (!profile && cleanPhoneForStore && mobileUsersStore.has(cleanPhoneForStore)) {
+        const mU = mobileUsersStore.get(cleanPhoneForStore);
+        if (mU) {
+          profile = mU;
+          if (mU.id) finalUserId = mU.id;
+        }
+      }
+
       const emailToUse = profile?.email || cleanEmailCandidate || (cleanPhoneForStore ? `${cleanPhoneForStore}@tracexdata.com` : `user_${finalUserId.slice(0, 8)}@tracexdata.online`);
       const nameToUse = profile?.full_name || (emailToUse ? emailToUse.split("@")[0] : `User ${finalUserId.slice(0, 4)}`);
 
@@ -5975,15 +6071,33 @@ async function fulfillOrder(
         true
       );
 
-      // 5. Update payment_claims to success with final credits and user
+      // 5. Update or insert payment_claims to success with final credits and user
       try {
-        await db.from("payment_claims").update({
-          user_id: finalUserId,
-          amount: baseAmount || orderAmount || creditsToAdd,
-          credits: creditsToAdd,
-          status: "success",
-          updated_at: new Date().toISOString()
-        }).eq("payment_id", orderId);
+        const { data: existingClaim } = await db.from("payment_claims").select("id").eq("payment_id", orderId).maybeSingle();
+        if (existingClaim) {
+          await db.from("payment_claims").update({
+            user_id: finalUserId,
+            user_email: emailToUse,
+            customer_phone: cleanPhoneForStore || profile?.phone,
+            amount: baseAmount || orderAmount || creditsToAdd,
+            credits: creditsToAdd,
+            status: "success",
+            updated_at: new Date().toISOString()
+          }).eq("payment_id", orderId);
+        } else {
+          await db.from("payment_claims").insert({
+            payment_id: orderId,
+            user_id: finalUserId,
+            user_email: emailToUse,
+            customer_phone: cleanPhoneForStore || profile?.phone,
+            amount: baseAmount || orderAmount || creditsToAdd,
+            credits: creditsToAdd,
+            plan_id: plan_id || `wallet_${creditsToAdd}`,
+            status: "success",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
       } catch (clErr) {
         console.error("[FULFILL] Error updating payment_claims status to success:", clErr);
       }
@@ -5996,7 +6110,7 @@ async function fulfillOrder(
           amount: creditsToAdd,
           balance_after: newTotalBalance,
           type: "Credit",
-          service_name: "Cashfree",
+          service_name: orderId ? `Cashfree (${orderId})` : "Cashfree",
           created_at: new Date().toISOString()
         });
       } catch (txErr) {
@@ -6226,7 +6340,39 @@ app.post("/api/cashfree/create-order", async (req, res) => {
         },
         body: JSON.stringify(req.body)
       });
-      const data = await response.json();
+      const data: any = await response.json();
+
+      if (response.ok && data && (data.order_id || data.orderId)) {
+        const oId = data.order_id || data.orderId;
+        const targetUserId = user_id || authenticatedUserId;
+        const targetEmail = user_email || authenticatedUserEmail;
+        const targetPhone = customer_phone || (user_email && user_email.includes("@") ? user_email.split("@")[0].replace(/\D/g, "") : "");
+        recentPendingOrders.set(oId, {
+          orderId: oId,
+          userId: targetUserId,
+          email: targetEmail,
+          phone: targetPhone,
+          planId: plan_id,
+          amount: Number(amount),
+          timestamp: Date.now()
+        });
+
+        if (supabaseAdmin) {
+          try {
+            await supabaseAdmin.from("payment_claims").insert({
+              payment_id: oId,
+              user_id: targetUserId,
+              user_email: targetEmail,
+              customer_phone: targetPhone,
+              plan_id: plan_id,
+              amount: Number(amount),
+              status: "pending",
+              created_at: new Date().toISOString()
+            });
+          } catch (e) {}
+        }
+      }
+
       return res.status(response.status).json(data);
     }
 
@@ -6346,13 +6492,25 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
       return res.status(500).json({ error: "Unable to retrieve payment status from gateway" });
     }
 
+    let authUser: any = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      if (token) {
+        authUser = await getUserFromToken(token).catch(() => null);
+      }
+    }
+
     if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
       console.log(`[STATUS CHECK] Order ${order_id} verified PAID! Triggering instant guarantee fulfillment...`);
+      const targetUserId = data.customer_details?.customer_id || authUser?.id;
+      const targetEmail = data.customer_details?.customer_email || authUser?.email;
+      const targetPhone = data.customer_details?.customer_phone || authUser?.phone;
       await fulfillOrder(
         order_id, 
-        data.customer_details?.customer_id, 
-        data.customer_details?.customer_email, 
-        data.customer_details?.customer_phone,
+        targetUserId, 
+        targetEmail, 
+        targetPhone,
         data.order_amount,
         data.plan_id
       );
@@ -10180,10 +10338,13 @@ app.post("/api/cashfree/reconcile-user", async (req, res) => {
 
     // Grab all 'pending' payment claims from DB that belong to this user
     if (db) {
+      const qConditions: string[] = [`user_id.eq.${user.id}`];
+      if (user.email) qConditions.push(`user_email.eq.${user.email}`);
+      if (cleanPhone) qConditions.push(`customer_phone.ilike.%${cleanPhone}%`);
       const { data: dbPending, error: claimsErr } = await db
         .from("payment_claims")
         .select("*")
-        .eq("user_id", user.id)
+        .or(qConditions.join(","))
         .in("status", ["pending", "processing"]);
 
       if (!claimsErr && Array.isArray(dbPending)) {
@@ -10308,13 +10469,22 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
       .select("*")
       .eq("payment_id", trimmedOrderId)
       .maybeSingle();
-    if (claim && claim.status === "success") {
-      return res.status(400).json({ error: "This reference has already been successfully claimed and posted." });
+    // IDOR Protection: Verify ownership
+    const isOwner = !claim?.user_id || 
+                    claim.user_id === user.id || 
+                    (claim.user_email && user.email && claim.user_email.toLowerCase() === user.email.toLowerCase()) ||
+                    (claim.customer_phone && user.phone && claim.customer_phone.replace(/\D/g, '').slice(-10) === user.phone.replace(/\D/g, '').slice(-10));
+    if (claim && claim.user_id && !isOwner) {
+      return res.status(403).json({ error: "Unauthorized. This order does not belong to your account." });
     }
 
-    // IDOR Protection: Verify ownership
-    if (claim && claim.user_id && claim.user_id !== user.id) {
-      return res.status(403).json({ error: "Unauthorized. This order does not belong to your account." });
+    if (claim && claim.status === "success") {
+      // Force fulfill order to guarantee wallet balance is refreshed
+      await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone, claim.amount || amount, claim.plan_id);
+      return res.json({
+        status: "success",
+        message: `Order ${trimmedOrderId} is verified and your wallet balance has been refreshed!`
+      });
     }
 
 
@@ -10383,7 +10553,7 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
     }
 
     // 4. Force fulfill sequence!
-    await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone);
+    await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone, amount, planId);
 
     return res.json({
       status: "success",
