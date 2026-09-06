@@ -21,7 +21,7 @@ const resolvedDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirn
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = 3000;
 
 async function fetchLocalApi(path: string, options?: any): Promise<any> {
   const portsToTry = [PORT];
@@ -10691,7 +10691,10 @@ app.use((err: any, req: any, res: any, next: any) => {
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : undefined,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
