@@ -481,3 +481,179 @@ export const lookupSupportFree = async (query: string, service: string = 'phone'
     };
   }
 };
+
+export interface CashfreeOrderParams {
+  userId?: string;
+  userEmail?: string;
+  planId: string;
+  amount: number;
+  customerPhone?: string;
+  customerName?: string;
+  returnUrl: string;
+}
+
+export const ensureCashfreeSdkLoaded = async (): Promise<any> => {
+  if (typeof window === 'undefined') return null;
+  if ((window as any).Cashfree) return (window as any).Cashfree;
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[src*="cashfree.js"]');
+    if (existingScript) {
+      if ((window as any).Cashfree) {
+        return resolve((window as any).Cashfree);
+      }
+      existingScript.addEventListener('load', () => resolve((window as any).Cashfree));
+      existingScript.addEventListener('error', () => reject(new Error('Failed to load Cashfree Payment SDK.')));
+      setTimeout(() => {
+        if ((window as any).Cashfree) resolve((window as any).Cashfree);
+      }, 700);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+    script.async = true;
+    script.onload = () => resolve((window as any).Cashfree);
+    script.onerror = () => reject(new Error('Failed to load Cashfree Payment SDK. Please check your internet connection.'));
+    document.head.appendChild(script);
+  });
+};
+
+export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Promise<{ order_id: string; payment_session_id: string; [key: string]: any }> => {
+  const rawPhone = params.customerPhone || '';
+  const cleanPhoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
+  const cleanPhone = cleanPhoneDigits.length === 10 ? cleanPhoneDigits : '9999999999';
+
+  const cleanEmail = (params.userEmail && params.userEmail.includes('@')) 
+    ? params.userEmail.trim() 
+    : `${cleanPhone}@tracexdata.online`;
+
+  const cleanName = params.customerName?.trim() || cleanEmail.split('@')[0] || 'Customer';
+
+  const numAmount = Number(params.amount);
+  if (isNaN(numAmount) || numAmount < 50) {
+    throw new Error('Minimum recharge amount is ₹50.');
+  }
+
+  const payload = {
+    user_id: params.userId || `user_${cleanPhone}`,
+    user_email: cleanEmail,
+    plan_id: params.planId,
+    amount: numAmount,
+    customer_phone: cleanPhone,
+    customer_name: cleanName,
+    return_url: params.returnUrl
+  };
+
+  const token = await getAuthToken().catch(() => '');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let orderData: any = null;
+  let lastError = '';
+
+  // Step 1: Try current origin endpoint first
+  try {
+    const localRes = await fetch('/api/cashfree/create-order', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    const rawText = await localRes.text();
+    try {
+      orderData = JSON.parse(rawText);
+    } catch (e) {
+      lastError = `Server response: ${rawText.slice(0, 150)}`;
+    }
+
+    if (!localRes.ok || !orderData?.payment_session_id) {
+      if (orderData?.error) lastError = orderData.error;
+      orderData = null; // trigger fallback
+    }
+  } catch (err: any) {
+    lastError = err.message;
+  }
+
+  // Step 2: Fallback seamlessly to the live Render backend if local server had an issue
+  if (!orderData || !orderData.payment_session_id) {
+    try {
+      const fallbackRes = await fetch('https://tracexdata-api.onrender.com/api/cashfree/create-order', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const rawText = await fallbackRes.text();
+      try {
+        orderData = JSON.parse(rawText);
+      } catch (e) {
+        throw new Error(lastError || `Payment gateway gateway temporarily unavailable (${fallbackRes.status})`);
+      }
+      if (!fallbackRes.ok || !orderData?.payment_session_id) {
+        throw new Error(orderData?.error || orderData?.detail || lastError || `Payment gateway response error (${fallbackRes.status})`);
+      }
+    } catch (fallbackErr: any) {
+      throw new Error(fallbackErr.message || lastError || 'Payment gateway connection error. Please try again.');
+    }
+  }
+
+  if (!orderData?.payment_session_id) {
+    throw new Error(orderData?.error || 'Payment gateway session could not be established. Please try again.');
+  }
+
+  // Save pending order locally for recovery/auto-reconciliation
+  if (orderData.order_id) {
+    try {
+      localStorage.setItem('tracex_last_pending_order', JSON.stringify({
+        orderId: orderData.order_id,
+        amount: numAmount,
+        planId: params.planId,
+        createdAt: Date.now()
+      }));
+    } catch (e) {}
+  }
+
+  // Ensure Cashfree SDK is loaded
+  const CashfreeSdk = await ensureCashfreeSdkLoaded();
+  if (!CashfreeSdk) {
+    throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please check your internet connection and refresh.');
+  }
+
+  const cashfreeMode = orderData.cf_mode || 'production';
+  const cashfreeInstance = CashfreeSdk({
+    mode: cashfreeMode
+  });
+
+  await cashfreeInstance.checkout({
+    paymentSessionId: orderData.payment_session_id,
+    redirectTarget: '_self'
+  });
+
+  return orderData;
+};
+
+export const checkCashfreeOrderStatus = async (orderId: string): Promise<any> => {
+  if (!orderId) throw new Error("Order ID is required");
+  
+  // Try current host endpoint first
+  try {
+    const res = await fetch(`/api/cashfree/status/${encodeURIComponent(orderId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.order_status || data.status)) return data;
+    }
+  } catch (e) {}
+
+  // Fallback directly to Render backend
+  const fallbackRes = await fetch(`https://tracexdata-api.onrender.com/api/cashfree/status/${encodeURIComponent(orderId)}`);
+  if (!fallbackRes.ok) {
+    const err = await fallbackRes.json().catch(() => ({}));
+    throw new Error(err.error || `Status check failed: ${fallbackRes.status}`);
+  }
+  return await fallbackRes.json();
+};
+

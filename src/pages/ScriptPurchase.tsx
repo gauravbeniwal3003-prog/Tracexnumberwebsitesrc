@@ -6,7 +6,7 @@ import { useAuth } from '../services/AuthContext';
 import { supabase } from '../services/supabase';
 import LiquidBackground from '../components/LiquidBackground';
 import HeaderNavbar from '../components/HeaderNavbar';
-import { getApiBaseUrl } from '../services/api.ts';
+import { getApiBaseUrl, initiateCashfreeCheckout, checkCashfreeOrderStatus } from '../services/api.ts';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
 
 interface ScriptPurchaseRecord {
@@ -98,18 +98,13 @@ export default function ScriptPurchase() {
     setIsVerifying(true);
     setErrorMsg(null);
     try {
-      const response = await fetch(`${getApiBaseUrl()}/api/cashfree/status/${oid}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.order_status === 'PAID') {
-          setSuccessMsg('Payment successfully verified! Your 10-minute download window is now open.');
-          setSearchParams({}); // Clear query params
-          await fetchStatus();
-        } else {
-          setErrorMsg(`Payment verification pending: status is ${data.order_status || 'unknown'}.`);
-        }
+      const data = await checkCashfreeOrderStatus(oid);
+      if (data.order_status === 'PAID' || data.order_status === 'SUCCESS' || data.status === 'PAID' || data.status === 'SUCCESS') {
+        setSuccessMsg('Payment successfully verified! Your 10-minute download window is now open.');
+        setSearchParams({}); // Clear query params
+        await fetchStatus();
       } else {
-        throw new Error('Verification network fault.');
+        setErrorMsg(`Payment verification pending: status is ${data.order_status || 'unknown'}.`);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to verify payment status.');
@@ -148,49 +143,15 @@ export default function ScriptPurchase() {
     setSuccessMsg(null);
 
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || '';
-
-      const payload = {
-        user_id: user?.id,
-        user_email: payerEmail || user?.email || 'pvt_purchaser@tracexdata.com',
-        plan_id: 'gaurav_pvt_script',
+      await initiateCashfreeCheckout({
+        userId: user?.id,
+        userEmail: payerEmail || user?.email || 'pvt_purchaser@tracexdata.com',
+        planId: 'gaurav_pvt_script',
         amount: 400,
-        customer_phone: payerPhone || '9999999999',
-        customer_name: payerName || 'VIP Purchaser',
-        return_url: `${window.location.origin}/script?order_id={order_id}`
-      };
-
-      const response = await fetch(`${getApiBaseUrl()}/api/cashfree/create-order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
+        customerPhone: payerPhone || '9999999999',
+        customerName: payerName || 'VIP Purchaser',
+        returnUrl: `${window.location.origin}/script?order_id={order_id}`
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error ${response.status}`);
-      }
-
-      const orderData = await response.json();
-
-      if (!orderData.payment_session_id) {
-        throw new Error('Could not initiate secure gateway session. Try again.');
-      }
-
-      const cashfreeMode = orderData.cf_mode || "production";
-      const cashfree = window.Cashfree({
-        mode: cashfreeMode
-      });
-
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_self"
-      });
-
     } catch (err: any) {
       console.error('Payment Error:', err);
       setErrorMsg(err.message || 'Payment initiation failed. Please try again.');

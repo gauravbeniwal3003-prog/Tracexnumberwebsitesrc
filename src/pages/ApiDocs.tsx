@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Code
 } from "lucide-react";
-import { getApiBaseUrl } from '../services/api';
+import { getApiBaseUrl, initiateCashfreeCheckout, checkCashfreeOrderStatus } from '../services/api';
 import { useAuth } from "../services/AuthContext";
 import HeaderNavbar from "../components/HeaderNavbar";
 import { supabase } from "../services/supabase";
@@ -82,12 +82,8 @@ export default function ApiDocs() {
     try {
       setIsActionLoading("checking_status");
       setPaymentStatusMsg(null);
-      const res = await fetch(`${baseDomain}/api/cashfree/status/${orderId}`);
-      if (!res.ok) {
-        throw new Error(`Verification request failed: ${res.status}`);
-      }
-      const data = await res.json();
-      if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
+      const data = await checkCashfreeOrderStatus(orderId);
+      if (data.order_status === "PAID" || data.order_status === "SUCCESS" || data.status === "PAID" || data.status === "SUCCESS") {
         setPaymentStatusMsg({
           type: 'success',
           text: `Payment Successful! Your API Subscription/Renewal has been processed and activated.`
@@ -97,7 +93,7 @@ export default function ApiDocs() {
       } else {
         setPaymentStatusMsg({
           type: 'error',
-          text: `Payment status is: ${data.order_status}. Please try again.`
+          text: `Payment status is: ${data.order_status || 'Pending'}. Please try again.`
         });
       }
     } catch (err: any) {
@@ -129,71 +125,17 @@ export default function ApiDocs() {
 
     setIsActionLoading(planId);
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || "";
-
-      const response = await fetch(`${baseDomain}/api/cashfree/create-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-          user_email: user.email,
-          plan_id: planId,
-          amount: 600,
-          customer_phone: profile?.mobile || '9999999999',
-          customer_name: profile?.name || user.email?.split('@')[0],
-          return_url: `${window.location.origin}/api-docs?order_id={order_id}`
-        })
+      await initiateCashfreeCheckout({
+        userId: user.id,
+        userEmail: user.email,
+        planId: planId,
+        amount: 600,
+        customerPhone: profile?.mobile || (user as any)?.phone || '9999999999',
+        customerName: profile?.name || user.email?.split('@')[0] || 'Customer',
+        returnUrl: `${window.location.origin}/api-docs?order_id={order_id}`
       });
-
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        if (contentType && contentType.includes("application/json")) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.detail || `Server error: ${response.status}`);
-        } else {
-          throw new Error(`Payment Gateway Technical Error (${response.status}).`);
-        }
-      }
-
-      const orderData = await response.json();
-      if (orderData.error) {
-        throw new Error(orderData.error);
-      }
-
-      if (!orderData.payment_session_id) {
-        throw new Error('Payment session could not be created.');
-      }
-
-      // Save pending order locally
-      try {
-        localStorage.setItem('tracex_last_pending_order', JSON.stringify({
-          orderId: orderData.order_id,
-          amount: 600,
-          planId: planId,
-          createdAt: Date.now()
-        }));
-      } catch (e) {}
-
-      if (!window.Cashfree) {
-        throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please refresh the page.');
-      }
-
-      const cashfreeMode = orderData.cf_mode || "production";
-      const cashfree = window.Cashfree({
-        mode: cashfreeMode 
-      });
-
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_self" 
-      });
-
     } catch (err: any) {
-      alert("An unexpected error occurred: " + err.message);
+      alert(err.message || "Payment initiation failed. Please try again.");
     } finally {
       setIsActionLoading(null);
     }
@@ -212,71 +154,17 @@ export default function ApiDocs() {
 
     setIsActionLoading(apiKeyId);
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || "";
-
-      const response = await fetch(`${baseDomain}/api/cashfree/create-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-          user_email: user.email,
-          plan_id: `api_renew_${apiKeyId}`,
-          amount: 600,
-          customer_phone: profile?.mobile || '9999999999',
-          customer_name: profile?.name || user.email?.split('@')[0],
-          return_url: `${window.location.origin}/api-docs?order_id={order_id}`
-        })
+      await initiateCashfreeCheckout({
+        userId: user.id,
+        userEmail: user.email,
+        planId: `api_renew_${apiKeyId}`,
+        amount: 600,
+        customerPhone: profile?.mobile || (user as any)?.phone || '9999999999',
+        customerName: profile?.name || user.email?.split('@')[0] || 'Customer',
+        returnUrl: `${window.location.origin}/api-docs?order_id={order_id}`
       });
-
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        if (contentType && contentType.includes("application/json")) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.detail || `Server error: ${response.status}`);
-        } else {
-          throw new Error(`Payment Gateway Technical Error (${response.status}).`);
-        }
-      }
-
-      const orderData = await response.json();
-      if (orderData.error) {
-        throw new Error(orderData.error);
-      }
-
-      if (!orderData.payment_session_id) {
-        throw new Error('Payment session could not be created.');
-      }
-
-      // Save pending order locally
-      try {
-        localStorage.setItem('tracex_last_pending_order', JSON.stringify({
-          orderId: orderData.order_id,
-          amount: 600,
-          planId: `api_renew_${apiKeyId}`,
-          createdAt: Date.now()
-        }));
-      } catch (e) {}
-
-      if (!window.Cashfree) {
-        throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please refresh the page.');
-      }
-
-      const cashfreeMode = orderData.cf_mode || "production";
-      const cashfree = window.Cashfree({
-        mode: cashfreeMode 
-      });
-
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_self" 
-      });
-
     } catch (err: any) {
-      alert("An unexpected error occurred: " + err.message);
+      alert(err.message || "Payment initiation failed. Please try again.");
     } finally {
       setIsActionLoading(null);
     }

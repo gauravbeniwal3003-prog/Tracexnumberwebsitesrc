@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import LiquidBackground from '../components/LiquidBackground';
 import HeaderNavbar from '../components/HeaderNavbar';
 import { supabase } from '../services/supabase.ts';
-import { getApiBaseUrl, getAuthToken } from '../services/api';
+import { getApiBaseUrl, getAuthToken, initiateCashfreeCheckout, checkCashfreeOrderStatus } from '../services/api';
 
 const PRESET_AMOUNTS = [50, 100, 200, 500, 1000, 2000];
 
@@ -289,17 +289,10 @@ export default function BuyCredits() {
   const checkPaymentStatus = async (orderId: string) => {
     try {
       setIsProcessing(true);
-      const backendUrl = getApiBaseUrl();
-      const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/status/${orderId}`);
+      const data = await checkCashfreeOrderStatus(orderId);
       
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Status check failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.order_status === 'PAID' || data.order_status === 'SUCCESS') {
-        const addedAmount = data.order_amount || selectedAmount;
+      if (data.order_status === 'PAID' || data.order_status === 'SUCCESS' || data.status === 'PAID' || data.status === 'SUCCESS') {
+        const addedAmount = Number(data.order_amount || selectedAmount);
         const bonusInfo = getRechargeBonus(addedAmount);
         setPaymentStatus({ 
           status: 'success', 
@@ -314,7 +307,7 @@ export default function BuyCredits() {
           fetchTransactions();
         }, 2000);
       } else {
-        setPaymentStatus({ status: 'failed', message: `Payment ${data.order_status}. Please try again.` });
+        setPaymentStatus({ status: 'failed', message: `Payment ${data.order_status || 'Pending'}. Please try again or check status.` });
       }
     } catch (err: any) {
       console.error('Error checking payment status:', err);
@@ -336,76 +329,20 @@ export default function BuyCredits() {
     }
 
     setIsProcessing(true);
-    const backendUrl = getApiBaseUrl();
 
     try {
-      const token = await getAuthToken();
-      const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/cashfree/create-order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-          user_email: user.email,
-          plan_id: `wallet_${amountToPay}`,
-          amount: amountToPay,
-          customer_phone: profile?.mobile || '9999999999',
-          customer_name: profile?.name || user.email?.split('@')[0],
-          return_url: `${window.location.origin}/pricing?order_id={order_id}`
-        })
+      await initiateCashfreeCheckout({
+        userId: user.id,
+        userEmail: user.email,
+        planId: `wallet_${amountToPay}`,
+        amount: amountToPay,
+        customerPhone: profile?.mobile || (user as any)?.phone || '9999999999',
+        customerName: profile?.name || user.email?.split('@')[0] || 'Customer',
+        returnUrl: `${window.location.origin}/pricing?order_id={order_id}`
       });
-
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        if (contentType && contentType.includes("application/json")) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.detail || `Server error: ${response.status}`);
-        } else {
-          throw new Error(`Payment Gateway Technical Error (${response.status}).`);
-        }
-      }
-
-      const orderData = await response.json();
-
-      if (orderData.error) {
-        throw new Error(orderData.error);
-      }
-
-      if (!orderData.payment_session_id) {
-        throw new Error('Payment session could not be created.');
-      }
-
-      // Save pending order locally for guaranteed auto-reconciliation
-      if (orderData.order_id) {
-        try {
-          localStorage.setItem('tracex_last_pending_order', JSON.stringify({
-            orderId: orderData.order_id,
-            amount: amountToPay,
-            planId: `wallet_${amountToPay}`,
-            createdAt: Date.now()
-          }));
-        } catch (e) {}
-      }
-
-      if (!window.Cashfree) {
-        throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please refresh the page.');
-      }
-
-      const cashfreeMode = orderData.cf_mode || "production";
-      const cashfree = window.Cashfree({
-        mode: cashfreeMode 
-      });
-
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_self" 
-      });
-
     } catch (err: any) {
       console.error('Payment Error Details:', err);
-      alert(err.message || 'Something went wrong. Please try again.');
+      alert(err.message || 'Payment initiation failed. Please try again.');
     } finally {
       setIsProcessing(false);
     }

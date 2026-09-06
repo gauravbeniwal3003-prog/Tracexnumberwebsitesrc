@@ -4,7 +4,7 @@ import { useParams, useSearchParams, useNavigate, Navigate } from 'react-router-
 import { ShieldCheck, Zap, CreditCard, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Camera, Sparkles, User, Mail, Phone, IndianRupee } from 'lucide-react';
 import LiquidBackground from '../components/LiquidBackground.tsx';
 import { cleanIndianPhoneNumber } from '../services/utils.ts';
-import { getApiBaseUrl } from '../services/api.ts';
+import { getApiBaseUrl, initiateCashfreeCheckout, checkCashfreeOrderStatus } from '../services/api.ts';
 
 interface PgPaymentPageProps {
   fallbackFixed?: boolean;
@@ -74,24 +74,17 @@ export default function PgPaymentPage({ fallbackFixed, customSegment }: PgPaymen
   const verifyPayment = async (oid: string) => {
     setVerificationStatus('loading');
     try {
-      const renderBackendUrl = getApiBaseUrl();
-      const response = await fetch(`${renderBackendUrl.replace(/\/$/, "")}/api/cashfree/status/${oid}`);
-      
-      if (!response.ok) {
-        throw new Error(`Verification endpoint returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.order_status === 'PAID') {
+      const data = await checkCashfreeOrderStatus(oid);
+      if (data.order_status === 'PAID' || data.order_status === 'SUCCESS' || data.status === 'PAID' || data.status === 'SUCCESS') {
         setVerifiedDetails({
-          amount: data.order_amount,
+          amount: Number(data.order_amount || amount),
           orderId: oid,
           time: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }) + ' (IST)'
         });
         setVerificationStatus('success');
       } else {
         setVerificationStatus('failed');
-        setErrorMsg(`Payment status check returned: ${data.order_status}.`);
+        setErrorMsg(`Payment status check returned: ${data.order_status || 'Pending'}.`);
       }
     } catch (err: any) {
       console.error('Failed to verify payment:', err);
@@ -113,53 +106,16 @@ export default function PgPaymentPage({ fallbackFixed, customSegment }: PgPaymen
     setIsProcessing(true);
     setErrorMsg(null);
 
-    const renderBackendUrl = getApiBaseUrl();
-
     try {
-      const payload = {
-        user_id: `guest_${Date.now()}`,
-        user_email: payerEmail || 'guest_payment@tracexdata.com',
-        plan_id: 'pgpay_manual',
+      await initiateCashfreeCheckout({
+        userId: `guest_${Date.now()}`,
+        userEmail: payerEmail || 'guest_payment@tracexdata.com',
+        planId: 'pgpay_manual',
         amount: Number(finalAmount),
-        customer_phone: payerPhone || '9999999999',
-        customer_name: payerName || 'Payer Guest',
-        return_url: `${window.location.origin}/pgpay?order_id={order_id}`
-      };
-
-      const response = await fetch(`${renderBackendUrl.replace(/\/$/, "")}/api/cashfree/create-order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        customerPhone: payerPhone || '9999999999',
+        customerName: payerName || 'Payer Guest',
+        returnUrl: `${window.location.origin}/pgpay?order_id={order_id}`
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server Error ${response.status}`);
-      }
-
-      const orderData = await response.json();
-
-      if (orderData.error) {
-        throw new Error(orderData.error);
-      }
-
-      if (!orderData.payment_session_id) {
-        throw new Error('Could not initiate secure gateway session. Try again later.');
-      }
-
-      // Initialize Cashfree dynamically (production vs sandbox mode compatibility)
-      const cashfreeMode = orderData.cf_mode || "production";
-      const cashfree = window.Cashfree({
-        mode: cashfreeMode
-      });
-
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_self"
-      });
-
     } catch (err: any) {
       console.error('Payment Error:', err);
       setErrorMsg(err.message || 'Payment initiation failed. Please try again.');
