@@ -39,6 +39,7 @@ import WalletHistory from './pages/WalletHistory.tsx';
 import ServiceRecords from './pages/ServiceRecords.tsx';
 import { DashboardServicesView } from './components/DashboardServicesView.tsx';
 
+import ErrorBoundary from './components/ErrorBoundary.tsx';
 import LandingPage from './pages/LandingPage.tsx';
 import ProtectRecordPage from './pages/ProtectRecordPage.tsx';
 import UnlimitedPlans from './pages/UnlimitedPlans.tsx';
@@ -307,28 +308,15 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         } catch (e) {
           targetObj = result.raw_results;
         }
-      } else if (result.results && Object.keys(result.results).length > 0) {
+      } else if (result.results && typeof result.results === 'object' && Object.keys(result.results).length > 0) {
         targetObj = result.results;
       } else {
-        targetObj = result;
+        targetObj = result.results || result;
       }
     }
 
     if (!targetObj) return "";
-
-    let str = typeof targetObj === 'string' ? targetObj : JSON.stringify(targetObj, null, 2);
-
-    // Clean brandings and watermarks properly
-    str = str
-      .replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb3r[\s\-_]*s0ldier|@?cyb3rs0ldier|vishal[\s\-_]*boss|developer|provider|api_buy_link|website_link|buy_api|contact|support|exploitsindia\.site|techvishalboss\.com|exploitsindia|techvishal|cyber|Cyb3r|S0ldier|@?vectraen|vectraen|osintcallerbot)/gi, "")
-      .replace(/(💳\s*BUY\s*API\s*:\s*@?\w+|🆘\s*SUPPORT\s*:\s*@?\w+)/gi, "")
-      .replace(/(t\.me\/\w+|https?:\/\/(?:www\.)?\w+\.\w+(?:\/\S*)?)/gi, "")
-      .replace(/Powered_by/gi, "")
-      .replace(/Contact/gi, "")
-      .replace(/Buy_API/gi, "")
-      .replace(/buy_url/gi, "api_url");
-
-    return str;
+    return targetObj;
   };
 
   const hasUnlimitedAction = () => {
@@ -611,27 +599,29 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
       {/* 4. MAIN CONTENT AREA (Exact multi-level views matching Screenshots 1, 2, & 3) */}
       <main className="flex-1 max-w-4xl mx-auto px-4 py-3 sm:py-4 relative z-10 w-full space-y-3">
-        <DashboardServicesView
-          initialService={service}
-          user={user}
-          profile={profile}
-          isDemoMode={isDemoMode}
-          onOpenPricing={handleOpenPricing}
-          onOpenLogin={handleOpenLogin}
-          phoneNumber={phoneNumber}
-          setPhoneNumber={setPhoneNumber}
-          isLoading={isLoading}
-          loadingMessage={loadingMessage}
-          error={error}
-          result={result}
-          aadhaarPanResult={aadhaarPanResult}
-          handleSearch={handleSearch}
-          getFormattedResponse={getFormattedResponse}
-          copiedResponse={copiedResponse}
-          setCopiedResponse={setCopiedResponse}
-          hasUnlimitedAction={hasUnlimitedAction}
-          onClearError={() => setError(null)}
-        />
+        <ErrorBoundary fallbackTitle="Search Dashboard Error">
+          <DashboardServicesView
+            initialService={service}
+            user={user}
+            profile={profile}
+            isDemoMode={isDemoMode}
+            onOpenPricing={handleOpenPricing}
+            onOpenLogin={handleOpenLogin}
+            phoneNumber={phoneNumber}
+            setPhoneNumber={setPhoneNumber}
+            isLoading={isLoading}
+            loadingMessage={loadingMessage}
+            error={error}
+            result={result}
+            aadhaarPanResult={aadhaarPanResult}
+            handleSearch={handleSearch}
+            getFormattedResponse={getFormattedResponse}
+            copiedResponse={copiedResponse}
+            setCopiedResponse={setCopiedResponse}
+            hasUnlimitedAction={hasUnlimitedAction}
+            onClearError={() => setError(null)}
+          />
+        </ErrorBoundary>
 
         {/* Status Messages */}
         <AnimatePresence mode="wait">
@@ -677,10 +667,18 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             <Skeleton message={loadingMessage} />
           ) : (aadhaarPanResult || result) ? (
             <div className="space-y-3">
-              <FormattedResponseCard
-                data={getFormattedResponse()}
-                serviceType={service}
-              />
+              <ErrorBoundary fallbackTitle="Search Result Display Error">
+                <FormattedResponseCard
+                  data={getFormattedResponse()}
+                  serviceType={service}
+                  onReset={() => {
+                    setResult(null);
+                    setAadhaarPanResult(null);
+                    setPhoneNumber('');
+                    setError(null);
+                  }}
+                />
+              </ErrorBoundary>
 
               {service === 'telegram' && (
                 <motion.div

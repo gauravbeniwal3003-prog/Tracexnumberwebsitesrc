@@ -7,12 +7,18 @@ export interface UserProfile {
   id: string;
   email: string;
   credits: number;
-  unlimited_expiry: string | null; // ISO timestamp
+  unlimited_expiry?: string | null; // ISO timestamp
   full_name?: string;
+  name?: string;
+  mobile?: string;
+  phone?: string;
+  wallet_balance?: number;
   avatar_url?: string;
   is_free_credit_claimed?: boolean;
   last_weekly_credit_at?: string | null; // ISO timestamp
   last_daily_credit_at?: string | null; // ISO timestamp
+  is_admin?: boolean;
+  role?: string;
 }
 
 export interface PricingPlan {

@@ -6,10 +6,12 @@ export interface ApiServiceConfig {
   category: string;
   fee: number;
   serviceCode: string;
+  service_code?: string;
   inputLabel: string;
   inputPlaceholder: string;
   sampleQuery: string;
   subtitle: string;
+  description?: string;
   iconName: string;
   is_active: boolean;
   serviceType: 'phone' | 'telegram' | 'adhr' | 'vehicle' | 'email' | 'veh_owner_num';

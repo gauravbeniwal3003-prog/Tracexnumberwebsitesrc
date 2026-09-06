@@ -32,11 +32,11 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
-  'api_buy_link', 'website_link', 'buy_api', 'tg_channel', 'tg_owner', 'status', 'success', 'found'
+  'api_buy_link', 'website_link', 'buy_api', 'tg_channel', 'tg_owner', 'status', 'success', 'found', 'credit', 'credits'
 ];
 
 function isBannedKey(key: string): boolean {
-  if (!key) return false;
+  if (!key || typeof key !== 'string') return false;
   const k = key.toLowerCase().replace(/[\s\-_]/g, '');
   return BANNED_KEYS.some(banned => k === banned || k.includes(banned));
 }
@@ -44,6 +44,13 @@ function isBannedKey(key: string): boolean {
 // Client-side cleanup of branding
 function clientScrub(val: any): string {
   if (val === null || val === undefined) return '';
+  if (typeof val === 'object') {
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return '';
+    }
+  }
   const text = String(val);
   return text
     .replace(/(while\s+result\s*(?:-\s*)?(?:https?:\/\/(?:www\.)?)?digisevapoint\.com)/gi, "")
@@ -58,7 +65,7 @@ function clientScrub(val: any): string {
 }
 
 function cleanJsonPayload(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
+  if (obj === null || obj === undefined) return null;
   if (typeof obj === 'string') {
     const trimmed = obj.trim();
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
@@ -70,15 +77,20 @@ function cleanJsonPayload(obj: any): any {
     }
     return clientScrub(obj);
   }
+  if (typeof obj === 'number' || typeof obj === 'boolean') {
+    return obj;
+  }
   if (Array.isArray(obj)) {
-    return obj.map(cleanJsonPayload).filter(x => x !== null && x !== '');
+    return obj
+      .map(cleanJsonPayload)
+      .filter(x => x !== null && x !== undefined && x !== '');
   }
   if (typeof obj === 'object') {
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj)) {
       if (isBannedKey(k)) continue;
       const cleanedVal = cleanJsonPayload(v);
-      if (cleanedVal !== null && cleanedVal !== '') {
+      if (cleanedVal !== null && cleanedVal !== undefined && cleanedVal !== '') {
         out[k] = cleanedVal;
       }
     }
@@ -104,6 +116,7 @@ export function getCleanJsonString(data: any): string {
       }
     }
     const cleaned = cleanJsonPayload(payload);
+    if (cleaned === null || cleaned === undefined) return '{}';
     if (typeof cleaned === 'string') {
       return cleaned;
     }
@@ -122,12 +135,12 @@ interface ParsedField {
 
 // Intelligent field labels and icons mapping
 function getFieldConfig(key: string, valueStr: string): { label: string; icon: React.ReactNode } {
-  const k = key.toLowerCase().replace(/[\s\-_]/g, '');
+  const k = String(key || '').toLowerCase().replace(/[\s\-_]/g, '');
   
   if (k.includes('phone') || k.includes('mobile') || k.includes('number') || k.includes('contact')) {
     return { label: 'Phone Number', icon: <Smartphone className="text-cyan-400 w-4 h-4 shrink-0" /> };
   }
-  if (k.includes('fullname') || k === 'name' || k.includes('owner') || k === 'username' && !k.includes('tg') && !k.includes('telegram')) {
+  if (k.includes('fullname') || k === 'name' || k.includes('owner') || (k === 'username' && !k.includes('tg') && !k.includes('telegram'))) {
     return { label: 'Full Name', icon: <User className="text-blue-400 w-4 h-4 shrink-0" /> };
   }
   if (k.includes('carrier') || k.includes('operator') || k.includes('sim') || k.includes('telecom') || k === 'network') {
@@ -153,7 +166,7 @@ function getFieldConfig(key: string, valueStr: string): { label: string; icon: R
   }
 
   // Fallback humanized key label
-  const humanized = key
+  const humanized = String(key || 'Detail')
     .split(/[\s\-_]+/)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
@@ -162,13 +175,13 @@ function getFieldConfig(key: string, valueStr: string): { label: string; icon: R
 }
 
 export default function FormattedResponseCard({ data, serviceType, onReset }: FormattedResponseCardProps) {
-  const [activeTab, setActiveTab] = useState<'json' | 'visual'>('json');
+  const [activeTab, setActiveTab] = useState<'json' | 'visual'>('visual');
   const [copiedJson, setCopiedJson] = useState(false);
   const navigate = useNavigate();
 
   const cleanJsonStr = getCleanJsonString(data);
 
-  // Parse the object into beautiful structured fields
+  // Parse the object safely into structured fields
   const getParsedFields = (): ParsedField[] => {
     let parsedObj: any = null;
     try {
@@ -176,76 +189,96 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
         const trimmed = data.trim();
         if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
           parsedObj = JSON.parse(trimmed);
+        } else {
+          parsedObj = data;
         }
       } else {
         parsedObj = data;
       }
     } catch {
-      // JSON parse failed, treat as string
+      parsedObj = data;
     }
 
     const fields: ParsedField[] = [];
 
-    // Helper to add clean field
-    const addField = (k: string, val: any) => {
-      if (val === null || val === undefined) return;
-      if (isBannedKey(k)) return;
-      const valClean = clientScrub(val);
-      if (!valClean) return;
+    const extractFields = (obj: any, prefix = '') => {
+      if (obj === null || obj === undefined) return;
 
-      const { label, icon } = getFieldConfig(k, valClean);
-      fields.push({
-        key: k,
-        label,
-        value: valClean,
-        icon
-      });
+      if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+        const valClean = clientScrub(obj);
+        if (valClean) {
+          const labelKey = prefix || 'Result';
+          const { label, icon } = getFieldConfig(labelKey, valClean);
+          fields.push({ key: labelKey, label, value: valClean, icon });
+        }
+        return;
+      }
+
+      if (Array.isArray(obj)) {
+        obj.forEach((item, idx) => {
+          if (item !== null && item !== undefined) {
+            const itemPrefix = prefix ? `${prefix} #${idx + 1}` : `Record #${idx + 1}`;
+            extractFields(item, itemPrefix);
+          }
+        });
+        return;
+      }
+
+      if (typeof obj === 'object') {
+        for (const [key, value] of Object.entries(obj)) {
+          if (isBannedKey(key)) continue;
+          if (value === null || value === undefined) continue;
+
+          const currentKey = prefix ? `${prefix} - ${key}` : key;
+          if (typeof value === 'object') {
+            extractFields(value, currentKey);
+          } else {
+            const valClean = clientScrub(value);
+            if (valClean) {
+              const { label, icon } = getFieldConfig(key, valClean);
+              fields.push({ key: currentKey, label, value: valClean, icon });
+            }
+          }
+        }
+      }
     };
 
-    if (parsedObj && typeof parsedObj === 'object') {
-      const cleaned = cleanJsonPayload(parsedObj);
-      if (Array.isArray(cleaned)) {
-        // Flatten array of objects
-        cleaned.forEach((item, index) => {
-          if (typeof item === 'object') {
-            Object.entries(item).forEach(([k, v]) => {
-              addField(`${k}_${index + 1}`, v);
-            });
+    try {
+      if (typeof parsedObj === 'string' && !parsedObj.startsWith('{') && !parsedObj.startsWith('[')) {
+        const rawText = clientScrub(parsedObj);
+        const lines = rawText.split('\n');
+        let index = 1;
+        lines.forEach(line => {
+          const cleanedLine = line.trim();
+          if (!cleanedLine) return;
+          if (cleanedLine.includes(':')) {
+            const colonIdx = cleanedLine.indexOf(':');
+            const k = cleanedLine.substring(0, colonIdx).trim();
+            const v = cleanedLine.substring(colonIdx + 1).trim();
+            if (k && v && !isBannedKey(k)) {
+              const valClean = clientScrub(v);
+              if (valClean) {
+                const { label, icon } = getFieldConfig(k, valClean);
+                fields.push({ key: k, label, value: valClean, icon });
+              }
+            }
           } else {
-            addField(`Record_${index + 1}`, item);
+            const valClean = clientScrub(cleanedLine);
+            if (valClean) {
+              fields.push({
+                key: `info_${index}`,
+                label: `Record Info #${index++}`,
+                value: valClean,
+                icon: <Database className="text-slate-400 w-4 h-4 shrink-0" />
+              });
+            }
           }
         });
       } else {
-        Object.entries(cleaned).forEach(([k, v]) => {
-          if (typeof v === 'object' && v !== null) {
-            Object.entries(v).forEach(([subK, subV]) => {
-              addField(`${k} - ${subK}`, subV);
-            });
-          } else {
-            addField(k, v);
-          }
-        });
+        extractFields(parsedObj);
       }
-    } else {
-      // Raw non-JSON multi-line text
-      const rawText = clientScrub(typeof data === 'string' ? data : JSON.stringify(data));
-      const lines = rawText.split('\n');
-      let index = 1;
-      lines.forEach(line => {
-        const cleanedLine = line.trim();
-        if (!cleanedLine) return;
-
-        if (cleanedLine.includes(':')) {
-          const colonIdx = cleanedLine.indexOf(':');
-          const k = cleanedLine.substring(0, colonIdx).trim();
-          const v = cleanedLine.substring(colonIdx + 1).trim();
-          if (k && v) {
-            addField(k, v);
-          }
-        } else {
-          addField(`Record Info ${index++}`, cleanedLine);
-        }
-      });
+    } catch (e) {
+      console.warn("Field extraction fallback:", e);
     }
 
     return fields;
@@ -308,17 +341,6 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
         <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800/80">
           <button
             type="button"
-            onClick={() => setActiveTab('json')}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'json'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-100'
-            }`}
-          >
-            💻 Raw JSON
-          </button>
-          <button
-            type="button"
             onClick={() => setActiveTab('visual')}
             className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'visual'
@@ -327,6 +349,17 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
             }`}
           >
             📊 Formatted Card
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('json')}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'json'
+                ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                : 'text-slate-400 hover:text-slate-100'
+            }`}
+          >
+            💻 Raw JSON
           </button>
         </div>
       </div>
@@ -361,7 +394,7 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
             <div className="p-8 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
               <Cpu className="w-10 h-10 text-slate-600 mx-auto animate-pulse" />
               <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto">
-                No individual metadata fields could be extracted. Please switch to the **Developer JSON** tab to view the complete raw response.
+                Displaying full query results in Developer JSON tab.
               </p>
             </div>
           )}
@@ -370,7 +403,7 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
           <div className="p-3 px-4 rounded-xl bg-slate-950/50 border border-slate-800/80 text-[11px] text-slate-400 font-medium flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Cryptographically signed by TRACEXDATA decentralized registry.</span>
+              <span>Cryptographically verified by TRACEXDATA decentralized registry.</span>
             </span>
             <span className="text-[10px] font-bold text-emerald-400 font-mono">SECURE RECORD</span>
           </div>
