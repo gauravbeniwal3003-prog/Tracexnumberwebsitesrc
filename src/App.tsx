@@ -185,26 +185,30 @@ function TelegramRedirect() {
 
 function LoginModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
       />
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="relative z-10 w-full max-w-sm"
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="relative z-10 w-full max-w-lg my-auto"
       >
         <div className="absolute top-4 right-4 z-50">
-          <button onClick={onClose} className="p-2 text-zinc-500 hover:text-white transition-colors">
-            <X size={20} />
+          <button 
+            onClick={onClose} 
+            className="p-2 text-slate-400 hover:text-slate-800 bg-white/80 hover:bg-white rounded-full shadow-sm transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={18} />
           </button>
         </div>
-        <LoginScreen isModal />
+        <LoginScreen isModal onClose={onClose} />
       </motion.div>
     </div>
   );

@@ -174,113 +174,117 @@ END $$;`;
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:grid md:grid-cols-12 font-sans selection:bg-blue-600 selection:text-white relative">
+    <div className={`${isModal ? 'bg-transparent p-0 flex flex-col' : 'min-h-screen bg-slate-50 flex flex-col md:grid md:grid-cols-12'} font-sans selection:bg-blue-600 selection:text-white relative`}>
       
-      {/* LEFT COLUMN - VIBRANT BRAND BANNER (Visible on Tablet/Laptop/Desktop, Hidden on Mobile) */}
-      <div className="hidden md:flex md:col-span-5 lg:col-span-6 xl:col-span-5 bg-gradient-to-br from-blue-700 via-indigo-700 to-blue-900 p-8 sm:p-12 lg:p-16 flex-col justify-between text-white relative overflow-hidden min-h-screen">
-        
-        {/* Subtle Decorative Background Circles */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl pointer-events-none" />
+      {/* LEFT COLUMN - VIBRANT BRAND BANNER (Visible on Tablet/Laptop/Desktop when full page, Hidden in Modal) */}
+      {!isModal && (
+        <div className="hidden md:flex md:col-span-5 lg:col-span-6 xl:col-span-5 bg-gradient-to-br from-blue-700 via-indigo-700 to-blue-900 p-8 sm:p-12 lg:p-16 flex-col justify-between text-white relative overflow-hidden min-h-screen">
+          
+          {/* Subtle Decorative Background Circles */}
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top Logo Badge */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-white shadow-md">
-            <Database className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="font-black text-xl tracking-tight uppercase text-white">TRACEXDATA</span>
-            <span className="text-[10px] font-extrabold bg-white/15 text-blue-100 border border-white/20 px-2 py-0.5 rounded-full ml-2 uppercase">
-              PORTAL
-            </span>
-          </div>
-        </div>
-
-        {/* Middle Banner Content */}
-        <div className="relative z-10 my-auto py-8 space-y-6">
-          <motion.h1
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-3xl sm:text-4xl xl:text-5xl font-black text-white leading-tight tracking-tight"
-          >
-            Welcome to <br />
-            TraceXData Portal
-          </motion.h1>
-
-          <p className="text-blue-100/90 text-sm sm:text-base font-medium leading-relaxed max-w-md">
-            India's most trusted digital service network. Experience seamless transactions, secure wallet management, and lightning-fast services all in one place.
-          </p>
-
-          {/* 4 Feature Cards Grid */}
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 pt-4 max-w-md">
-            <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
-              <div className="shrink-0 p-1.5 sm:p-2 bg-blue-500/30 text-sky-300 rounded-lg sm:rounded-xl">
-                <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-sky-300" />
-              </div>
-              <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
-                Fast Services
-              </span>
+          {/* Top Logo Badge */}
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-white shadow-md">
+              <Database className="w-6 h-6" />
             </div>
-
-            <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
-              <div className="shrink-0 p-1.5 sm:p-2 bg-emerald-500/30 text-emerald-300 rounded-lg sm:rounded-xl">
-                <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </div>
-              <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
-                100% Safe & Secure
-              </span>
-            </div>
-
-            <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
-              <div className="shrink-0 p-1.5 sm:p-2 bg-amber-500/30 text-amber-300 rounded-lg sm:rounded-xl">
-                <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </div>
-              <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
-                Smart Wallet
-              </span>
-            </div>
-
-            <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
-              <div className="shrink-0 p-1.5 sm:p-2 bg-purple-500/30 text-purple-300 rounded-lg sm:rounded-xl">
-                <Headphones className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </div>
-              <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
-                24/7 Support
+            <div>
+              <span className="font-black text-xl tracking-tight uppercase text-white">TRACEXDATA</span>
+              <span className="text-[10px] font-extrabold bg-white/15 text-blue-100 border border-white/20 px-2 py-0.5 rounded-full ml-2 uppercase">
+                PORTAL
               </span>
             </div>
           </div>
-        </div>
 
-        {/* Footer Note */}
-        <div className="relative z-10 pt-4 text-xs text-blue-200/80 font-medium">
-          © 2026 TraceXData API Services. All rights reserved.
+          {/* Middle Banner Content */}
+          <div className="relative z-10 my-auto py-8 space-y-6">
+            <motion.h1
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-3xl sm:text-4xl xl:text-5xl font-black text-white leading-tight tracking-tight"
+            >
+              Welcome to <br />
+              TraceXData Portal
+            </motion.h1>
+
+            <p className="text-blue-100/90 text-sm sm:text-base font-medium leading-relaxed max-w-md">
+              India's most trusted digital service network. Experience seamless transactions, secure wallet management, and lightning-fast services all in one place.
+            </p>
+
+            {/* 4 Feature Cards Grid */}
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-4 pt-4 max-w-md">
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
+                <div className="shrink-0 p-1.5 sm:p-2 bg-blue-500/30 text-sky-300 rounded-lg sm:rounded-xl">
+                  <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-sky-300" />
+                </div>
+                <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
+                  Fast Services
+                </span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
+                <div className="shrink-0 p-1.5 sm:p-2 bg-emerald-500/30 text-emerald-300 rounded-lg sm:rounded-xl">
+                  <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </div>
+                <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
+                  100% Safe & Secure
+                </span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
+                <div className="shrink-0 p-1.5 sm:p-2 bg-amber-500/30 text-amber-300 rounded-lg sm:rounded-xl">
+                  <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </div>
+                <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
+                  Smart Wallet
+                </span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/15 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3 transition-colors shadow-sm overflow-hidden">
+                <div className="shrink-0 p-1.5 sm:p-2 bg-purple-500/30 text-purple-300 rounded-lg sm:rounded-xl">
+                  <Headphones className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </div>
+                <span className="min-w-0 flex-1 font-bold text-xs sm:text-sm text-white leading-tight break-words">
+                  24/7 Support
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer Note */}
+          <div className="relative z-10 pt-4 text-xs text-blue-200/80 font-medium">
+            © 2026 TraceXData API Services. All rights reserved.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* RIGHT COLUMN - FORM SECTION */}
-      <div className="md:col-span-7 lg:col-span-6 xl:col-span-7 bg-slate-50/70 p-5 sm:p-10 lg:p-16 flex flex-col justify-between relative min-h-screen">
+      <div className={`${isModal ? 'w-full p-0' : 'md:col-span-7 lg:col-span-6 xl:col-span-7 bg-slate-50/70 p-5 sm:p-10 lg:p-16 flex flex-col justify-between relative min-h-screen'}`}>
         
-        {/* Top Header Row with "Back to Home" & Mobile Logo Badge */}
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={() => navigate("/")}
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer group"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-            <span>Back to Home</span>
-          </button>
+        {/* Top Header Row with "Back to Home" & Mobile Logo Badge (Hidden in Modal) */}
+        {!isModal && (
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => navigate("/")}
+              className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer group"
+            >
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Home</span>
+            </button>
 
-          {/* Mobile Logo Badge */}
-          <div className="md:hidden flex items-center gap-2">
-            <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-xs">
-              <Database className="w-4 h-4" />
+            {/* Mobile Logo Badge */}
+            <div className="md:hidden flex items-center gap-2">
+              <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-xs">
+                <Database className="w-4 h-4" />
+              </div>
+              <span className="font-black text-sm tracking-tight uppercase text-slate-900">TRACEXDATA</span>
             </div>
-            <span className="font-black text-sm tracking-tight uppercase text-slate-900">TRACEXDATA</span>
           </div>
-        </div>
+        )}
 
         {/* Form Container */}
-        <div className="max-w-md mx-auto w-full my-auto py-6">
+        <div className={`max-w-md mx-auto w-full ${isModal ? 'py-2' : 'my-auto py-6'}`}>
           
           {/* Header Title & Subtitle */}
           <div className="space-y-1 mb-6">

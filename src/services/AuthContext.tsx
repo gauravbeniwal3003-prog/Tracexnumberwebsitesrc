@@ -431,6 +431,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn("Could not restore mobile session:", e);
     }
 
+    // Initial session verification with fallback safety timeout
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) {
+        if (session) {
+          setUser(session.user);
+          fetchProfile(session.user.id).catch(() => {});
+          if (!localStorage.getItem('tracex_login_time')) {
+            localStorage.setItem('tracex_login_time', Date.now().toString());
+          }
+        }
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (mounted) setLoading(false);
+    });
+
+    // Safety fallback: ensure loading never hangs more than 1.5s
+    const loadingSafetyTimeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 1500);
+
     // Single listener for all auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
@@ -529,6 +550,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(loadingSafetyTimeout);
       subscription.unsubscribe();
       supabase.removeChannel(profileRealtimeChannel);
     };
