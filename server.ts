@@ -331,9 +331,21 @@ const getUserFromToken = async (token: string, client?: any) => {
 };
 
 // Cashfree Configuration
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID;
-const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY;
-const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || "https://api.cashfree.com/pg";
+const CASHFREE_APP_ID = (process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID || "").trim();
+const CASHFREE_SECRET_KEY = (process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY || "").trim();
+
+const getCashfreeBaseUrl = (): string => {
+  if (process.env.CASHFREE_BASE_URL) {
+    return process.env.CASHFREE_BASE_URL.trim().replace(/\/$/, "");
+  }
+  const appId = CASHFREE_APP_ID;
+  const env = (process.env.CASHFREE_ENV || process.env.CASHFREE_ENVIRONMENT || "").toLowerCase();
+  if (appId.startsWith("TEST") || appId.startsWith("test") || env === "test" || env === "sandbox") {
+    return "https://sandbox.cashfree.com/pg";
+  }
+  return "https://api.cashfree.com/pg";
+};
+const CASHFREE_BASE_URL = getCashfreeBaseUrl();
 
 
 // Security Middleware (Helmet configured to permit iframe preview in AI Studio)
@@ -2845,9 +2857,10 @@ app.get("/api/wallet/history", async (req, res) => {
 
     let userId = null;
     let userEmail = null;
+    let user: any = null;
 
     if (token) {
-      const user = await getUserFromToken(token);
+      user = await getUserFromToken(token);
       if (user) {
         userId = user.id;
         userEmail = user.email;
@@ -6280,24 +6293,36 @@ setTimeout(runBackgroundPaymentReconciliation, 10 * 1000);
 // Cashfree Routes
 
 app.post("/api/cashfree/create-order", async (req, res) => {
-  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind" ;
+  const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
   
-  let authenticatedUserId = null;
-  let authenticatedUserEmail = null;
+  let authenticatedUserId: string | null = null;
+  let authenticatedUserEmail: string | null = null;
+  let authenticatedUserPhone: string | null = null;
+
   const authHeader = req.headers.authorization;
   if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    if (supabaseAdmin) {
-      const user = await getUserFromToken(token);
-      if (user) {
-        authenticatedUserId = user.id;
-        authenticatedUserEmail = user.email;
-      }
+    const token = authHeader.replace("Bearer ", "").trim();
+    if (token) {
+      try {
+        const client = await getRequestClient(token).catch(() => null);
+        const user = await getUserFromToken(token, client || supabaseAdmin || supabase).catch(() => null);
+        if (user) {
+          authenticatedUserId = user.id;
+          authenticatedUserEmail = user.email || null;
+          authenticatedUserPhone = user.phone || null;
+        }
+      } catch (e) {}
     }
   }
 
+  // Fallback to body-provided identifiers if available
+  if (!authenticatedUserId && req.body?.user_id) {
+    authenticatedUserId = String(req.body.user_id);
+    authenticatedUserEmail = req.body.user_email || null;
+  }
+
   if (!isPgPay && !authenticatedUserId) {
-    return res.status(401).json({ error: "Unauthorized. Authentication required to create an order." });
+    return res.status(401).json({ error: "Unauthorized. Authentication required to create a payment order." });
   }
 
   // Override user_id with the authenticated user ID (prevent IDOR)
@@ -6308,74 +6333,97 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     req.body.user_email = authenticatedUserEmail;
   }
 
-  if (!supabaseAdmin && !isPgPay) {
-    return res.status(500).json({ error: "Backend not configured (Supabase Admin missing)" });
-  }
+  const db = supabaseAdmin || supabase;
 
   try {
     const { user_id, user_email, plan_id, amount, customer_phone, customer_name, return_url } = req.body;
     
     // Strict input validation
-    if (!amount || typeof amount !== 'number' || amount < 50 || amount > 100000) {
+    const numAmount = Number(amount);
+    if (!numAmount || isNaN(numAmount) || numAmount < 50 || numAmount > 100000) {
       return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹50." });
     }
-    if (plan_id !== "pgpay_manual" && plan_id !== "panfind" ) {
+    if (plan_id !== "pgpay_manual" && plan_id !== "panfind") {
       if (!user_id || typeof user_id !== 'string') {
         return res.status(400).json({ error: "Invalid user ID" });
       }
     }
 
-
-    if ((!user_id && !isPgPay) || !plan_id || !amount) {
-      return res.status(400).json({ error: "Missing required parameters" });
+    if ((!user_id && !isPgPay) || !plan_id || !numAmount) {
+      return res.status(400).json({ error: "Missing required payment parameters (user_id, plan_id, amount)" });
     }
 
+    // When direct Cashfree credentials are not available locally, proxy to backend
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying create-order request to live Render backend...");
       const renderBackendUrl = getRenderBackendUrl();
-      const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(req.body)
-      });
-      const data: any = await response.json();
-
-      if (response.ok && data && (data.order_id || data.orderId)) {
-        const oId = data.order_id || data.orderId;
-        const targetUserId = user_id || authenticatedUserId;
-        const targetEmail = user_email || authenticatedUserEmail;
-        const targetPhone = customer_phone || (user_email && user_email.includes("@") ? user_email.split("@")[0].replace(/\D/g, "") : "");
-        recentPendingOrders.set(oId, {
-          orderId: oId,
-          userId: targetUserId,
-          email: targetEmail,
-          phone: targetPhone,
-          planId: plan_id,
-          amount: Number(amount),
-          timestamp: Date.now()
-        });
-
-        if (supabaseAdmin) {
-          try {
-            await supabaseAdmin.from("payment_claims").insert({
-              payment_id: oId,
-              user_id: targetUserId,
-              user_email: targetEmail,
-              customer_phone: targetPhone,
-              plan_id: plan_id,
-              amount: Number(amount),
-              status: "pending",
-              created_at: new Date().toISOString()
-            });
-          } catch (e) {}
-        }
+      if (!renderBackendUrl) {
+        return res.status(503).json({ error: "Payment gateway service configuration is missing." });
       }
 
-      return res.status(response.status).json(data);
+      const proxyHeaders: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      if (authHeader) {
+        proxyHeaders["Authorization"] = authHeader;
+      }
+
+      try {
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
+          method: "POST",
+          headers: proxyHeaders,
+          body: JSON.stringify(req.body)
+        });
+
+        const rawText = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch (parseErr) {
+          console.error("[CASHFREE_PROXY_PARSE_ERROR] Non-JSON from backend:", rawText.slice(0, 300));
+          return res.status(502).json({ error: "Upstream payment service returned an unparseable response." });
+        }
+
+        if (response.ok && data && (data.order_id || data.orderId)) {
+          const oId = data.order_id || data.orderId;
+          const targetUserId = user_id || authenticatedUserId;
+          const targetEmail = user_email || authenticatedUserEmail;
+          const targetPhone = customer_phone || authenticatedUserPhone || (user_email && user_email.includes("@") ? user_email.split("@")[0].replace(/\D/g, "") : "");
+          
+          recentPendingOrders.set(oId, {
+            orderId: oId,
+            userId: targetUserId,
+            email: targetEmail,
+            phone: targetPhone,
+            planId: plan_id,
+            amount: numAmount,
+            createdAt: Date.now()
+          });
+
+          if (db) {
+            try {
+              await db.from("payment_claims").insert({
+                payment_id: oId,
+                user_id: targetUserId,
+                user_email: targetEmail,
+                customer_phone: targetPhone,
+                plan_id: plan_id,
+                amount: numAmount,
+                status: "pending",
+                created_at: new Date().toISOString()
+              });
+            } catch (e) {}
+          }
+        }
+
+        return res.status(response.status).json(data);
+      } catch (proxyNetworkErr: any) {
+        console.error("[CASHFREE_PROXY_NETWORK_ERROR]", proxyNetworkErr);
+        return res.status(502).json({ error: `Could not connect to payment backend: ${proxyNetworkErr.message}` });
+      }
     }
 
+    // Direct Cashfree Order Creation Flow
     const orderId = `order_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
     // Determine the server base URL dynamically (works across dev, preview, production)
@@ -6387,21 +6435,38 @@ app.post("/api/cashfree/create-order", async (req, res) => {
     const originalReturnUrl = return_url || `${serverBaseUrl}/pricing?order_id={order_id}`;
     const backendReturnUrl = `${serverBaseUrl}/api/cashfree/return?order_id={order_id}&redirect_to=${encodeURIComponent(originalReturnUrl)}`;
 
+    // Sanitize customer details according to Cashfree API requirements
+    const rawCustomerId = String(user_id || authenticatedUserId || `guest_${Date.now()}`);
+    const cleanCustomerId = rawCustomerId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50) || `user_${Date.now()}`;
+
+    const rawPhone = customer_phone || authenticatedUserPhone || "";
+    const digitsPhone = String(rawPhone).replace(/\D/g, "").slice(-10);
+    const cleanCustomerPhone = digitsPhone.length === 10 ? digitsPhone : "9999999999";
+
+    const rawEmail = user_email || authenticatedUserEmail || "";
+    const cleanCustomerEmail = (rawEmail && rawEmail.includes("@")) ? rawEmail.trim() : `${cleanCustomerPhone}@tracexdata.online`;
+
+    const cleanCustomerName = customer_name ? String(customer_name).slice(0, 100) : cleanCustomerEmail.split("@")[0];
+
     const cfPayload = {
       order_id: orderId,
-      order_amount: Number(amount),
+      order_amount: numAmount,
       order_currency: "INR",
       customer_details: {
-        customer_id: user_id || authenticatedUserId || `guest_${Date.now()}`,
-        customer_email: user_email || authenticatedUserEmail || "customer@example.com",
-        customer_phone: customer_phone || "9999999999"
+        customer_id: cleanCustomerId,
+        customer_email: cleanCustomerEmail,
+        customer_phone: cleanCustomerPhone,
+        customer_name: cleanCustomerName
       },
       order_meta: {
         return_url: backendReturnUrl
       }
     };
 
-    const response = await fetch(`${CASHFREE_BASE_URL}/orders`, {
+    const cfBaseUrl = getCashfreeBaseUrl();
+    console.log(`[CASHFREE_DIRECT] Creating order ${orderId} for ₹${numAmount} on ${cfBaseUrl}...`);
+
+    const response = await fetch(`${cfBaseUrl}/orders`, {
       method: 'POST',
       headers: {
         'x-client-id': CASHFREE_APP_ID,
@@ -6412,50 +6477,60 @@ app.post("/api/cashfree/create-order", async (req, res) => {
       body: JSON.stringify(cfPayload)
     });
 
-    const data: any = await response.json();
-
-    if (!response.ok) {
-      console.error("Cashfree API Error:", data);
-      return res.status(response.status).json({ error: data.message || "Cashfree Error" });
+    const rawText = await response.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      data = { message: rawText };
     }
 
-    // Log entry in Supabase to track transaction trace (if database is available)
-    if (supabaseAdmin) {
+    if (!response.ok) {
+      console.error("[CASHFREE_API_ERROR]", response.status, data);
+      const errMsg = data.message || data.error || data.detail || `Payment Gateway Error (${response.status})`;
+      return res.status(response.status >= 400 && response.status < 600 ? response.status : 502).json({
+        error: errMsg,
+        detail: data
+      });
+    }
+
+    // Log entry in database to track transaction trace (if database is available)
+    if (db) {
       try {
         const isValidUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         const dbUserId = (user_id && isValidUuid(user_id)) ? user_id : (authenticatedUserId || null);
-        const dbUserEmail = user_email || authenticatedUserEmail || "N/A";
+        const dbUserEmail = cleanCustomerEmail;
         
-        await supabaseAdmin.from("payment_claims").insert({
+        await db.from("payment_claims").insert({
           payment_id: orderId,
           user_id: dbUserId,
+          user_email: dbUserEmail,
+          customer_phone: cleanCustomerPhone,
           plan_id: plan_id,
-          amount: Number(amount),
+          amount: numAmount,
           status: "pending"
         });
       } catch (dbErr) {
-        console.error("Failed to log payment claim:", dbErr);
+        console.warn("Failed to log payment claim to DB:", dbErr);
       }
-    } else {
-      console.log("[TRACEXDATA] Database offline or unconfigured. Proceeding with order creation without state logging.");
     }
 
     // Always record in-memory pending ring buffer for guaranteed auto-reconciliation
     recentPendingOrders.set(orderId, {
       orderId: orderId,
-      userId: (user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id)) ? user_id : (authenticatedUserId || null),
-      email: user_email || authenticatedUserEmail || null,
-      phone: customer_phone || null,
-      amount: Number(amount),
+      userId: authenticatedUserId || user_id || null,
+      email: cleanCustomerEmail,
+      phone: cleanCustomerPhone,
+      amount: numAmount,
       planId: plan_id,
       createdAt: Date.now()
     });
 
-    const envMode = CASHFREE_BASE_URL.includes("sandbox") ? "sandbox" : "production";
+    const envMode = cfBaseUrl.includes("sandbox") ? "sandbox" : "production";
     res.json({ ...data, cf_mode: envMode });
-  } catch (error) {
-    console.error("Cashfree Create Order Error:", error);
-    res.status(500).json({ error: "Failed to initiate payment engine" });
+  } catch (error: any) {
+    console.error("Cashfree Create Order Exception:", error);
+    res.status(500).json({ error: error.message || "Failed to initiate payment engine" });
   }
 });
 
@@ -6474,22 +6549,39 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
       console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
       const renderBackendUrl = getRenderBackendUrl();
       if (renderBackendUrl) {
-        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`);
-        data = await response.json();
+        const proxyHeaders: Record<string, string> = {};
+        if (req.headers.authorization) {
+          proxyHeaders["Authorization"] = req.headers.authorization;
+        }
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`, {
+          headers: proxyHeaders
+        });
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          data = null;
+        }
       }
     } else {
-      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${order_id}`, {
+      const cfBaseUrl = getCashfreeBaseUrl();
+      const response = await fetch(`${cfBaseUrl}/orders/${order_id}`, {
         headers: {
           'x-client-id': CASHFREE_APP_ID,
           'x-client-secret': CASHFREE_SECRET_KEY,
           'x-api-version': '2023-08-01'
         }
       });
-      data = await response.json();
+      const rawText = await response.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        data = null;
+      }
     }
 
     if (!data) {
-      return res.status(500).json({ error: "Unable to retrieve payment status from gateway" });
+      return res.status(502).json({ error: "Unable to retrieve payment status from gateway" });
     }
 
     let authUser: any = null;
@@ -6534,9 +6626,9 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
     }
 
     res.json(data);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Status Check Error:", error);
-    res.status(500).json({ error: "Failed to verify status" });
+    res.status(500).json({ error: error.message || "Failed to verify status" });
   }
 });
 
@@ -6558,18 +6650,35 @@ app.get("/api/cashfree/return", async (req, res) => {
       console.log("[BACKEND_RETURN] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
       const renderBackendUrl = getRenderBackendUrl();
       if (renderBackendUrl) {
-        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`);
-        data = await response.json().catch(() => null);
+        const proxyHeaders: Record<string, string> = {};
+        if (req.headers.authorization) {
+          proxyHeaders["Authorization"] = req.headers.authorization;
+        }
+        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${orderId}`, {
+          headers: proxyHeaders
+        });
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          data = null;
+        }
       }
     } else {
-      const response = await fetch(`${CASHFREE_BASE_URL}/orders/${orderId}`, {
+      const cfBaseUrl = getCashfreeBaseUrl();
+      const response = await fetch(`${cfBaseUrl}/orders/${orderId}`, {
         headers: {
           'x-client-id': CASHFREE_APP_ID,
           'x-client-secret': CASHFREE_SECRET_KEY,
           'x-api-version': '2023-08-01'
         }
       });
-      data = await response.json().catch(() => null);
+      const rawText = await response.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        data = null;
+      }
     }
 
     if (!data) {
@@ -10480,7 +10589,8 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
 
     if (claim && claim.status === "success") {
       // Force fulfill order to guarantee wallet balance is refreshed
-      await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone, claim.amount || amount, claim.plan_id);
+      const existingAmount = Number(claim.amount || 0);
+      await fulfillOrder(trimmedOrderId, user.id, user.email, user.phone, existingAmount, claim.plan_id);
       return res.json({
         status: "success",
         message: `Order ${trimmedOrderId} is verified and your wallet balance has been refreshed!`
@@ -10498,21 +10608,24 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
       if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
         const renderBackendUrl = getRenderBackendUrl();
         const cfResp = await fetch(`${renderBackendUrl}/api/cashfree/status/${trimmedOrderId}`);
-        const cfData = await cfResp.json();
-        if (cfResp.ok && cfData.order_status === "PAID") {
+        const rawText = await cfResp.text();
+        const cfData: any = JSON.parse(rawText);
+        if (cfResp.ok && (cfData.order_status === "PAID" || cfData.order_status === "SUCCESS")) {
           isPaid = true;
           amount = Number(cfData.order_amount || 0);
         }
       } else {
-        const cfResp = await fetch(`${CASHFREE_BASE_URL}/orders/${trimmedOrderId}`, {
+        const cfBaseUrl = getCashfreeBaseUrl();
+        const cfResp = await fetch(`${cfBaseUrl}/orders/${trimmedOrderId}`, {
           headers: {
             'x-client-id': CASHFREE_APP_ID,
             'x-client-secret': CASHFREE_SECRET_KEY,
             'x-api-version': '2023-08-01'
           }
         });
-        const cfData: any = await cfResp.json();
-        if (cfResp.ok && cfData.order_status === "PAID") {
+        const rawText = await cfResp.text();
+        const cfData: any = JSON.parse(rawText);
+        if (cfResp.ok && (cfData.order_status === "PAID" || cfData.order_status === "SUCCESS")) {
           isPaid = true;
           amount = Number(cfData.order_amount || 0);
         }
@@ -10630,17 +10743,22 @@ setupVite().then(() => {
               console.log("[EMERGENCY FIX] Expired unlimited plans in profiles.");
             }
 
-            // 2. Expire unlimited plans for all app_users in Supabase
-            console.log("[EMERGENCY FIX] Clearing unlimited_expiry in app_users...");
-            const { error: appUnlErr } = await db
-              .from("app_users")
-              .update({ unlimited_expiry: null })
-              .not("unlimited_expiry", "is", null);
-            if (appUnlErr) {
-              console.error("[EMERGENCY FIX] Error expiring unlimited in app_users:", appUnlErr);
-            } else {
-              console.log("[EMERGENCY FIX] Expired unlimited plans in app_users.");
-            }
+            // 2. Expire unlimited plans for all app_users in Supabase (if column exists)
+            try {
+              const { error: appUnlErr } = await db
+                .from("app_users")
+                .update({ unlimited_expiry: null })
+                .not("unlimited_expiry", "is", null);
+              if (appUnlErr) {
+                if (appUnlErr.message?.includes("unlimited_expiry") || appUnlErr.code === "PGRST204") {
+                  // Table schema does not have unlimited_expiry column, skip quietly
+                } else {
+                  console.warn("[EMERGENCY FIX] Notice on app_users unlimited_expiry:", appUnlErr.message || appUnlErr);
+                }
+              } else {
+                console.log("[EMERGENCY FIX] Expired unlimited plans in app_users.");
+              }
+            } catch (e) {}
 
             // 3. Clear name for any "Mitanshu Saini" profile in Supabase
             console.log("[EMERGENCY FIX] Clearing names for 'Mitanshu Saini' in profiles...");
