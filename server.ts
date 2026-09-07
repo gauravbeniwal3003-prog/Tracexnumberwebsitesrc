@@ -21,7 +21,19 @@ const resolvedDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirn
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+
+// Automatic Environment Detection for Port
+const isDevEnvironment = Boolean(
+  process.env.CONTROL_PLANE_PORT ||
+  process.env.NGINX_PORT ||
+  process.env.DISABLE_HMR ||
+  process.env.NODE_ENV !== "production"
+);
+const PORT = isDevEnvironment ? 3000 : (process.env.PORT ? parseInt(process.env.PORT) : 3000);
+
+// Global body parsers mounted early
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 async function fetchLocalApi(path: string, options?: any): Promise<any> {
   const portsToTry = [PORT];
@@ -410,7 +422,7 @@ const securityGuard = (req: express.Request, res: express.Response, next: expres
   const inspectValue = (val: any): boolean => {
     if (!val) return false;
     if (typeof val === 'string') {
-      if (val.length > 1000) return true;
+      if (val.length > 50000) return false;
       for (const pattern of suspiciousRegex) {
         if (pattern.test(val)) return true;
       }
@@ -486,11 +498,9 @@ const sensitiveLimiter = rateLimit({
   message: { status: "error", message: "Too many sensitive requests from this IP, please try again later." },
   skip: isLocalOrInternal,
 });
+// Sensitive endpoints limiter
 app.use('/api/cashfree', sensitiveLimiter);
 // Note: /api/admin is strictly protected by verifyAdminToken and is completely exempt from sensitiveLimiter
-
-// Strict JSON parsing
-app.use(express.json({ limit: '10kb' }));
 
 
 
@@ -10678,17 +10688,16 @@ app.post("/api/cashfree/claim-manual", async (req, res) => {
   }
 });
 
-// Global JSON error handler to prevent HTML stack traces or HTML errors
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error("Global Express Error Handler:", err);
-  res.status(err.status || 500).json({
-    status: "error",
-    error: err.message || "An unexpected backend error occurred."
-  });
-});
-
-// Vite middleware for development
+// Vite middleware for development & static serving for production
 async function setupVite() {
+  // Catch unmatched API routes cleanly
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({
+      status: "error",
+      error: `API route ${req.method} ${req.path} not found`
+    });
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: {
@@ -10699,21 +10708,62 @@ async function setupVite() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const candidateDirs = [
+      path.join(process.cwd(), "dist"),
+      resolvedDirname,
+      path.join(resolvedDirname, "dist"),
+      process.cwd()
+    ];
+    let distPath = candidateDirs.find(p => fs.existsSync(path.join(p, "index.html"))) || path.join(process.cwd(), "dist");
+    console.log(`[PRODUCTION_STATIC] Serving static files from: ${distPath}`);
+
     app.get("/sitemap.xml", (req, res) => {
-      res.header("Content-Type", "application/xml");
-      res.header("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "sitemap.xml"));
+      const sm = path.join(distPath, "sitemap.xml");
+      if (fs.existsSync(sm)) {
+        res.header("Content-Type", "application/xml");
+        res.header("Cache-Control", "no-cache, no-store, must-revalidate");
+        return res.sendFile(sm);
+      }
+      res.status(404).send("Not found");
     });
+
     app.get("/robots.txt", (req, res) => {
-      res.header("Content-Type", "text/plain");
-      res.sendFile(path.join(distPath, "robots.txt"));
+      const rb = path.join(distPath, "robots.txt");
+      if (fs.existsSync(rb)) {
+        res.header("Content-Type", "text/plain");
+        return res.sendFile(rb);
+      }
+      res.status(404).send("Not found");
     });
-    app.use(express.static(distPath));
+
+    app.use(express.static(distPath, { index: false, maxAge: '1d' }));
+
+    // SPA fallback: render index.html for all frontend routes
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+      }
+      const rootIndex = path.join(process.cwd(), "index.html");
+      if (fs.existsSync(rootIndex)) {
+        return res.sendFile(rootIndex);
+      }
+      res.status(200).send("<!doctype html><html><head><title>TRACEXDATA</title></head><body><div id='root'></div></body></html>");
     });
   }
+
+  // Global JSON error handler mounted after all routes
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Global Express Error Handler:", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    const statusCode = (err.status && typeof err.status === 'number' && err.status >= 400 && err.status < 600) ? err.status : 500;
+    res.status(statusCode).json({
+      status: "error",
+      error: err.message || "An unexpected backend error occurred."
+    });
+  });
 }
 
 setupVite().then(() => {
@@ -10723,8 +10773,8 @@ setupVite().then(() => {
     } catch (e) {}
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT} (NODE_ENV: ${process.env.NODE_ENV || 'dev'})`);
     loadProviderConfigsFromDatabase()
       .then(async () => {
         await backfillApiKeysForAllUsers();
