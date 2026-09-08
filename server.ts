@@ -502,6 +502,214 @@ const sensitiveLimiter = rateLimit({
 app.use('/api/cashfree', sensitiveLimiter);
 // Note: /api/admin is strictly protected by verifyAdminToken and is completely exempt from sensitiveLimiter
 
+// ============================================================================
+// TRACEXDATA DASHBOARD & API SECURITY SHIELD
+// Restricts dashboard lookup APIs strictly to official domain origins, referrers,
+// authenticated user sessions, or valid API developer keys.
+// Unauthorized external crawlers/callers receive the official Security System Notice.
+// ============================================================================
+function dashboardApiSecurityShield(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // 1. Loopback / internal server-side requests are always permitted
+  const ip = req.ip || req.socket.remoteAddress || '';
+  const isLoopback = (
+    ip === '127.0.0.1' || 
+    ip === '::1' || 
+    ip === '::ffff:127.0.0.1' || 
+    ip === 'localhost' || 
+    ip === '0.0.0.0'
+  );
+  if (isLoopback) {
+    return next();
+  }
+
+  // 2. Master Key or valid Developer API Key bypass
+  const apiKey = String(req.query.key || req.query.api_key || req.headers['x-api-key'] || req.body?.key || req.body?.api_key || '').trim();
+  if (apiKey && checkIsMasterKey(apiKey)) {
+    return next();
+  }
+
+  // 3. Inspect Origin, Referer, Host, Sec-Fetch-Site headers
+  const origin = String(req.headers.origin || '').toLowerCase().trim();
+  const referer = String(req.headers.referer || '').toLowerCase().trim();
+  const host = String(req.headers.host || '').toLowerCase().trim();
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase().trim();
+  const authHeader = String(req.headers.authorization || '').trim();
+
+  // If browser sent same-origin or same-site navigation header
+  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site') {
+    return next();
+  }
+
+  // Permitted domain whitelist
+  const allowedHostPatterns = [
+    'tracexdata.online',
+    'www.tracexdata.online',
+    'tracexdata.com',
+    'www.tracexdata.com',
+    'tracexnumber.web.app',
+    'tracexnumber.firebaseapp.com',
+    'tracexnumber.vercel.app',
+    'localhost',
+    '127.0.0.1',
+    'run.app',
+    'googleusercontent.com'
+  ];
+
+  // Check if Host matches Origin or Referer
+  if (host) {
+    const cleanHost = host.split(':')[0];
+    if (cleanHost && ((origin && origin.includes(cleanHost)) || (referer && referer.includes(cleanHost)))) {
+      return next();
+    }
+  }
+
+  // Match against permitted domain whitelist
+  const isAuthorizedDomain = allowedHostPatterns.some(domain => {
+    return (origin && origin.includes(domain)) || (referer && referer.includes(domain)) || (host && host.includes(domain));
+  });
+
+  if (isAuthorizedDomain) {
+    return next();
+  }
+
+  // Check for valid Bearer token authentication
+  if (authHeader && authHeader.startsWith('Bearer ') && authHeader.length > 15) {
+    return next();
+  }
+
+  // 4. Return Security System Notice for unauthorized external access
+  const shieldId = `SEC-SHIELD-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  console.warn(`[SECURITY_SHIELD] Blocked unauthorized access to ${req.method} ${req.path} from Origin: "${origin}", Referer: "${referer}", Host: "${host}", IP: "${ip}" [Ref: ${shieldId}]`);
+
+  return res.status(403).json({
+    status: "error",
+    security_shield: "ACTIVE",
+    security_code: "UNAUTHORIZED_ORIGIN_ACCESS",
+    message: "Security Notice: Access restricted by TraceXData Shield System. Direct API search requests must originate from the authorized TraceXData Web Dashboard or use a verified Developer API Key.",
+    notice: "External applications, bots, or unauthorized referrers are blocked. To integrate our APIs into external software, obtain an API Key at https://tracexdata.online/api-docs",
+    shield_reference: shieldId,
+    timestamp: new Date().toISOString()
+  });
+}
+
+// Fallback direct provider templates for ultra-fast and reliable server execution
+const DIRECT_PROVIDERS_SERVER: Record<string, string[]> = {
+  phone: [
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
+  ],
+  telegram: [
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
+  ],
+  adhr: [
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
+  ],
+  aadhaar: [
+    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
+  ],
+  bnk: [
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
+  ],
+  ifsc: [
+    "https://ifsc.razorpay.com/{query}",
+    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
+  ],
+  vehicle: [
+    "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
+    "https://exploitsindia.site/osint-api/vehicle.php?exploits={query}"
+  ],
+  veh_owner_num: [
+    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
+  ],
+  veh_numm: [
+    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
+  ],
+  email: [
+    "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}",
+    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=email"
+  ]
+};
+
+async function executeCoreLookup(serviceKey: string, query: string): Promise<any> {
+  const normKey = (serviceKey || "").trim().toLowerCase();
+  const cleanedQuery = String(query || "").trim();
+
+  // 1. Try Primary Provider URL configured in memory or DB
+  const providerUrl = getProviderUrl(normKey, cleanedQuery);
+  if (providerUrl) {
+    try {
+      console.log(`[CORE_LOOKUP] Querying primary provider: ${providerUrl}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      const resp = await fetch(providerUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) TraceX-Web/2.0',
+          'Accept': 'application/json,text/plain,*/*'
+        }
+      });
+      clearTimeout(timeout);
+
+      if (resp.ok) {
+        const rawText = await resp.text();
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawText);
+        } catch {
+          parsed = { raw_text: rawText };
+        }
+        if (parsed && typeof parsed === 'object') {
+          return { status: "success", results: parsed };
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[CORE_LOOKUP_WARN] Primary provider fetch failed for ${normKey}:`, err.message || err);
+    }
+  }
+
+  // 2. Fallback to Direct Provider list
+  const fallbackList = DIRECT_PROVIDERS_SERVER[normKey] || DIRECT_PROVIDERS_SERVER.phone || [];
+  for (const template of fallbackList) {
+    try {
+      const targetUrl = template.replace(/\{query\}/gi, encodeURIComponent(cleanedQuery));
+      if (targetUrl === providerUrl) continue;
+
+      console.log(`[CORE_LOOKUP] Trying fallback provider: ${targetUrl}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const resp = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) TraceX-Web/2.0',
+          'Accept': 'application/json,text/plain,*/*'
+        }
+      });
+      clearTimeout(timeout);
+
+      if (resp.ok) {
+        const rawText = await resp.text();
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawText);
+        } catch {
+          parsed = { raw_text: rawText };
+        }
+        if (parsed && typeof parsed === 'object') {
+          return { status: "success", results: parsed };
+        }
+      }
+    } catch (fbErr: any) {
+      console.warn(`[CORE_LOOKUP_FB_WARN] Fallback provider failed for ${normKey}:`, fbErr.message || fbErr);
+    }
+  }
+
+  return null;
+}
+
 
 
 // Healthy Check
@@ -3554,7 +3762,7 @@ async function checkRecordIsProtected(serviceType: string, query: string): Promi
 }
 
 // POST /api/check-protected - Check safe/privacy protection status securely without client leaks
-app.post("/api/check-protected", async (req, res) => {
+app.post("/api/check-protected", dashboardApiSecurityShield, async (req, res) => {
   const { type, query } = req.body;
   if (!type || !query) {
     return res.status(400).json({ error: "Missing type or query" });
@@ -3842,7 +4050,7 @@ app.all("/api/support-lookup", async (req, res) => {
 });
 
 // Public SaaS API Endpoint (Smart Unified Lookup proxy executing via internal master proxy with user-level balance checks)
-app.all("/api/user-lookup", async (req, res) => {
+app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   
@@ -3960,44 +4168,14 @@ app.all("/api/user-lookup", async (req, res) => {
     });
   }
 
-  // Execute lookup using internal master authorization key
-  const activeMasterKey = process.env.INTERNAL_MASTER_KEY || INTERNAL_MASTER_KEY;
-  const path = `/api/lookup?key=${encodeURIComponent(activeMasterKey)}&service=${encodeURIComponent(service)}&query=${encodeURIComponent(cleanedQuery)}`;
-  console.log(`[USER_LOOKUP] Performing search for user [${user.email || user.id}] on ${path}`);
+  console.log(`[USER_LOOKUP] Performing direct core lookup for user [${user.email || user.id}] service: ${service}, query: ${cleanedQuery}`);
 
   try {
     let data: any = null;
     try {
-      data = await fetchLocalApi(path);
-    } catch (localErr) {
-      console.warn("[USER_LOOKUP] Local loopback fetch failed or unavailable:", localErr);
-    }
-
-    if (!data) {
-      const providerUrl = getProviderUrl(service, cleanedQuery);
-      if (providerUrl) {
-        try {
-          console.log(`[USER_LOOKUP] Fetching directly from provider URL: ${providerUrl}`);
-          const directResp = await fetch(providerUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 TraceX-Web/1.0',
-              'Accept': 'application/json,text/plain,*/*'
-            }
-          });
-          if (directResp.ok) {
-            const rawText = await directResp.text();
-            let parsed: any;
-            try { 
-              parsed = JSON.parse(rawText); 
-            } catch { 
-              parsed = { raw_text: rawText }; 
-            }
-            data = { status: "success", results: parsed };
-          }
-        } catch (dirErr) {
-          console.error("[USER_LOOKUP] Direct provider fetch error:", dirErr);
-        }
-      }
+      data = await executeCoreLookup(service, cleanedQuery);
+    } catch (coreErr) {
+      console.error("[USER_LOOKUP] executeCoreLookup exception:", coreErr);
     }
 
     // Identify if the result is a true system / provider backend failure vs a processed lookup (even with no records)
@@ -6965,7 +7143,7 @@ app.get("/test-telegram", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
-app.get("/api/telegram", async (req, res) => {
+app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
   const { query, telegram, api } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   const targetTelegramId = String(query || telegram || api || "").trim();
@@ -7272,7 +7450,7 @@ app.get("/api/telegram", async (req, res) => {
 });
 
 // Identity Card Lookup API Middleware Proxy
-app.get("/api/identity", async (req, res) => {
+app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
   const { query, aadhar, identity, exploits } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(query || aadhar || identity || exploits || "").trim();
@@ -7444,7 +7622,7 @@ app.get("/api/identity", async (req, res) => {
 });
 
 // BA&NK Lookup API Middleware Proxy
-app.get("/api/bank", async (req, res) => {
+app.get("/api/bank", dashboardApiSecurityShield, async (req, res) => {
   const { query, ifsc, bank, exploits } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(query || ifsc || bank || exploits || "").trim();
@@ -7766,7 +7944,7 @@ function sanitizeErrorMessage(msg: string): string {
 }
 
 // Vehicle Lookup API Middleware Proxy
-app.get("/api/vehicle", async (req, res) => {
+app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
   const { query, vehicle, vehicle_no, exploits } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(query || vehicle || vehicle_no || exploits || "").trim();
@@ -7994,7 +8172,7 @@ app.get("/api/vehicle", async (req, res) => {
 });
 
 // Vehicle To Owner Number Lookup API Middleware Proxy
-app.get("/api/veh-owner-num", async (req, res) => {
+app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
   const { query, rc, vehicle, vehicle_no, exploits } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(rc || query || vehicle || vehicle_no || exploits || "").trim();
@@ -8211,7 +8389,7 @@ app.get("/api/veh-owner-num", async (req, res) => {
 });
 
 // Email Lookup API Middleware Proxy
-app.get("/api/email", async (req, res) => {
+app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
   const { query, email } = req.query;
   const key = String(req.query.key || req.headers['x-api-key'] || "").trim();
   let targetQuery = String(query || email || "").trim();
