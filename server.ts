@@ -526,13 +526,19 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
     'tracexnumber.web.app',
     'tracexnumber.firebaseapp.com',
     'tracexnumber.vercel.app',
+    'onrender.com',
+    'render.com',
     'localhost',
     '127.0.0.1',
+    '0.0.0.0',
+    '::1',
     '192.168.',
     '10.',
     '172.',
     'run.app',
-    'googleusercontent.com'
+    'googleusercontent.com',
+    'pages.dev',
+    'netlify.app'
   ];
 
   // If external origin or referer is explicitly provided, verify it against allowed patterns
@@ -541,6 +547,11 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
     const isRefererAllowed = !referer || allowedHostPatterns.some(domain => referer.includes(domain));
 
     if (!isOriginAllowed || !isRefererAllowed) {
+      // In non-production or localhost testing, do not block
+      if (process.env.NODE_ENV !== 'production' || host.includes('localhost') || host.includes('127.0.0.1')) {
+        return next();
+      }
+
       const shieldId = `SEC-SHIELD-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
       console.warn(`[SECURITY_SHIELD] Blocked unauthorized origin/referer access to ${req.method} ${req.path} from Origin: "${origin}", Referer: "${referer}" [Ref: ${shieldId}]`);
 
@@ -558,6 +569,11 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
 
   // 3. If browser sent same-origin or same-site navigation header
   if (secFetchSite === 'same-origin' || secFetchSite === 'same-site') {
+    return next();
+  }
+
+  // Local or developer bypass
+  if (process.env.NODE_ENV !== 'production' || !origin || !referer) {
     return next();
   }
 
@@ -2601,7 +2617,7 @@ app.post("/api/mobile-auth/signup", async (req, res) => {
     });
   } catch (err: any) {
     console.error("[MOBILE_SIGNUP_ERR]", err);
-    return res.status(500).json({ error: err.message || "Signup failed." });
+    return res.status(400).json({ error: err.message || "Signup failed." });
   }
 });
 
@@ -2667,7 +2683,7 @@ app.post("/api/mobile-auth/login", async (req, res) => {
     }
 
     if (!foundUser) {
-      return res.status(404).json({ error: `No account found for mobile +91 ${cleanPhone}. Please register first.` });
+      return res.status(400).json({ error: `No account found for mobile +91 ${cleanPhone}. Please register first.` });
     }
 
     // Password verification
@@ -2690,7 +2706,7 @@ app.post("/api/mobile-auth/login", async (req, res) => {
     }
 
     if (!passwordMatched) {
-      return res.status(401).json({ error: "Incorrect password. Please try again." });
+      return res.status(400).json({ error: "Incorrect password. Please try again." });
     }
 
     // Database Self-Healing: Sync back to profiles, app_users, and api_keys if missing

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, ShieldCheck, AlertCircle, Phone, Info, ChevronRight, User as UserIcon, Coins, LogOut, PlusCircle, X, Zap, Key, Clipboard, Loader2, Check, Terminal, Bell, BellOff, Menu, Moon, Sun, Crown, Gift, Headphones, AlertTriangle, ExternalLink, Building2, Car, Vote, Sprout, Landmark, Wallet } from 'lucide-react';
 import LiquidBackground from './components/LiquidBackground.tsx';
@@ -19,7 +19,7 @@ import { supabase } from './services/supabase.ts';
 import { cleanIndianPhoneNumber } from './services/utils.ts';
 import { initNotificationEngine } from './services/notifications.ts';
 
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import HeaderNavbar from './components/HeaderNavbar.tsx';
 import ScrollToTop from './components/ScrollToTop.tsx';
 import Terms from './pages/Terms.tsx';
@@ -38,6 +38,7 @@ import ReferralPage from './pages/ReferralPage.tsx';
 import WalletHistory from './pages/WalletHistory.tsx';
 import ServiceRecords from './pages/ServiceRecords.tsx';
 import { DashboardServicesView } from './components/DashboardServicesView.tsx';
+import { CATEGORIES } from './data/services.ts';
 
 import ErrorBoundary from './components/ErrorBoundary.tsx';
 import LandingPage from './pages/LandingPage.tsx';
@@ -218,6 +219,22 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
   const { user, profile, loading, isDemoMode, exitDemoMode, signOut, refreshProfile, updateProfileCredits } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const params = useParams<{ subserviceId?: string; categoryId?: string }>();
+
+  const effectiveService = useMemo(() => {
+    if (params.subserviceId) {
+      for (const cat of CATEGORIES) {
+        const found = cat.subservices.find(s => s.id === params.subserviceId);
+        if (found) return found.serviceType;
+      }
+    }
+    if (location.pathname === '/telegram') return 'telegram';
+    if (location.pathname === '/identity' || location.pathname === '/aadhaar') return 'adhr';
+    if (location.pathname === '/vehicle') return 'vehicle';
+    if (location.pathname === '/veh-owner-num') return 'veh_owner_num';
+    if (location.pathname === '/email') return 'email';
+    return service;
+  }, [params.subserviceId, location.pathname, service]);
 
   useEffect(() => {
     if (!loading && !user && !IS_TESTING_MODE) {
@@ -280,7 +297,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     setAadhaarPanResult(null);
     setPhoneNumber('');
     setIsLoading(false);
-  }, [location.pathname, location.search, service]);
+  }, [location.pathname, location.search, effectiveService]);
   const [copiedStep2, setCopiedStep2] = useState(false);
   const [copiedRawFeed, setCopiedRawFeed] = useState(false);
   const [copiedRawResults, setCopiedRawResults] = useState(false);
@@ -605,7 +622,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       <main className="flex-1 max-w-4xl mx-auto px-4 py-3 sm:py-4 relative z-10 w-full space-y-3">
         <ErrorBoundary fallbackTitle="Search Dashboard Error">
           <DashboardServicesView
-            initialService={service}
+            initialService={effectiveService}
             user={user}
             profile={profile}
             isDemoMode={isDemoMode}
@@ -673,8 +690,8 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
             <div className="space-y-3">
               <ErrorBoundary fallbackTitle="Search Result Display Error">
                 <FormattedResponseCard
-                  data={getFormattedResponse()}
-                  serviceType={service}
+                  data={getFormattedResponse() || result || aadhaarPanResult}
+                  serviceType={effectiveService}
                   onReset={() => {
                     setResult(null);
                     setAadhaarPanResult(null);
@@ -684,7 +701,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
                 />
               </ErrorBoundary>
 
-              {service === 'telegram' && (
+              {effectiveService === 'telegram' && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}

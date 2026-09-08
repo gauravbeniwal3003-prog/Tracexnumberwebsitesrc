@@ -65,5 +65,104 @@ export const CATEGORIES: Category[] = [
         serviceType: 'telegram'
       }
     ]
+  },
+  {
+    id: 'aadhaar',
+    title: 'Aadhaar & Identity',
+    countText: '1 Service',
+    countNum: 1,
+    iconName: 'ShieldCheck',
+    badgeBg: 'bg-amber-50 border-amber-100',
+    badgeText: 'text-amber-600',
+    subservices: [
+      {
+        id: 'aadhaar-lookup',
+        categoryId: 'aadhaar',
+        title: 'Aadhaar Identity Verification',
+        subtitle: 'Verify Aadhaar status and linked PAN / identity records',
+        fee: 10,
+        plan: 'Gold',
+        inputLabel: 'AADHAAR NUMBER',
+        inputPlaceholder: 'Enter 12-digit Aadhaar Number',
+        serviceType: 'adhr'
+      }
+    ]
+  },
+  {
+    id: 'vehicle',
+    title: 'Vehicle & Transport',
+    countText: '2 Services',
+    countNum: 2,
+    iconName: 'Car',
+    badgeBg: 'bg-orange-50 border-orange-100',
+    badgeText: 'text-orange-600',
+    subservices: [
+      {
+        id: 'rc-lookup',
+        categoryId: 'vehicle',
+        title: 'Vehicle RC Registration Lookup',
+        subtitle: 'Fetch Vehicle registration, maker, model & insurance intel',
+        fee: 10,
+        plan: 'Silver',
+        inputLabel: 'VEHICLE NUMBER',
+        inputPlaceholder: 'Enter Vehicle Number (e.g. DL01AB1234)',
+        serviceType: 'vehicle'
+      },
+      {
+        id: 'veh-owner-num',
+        categoryId: 'vehicle',
+        title: 'Vehicle Owner Phone Lookup',
+        subtitle: 'Find owner mobile number linked to vehicle registration',
+        fee: 15,
+        plan: 'VIP',
+        inputLabel: 'VEHICLE REGISTRATION NUMBER',
+        inputPlaceholder: 'Enter Vehicle Number (e.g. MH02CD5678)',
+        serviceType: 'veh_owner_num'
+      }
+    ]
+  },
+  {
+    id: 'banking',
+    title: 'Banking & IFSC',
+    countText: '1 Service',
+    countNum: 1,
+    iconName: 'Building2',
+    badgeBg: 'bg-emerald-50 border-emerald-100',
+    badgeText: 'text-emerald-600',
+    subservices: [
+      {
+        id: 'bank-ifsc-lookup',
+        categoryId: 'banking',
+        title: 'Bank IFSC & Branch Verification',
+        subtitle: 'Verify Indian bank branch, city, address & MICR code',
+        fee: 5,
+        plan: 'Silver',
+        inputLabel: 'IFSC CODE',
+        inputPlaceholder: 'Enter 11-digit IFSC code (e.g. SBIN0001234)',
+        serviceType: 'phone'
+      }
+    ]
+  },
+  {
+    id: 'email',
+    title: 'Digital & Email Intel',
+    countText: '1 Service',
+    countNum: 1,
+    iconName: 'Mail',
+    badgeBg: 'bg-purple-50 border-purple-100',
+    badgeText: 'text-purple-600',
+    subservices: [
+      {
+        id: 'email-lookup',
+        categoryId: 'email',
+        title: 'Email Address Intelligence',
+        subtitle: 'Inspect email deliverability, breach records & domain metadata',
+        fee: 5,
+        plan: 'Silver',
+        inputLabel: 'EMAIL ADDRESS',
+        inputPlaceholder: 'Enter Email Address (e.g. target@domain.com)',
+        serviceType: 'email'
+      }
+    ]
   }
 ];
