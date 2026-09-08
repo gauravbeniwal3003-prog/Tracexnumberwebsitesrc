@@ -3,24 +3,11 @@ import {
   CheckCircle2, 
   Copy, 
   Check, 
-  Printer, 
   ArrowDownToLine, 
   RotateCcw,
   ArrowLeft,
   Terminal,
-  ShieldAlert,
-  User,
-  Smartphone,
-  MapPin,
-  Mail,
-  Radio,
-  Send,
-  Info,
-  Hash,
-  Calendar,
-  Globe,
-  Database,
-  Cpu
+  FileJson
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -32,7 +19,7 @@ interface FormattedResponseCardProps {
 }
 
 const BANNED_KEYS = [
-  'api_buy_link', 'website_link', 'buy_api', 'tg_channel', 'tg_owner', 'status', 'success', 'found', 'credit', 'credits'
+  'api_buy_link', 'website_link', 'buy_api', 'tg_channel', 'tg_owner', 'credit', 'credits'
 ];
 
 function isBannedKey(key: string): boolean {
@@ -121,178 +108,33 @@ export function getCleanJsonString(data: any): string {
       return cleaned;
     }
     return JSON.stringify(cleaned, null, 2);
-  } catch (err) {
+  } catch {
     return typeof data === 'string' ? clientScrub(data) : JSON.stringify(data || {}, null, 2);
   }
 }
 
-interface ParsedField {
-  key: string;
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-}
-
-// Intelligent field labels and icons mapping
-function getFieldConfig(key: string, valueStr: string): { label: string; icon: React.ReactNode } {
-  const k = String(key || '').toLowerCase().replace(/[\s\-_]/g, '');
-  
-  if (k.includes('phone') || k.includes('mobile') || k.includes('number') || k.includes('contact')) {
-    return { label: 'Phone Number', icon: <Smartphone className="text-cyan-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('fullname') || k === 'name' || k.includes('owner') || (k === 'username' && !k.includes('tg') && !k.includes('telegram'))) {
-    return { label: 'Full Name', icon: <User className="text-blue-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('carrier') || k.includes('operator') || k.includes('sim') || k.includes('telecom') || k === 'network') {
-    return { label: 'Network Operator', icon: <Radio className="text-emerald-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('circle') || k.includes('state') || k.includes('location') || k.includes('city') || k.includes('address') || k.includes('region')) {
-    return { label: 'State / Location', icon: <MapPin className="text-amber-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('tg') || k.includes('telegram') || k === 'username' || k === 'username_or_id' || k === 'handle') {
-    return { label: 'Telegram Handle', icon: <Send className="text-sky-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('chatid') || k.includes('tgid') || k === 'id' || k === 'user_id') {
-    return { label: 'Telegram ID', icon: <Hash className="text-violet-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('email') || k.includes('mail')) {
-    return { label: 'Email Address', icon: <Mail className="text-indigo-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('date') || k.includes('time') || k.includes('expiry') || k.includes('created')) {
-    return { label: 'Timestamp', icon: <Calendar className="text-rose-400 w-4 h-4 shrink-0" /> };
-  }
-  if (k.includes('country') || k.includes('ip') || k.includes('host')) {
-    return { label: 'Origin', icon: <Globe className="text-teal-400 w-4 h-4 shrink-0" /> };
-  }
-
-  // Fallback humanized key label
-  const humanized = String(key || 'Detail')
-    .split(/[\s\-_]+/)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-    
-  return { label: humanized, icon: <Database className="text-slate-400 w-4 h-4 shrink-0" /> };
-}
-
 export default function FormattedResponseCard({ data, serviceType, onReset }: FormattedResponseCardProps) {
-  const [activeTab, setActiveTab] = useState<'json' | 'visual'>('visual');
   const [copiedJson, setCopiedJson] = useState(false);
   const navigate = useNavigate();
 
   const cleanJsonStr = getCleanJsonString(data);
 
-  // Parse the object safely into structured fields
-  const getParsedFields = (): ParsedField[] => {
-    let parsedObj: any = null;
+  const handleCopyJson = async () => {
     try {
-      if (typeof data === 'string') {
-        const trimmed = data.trim();
-        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-          parsedObj = JSON.parse(trimmed);
-        } else {
-          parsedObj = data;
-        }
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cleanJsonStr);
       } else {
-        parsedObj = data;
+        const textarea = document.createElement('textarea');
+        textarea.value = cleanJsonStr;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
       }
-    } catch {
-      parsedObj = data;
-    }
-
-    const fields: ParsedField[] = [];
-
-    const extractFields = (obj: any, prefix = '') => {
-      if (obj === null || obj === undefined) return;
-
-      if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
-        const valClean = clientScrub(obj);
-        if (valClean) {
-          const labelKey = prefix || 'Result';
-          const { label, icon } = getFieldConfig(labelKey, valClean);
-          fields.push({ key: labelKey, label, value: valClean, icon });
-        }
-        return;
-      }
-
-      if (Array.isArray(obj)) {
-        obj.forEach((item, idx) => {
-          if (item !== null && item !== undefined) {
-            const itemPrefix = prefix ? `${prefix} #${idx + 1}` : `Record #${idx + 1}`;
-            extractFields(item, itemPrefix);
-          }
-        });
-        return;
-      }
-
-      if (typeof obj === 'object') {
-        for (const [key, value] of Object.entries(obj)) {
-          if (isBannedKey(key)) continue;
-          if (value === null || value === undefined) continue;
-
-          const currentKey = prefix ? `${prefix} - ${key}` : key;
-          if (typeof value === 'object') {
-            extractFields(value, currentKey);
-          } else {
-            const valClean = clientScrub(value);
-            if (valClean) {
-              const { label, icon } = getFieldConfig(key, valClean);
-              fields.push({ key: currentKey, label, value: valClean, icon });
-            }
-          }
-        }
-      }
-    };
-
-    try {
-      if (typeof parsedObj === 'string' && !parsedObj.startsWith('{') && !parsedObj.startsWith('[')) {
-        const rawText = clientScrub(parsedObj);
-        const lines = rawText.split('\n');
-        let index = 1;
-        lines.forEach(line => {
-          const cleanedLine = line.trim();
-          if (!cleanedLine) return;
-          if (cleanedLine.includes(':')) {
-            const colonIdx = cleanedLine.indexOf(':');
-            const k = cleanedLine.substring(0, colonIdx).trim();
-            const v = cleanedLine.substring(colonIdx + 1).trim();
-            if (k && v && !isBannedKey(k)) {
-              const valClean = clientScrub(v);
-              if (valClean) {
-                const { label, icon } = getFieldConfig(k, valClean);
-                fields.push({ key: k, label, value: valClean, icon });
-              }
-            }
-          } else {
-            const valClean = clientScrub(cleanedLine);
-            if (valClean) {
-              fields.push({
-                key: `info_${index}`,
-                label: `Record Info #${index++}`,
-                value: valClean,
-                icon: <Database className="text-slate-400 w-4 h-4 shrink-0" />
-              });
-            }
-          }
-        });
-      } else {
-        extractFields(parsedObj);
-      }
-    } catch (e) {
-      console.warn("Field extraction fallback:", e);
-    }
-
-    return fields;
-  };
-
-  const parsedFields = getParsedFields();
-
-  const handleCopyJson = () => {
-    try {
-      navigator.clipboard.writeText(cleanJsonStr);
       setCopiedJson(true);
       setTimeout(() => setCopiedJson(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      console.error('Failed to copy JSON:', err);
     }
   };
 
@@ -302,7 +144,7 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `tracex_response_${serviceType || 'data'}_${Date.now()}.json`;
+      a.download = `response_${serviceType || 'data'}_${Date.now()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -312,177 +154,122 @@ export default function FormattedResponseCard({ data, serviceType, onReset }: Fo
     }
   };
 
-  const handlePrint = () => {
-    try {
-      window.print();
-    } catch (err) {
-      console.error('Failed to print:', err);
-    }
-  };
-
   return (
-    <div className="w-full max-w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] p-4 sm:p-6 space-y-5 my-4 font-sans text-slate-100 overflow-hidden">
+    <div className="w-full max-w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] p-4 sm:p-6 space-y-4 font-sans text-slate-100 overflow-hidden">
       
       {/* Top Header Status Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black text-xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Record Found</span>
+            <span>Response Received</span>
           </div>
           {serviceType && (
             <span className="text-[10px] font-mono font-black uppercase tracking-widest px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
-              {serviceType === 'phone' ? 'Number Lookup' : serviceType === 'telegram' ? 'Telegram OSINT' : serviceType}
+              {serviceType === 'phone' ? 'Number Lookup' : serviceType === 'telegram' ? 'Telegram OSINT' : serviceType === 'ifsc' || serviceType === 'bnk' ? 'Bank IFSC' : serviceType}
             </span>
           )}
+          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
+            <FileJson className="w-3 h-3" />
+            JSON Output
+          </span>
         </div>
 
-        {/* View Switcher Tabs */}
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800/80">
+        {/* Copy Button Quick Action Bar */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab('visual')}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'visual'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-100'
+            onClick={handleCopyJson}
+            className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-md ${
+              copiedJson 
+                ? 'bg-emerald-500 text-slate-950 scale-105' 
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white active:scale-95'
             }`}
           >
-            📊 Formatted Card
+            {copiedJson ? (
+              <>
+                <Check className="w-4 h-4 text-slate-950" />
+                <span>Copied to Clipboard!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-white" />
+                <span>Copy JSON</span>
+              </>
+            )}
           </button>
+
           <button
             type="button"
-            onClick={() => setActiveTab('json')}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'json'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-slate-100'
-            }`}
+            onClick={handleDownloadJson}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+            title="Download JSON file"
           >
-            💻 Raw JSON
+            <ArrowDownToLine className="w-4 h-4 text-slate-300" />
+            <span className="hidden sm:inline">Save</span>
           </button>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      {activeTab === 'visual' ? (
-        <div className="space-y-4">
-          
-          {/* Formatted Fields Grid */}
-          {parsedFields.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {parsedFields.map((field, idx) => (
-                <div 
-                  key={`${field.key}-${idx}`} 
-                  className="bg-slate-950 border border-slate-800/80 p-4 rounded-2xl flex items-start gap-3.5 hover:border-emerald-500/30 transition-all shadow-sm"
-                >
-                  <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 mt-0.5">
-                    {field.icon}
-                  </div>
-                  <div className="space-y-1 overflow-hidden min-w-0 flex-1">
-                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">
-                      {field.label}
-                    </span>
-                    <span className="text-sm font-bold text-slate-100 block break-all font-mono">
-                      {field.value}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-8 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
-              <Cpu className="w-10 h-10 text-slate-600 mx-auto animate-pulse" />
-              <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto">
-                Displaying full query results in Developer JSON tab.
-              </p>
-            </div>
-          )}
-
-          {/* Verification Badge */}
-          <div className="p-3 px-4 rounded-xl bg-slate-950/50 border border-slate-800/80 text-[11px] text-slate-400 font-medium flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Cryptographically verified by TRACEXDATA decentralized registry.</span>
-            </span>
-            <span className="text-[10px] font-bold text-emerald-400 font-mono">SECURE RECORD</span>
+      {/* JSON Code Display Window */}
+      <div className="relative w-full max-w-full rounded-2xl bg-slate-950 border border-slate-800/90 overflow-hidden shadow-inner">
+        <div className="flex items-center justify-between px-4 py-2 bg-slate-900/80 border-b border-slate-800/80 text-[11px] font-mono text-slate-400">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+            <span>data.json</span>
           </div>
-
+          <span className="text-[10px] text-slate-500">Click Copy JSON or select all to copy</span>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Action Bar for Developer JSON */}
-          <div className="flex items-center justify-end gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleCopyJson}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-            >
-              {copiedJson ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-white" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-white" />
-                  <span>Copy JSON</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadJson}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-            >
-              <ArrowDownToLine className="w-3.5 h-3.5 text-slate-300" />
-              <span>Download</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold transition-all shadow-xs cursor-pointer"
-              title="Print Output"
-            >
-              <Printer className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Pretty-Printed JSON Code View */}
-          <div className="relative w-full max-w-full overflow-hidden">
-            <pre className="w-full text-left font-mono text-xs text-emerald-400 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800/90 overflow-x-auto whitespace-pre-wrap break-all sm:break-words leading-relaxed max-h-[400px] overflow-y-auto select-all shadow-inner">
-              {cleanJsonStr}
-            </pre>
-          </div>
-        </div>
-      )}
+        
+        <pre className="w-full text-left font-mono text-xs sm:text-[13px] text-emerald-400 p-4 sm:p-5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-[520px] overflow-y-auto select-all">
+          {cleanJsonStr}
+        </pre>
+      </div>
 
       {/* Bottom Actions Bar */}
-      <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => {
             if (onReset) onReset();
             navigate('/dashboard');
           }}
-          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
         >
           <ArrowLeft className="w-4 h-4 text-slate-400" />
-          <span>Return to Dashboard</span>
+          <span>Dashboard</span>
         </button>
 
-        {onReset && (
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
-            onClick={onReset}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+            onClick={handleCopyJson}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
           >
-            <RotateCcw className="w-4 h-4" />
-            <span>Search Another Record</span>
+            {copiedJson ? (
+              <>
+                <Check className="w-4 h-4 text-white" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-white" />
+                <span>Copy JSON</span>
+              </>
+            )}
           </button>
-        )}
+
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>New Search</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
