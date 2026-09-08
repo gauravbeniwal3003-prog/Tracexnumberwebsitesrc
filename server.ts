@@ -22,14 +22,8 @@ const resolvedDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirn
 const app = express();
 app.set('trust proxy', 1);
 
-// Automatic Environment Detection for Port
-const isDevEnvironment = Boolean(
-  process.env.CONTROL_PLANE_PORT ||
-  process.env.NGINX_PORT ||
-  process.env.DISABLE_HMR ||
-  process.env.NODE_ENV !== "production"
-);
-const PORT = isDevEnvironment ? 3000 : (process.env.PORT ? parseInt(process.env.PORT) : 3000);
+// Dynamic Environment Detection for Port
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Global body parsers mounted early
 app.use(express.json({ limit: '10mb' }));
