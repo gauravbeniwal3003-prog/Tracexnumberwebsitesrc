@@ -263,44 +263,6 @@ export function DashboardServicesView({
         {/* Centered Terminal Container */}
         <div className="w-full max-w-md relative z-10 flex flex-col items-center">
           
-          {/* Top Quick Navigation & Switcher */}
-          <div className="w-full flex items-center justify-between gap-2 mb-3">
-            <button
-              onClick={handleBackToCategories}
-              className="px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white border border-slate-200/90 text-slate-700 hover:text-blue-600 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95 shrink-0"
-              title="Return to Dashboard"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>All Services</span>
-            </button>
-
-            {/* Quick 2-Option Switcher */}
-            <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => navigate('/service/number-lookup')}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  selectedSubService.serviceType === 'phone'
-                    ? 'bg-white text-blue-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Number
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/service/telegram-lookup')}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  selectedSubService.serviceType === 'telegram'
-                    ? 'bg-white text-blue-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Telegram
-              </button>
-            </div>
-          </div>
-
           {/* Top Service Icon Box */}
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50/90 border border-blue-100/90 flex items-center justify-center p-2.5 shadow-xs mb-2 text-blue-600">
             <CategoryIcon name={selectedSubService.categoryId} className="w-8 h-8 sm:w-9 sm:h-9" />

@@ -779,6 +779,35 @@ async function executeCoreLookup(serviceKey: string, query: string): Promise<any
     }
   }
 
+  // 3. Seamless failover to live Render backend if running on an external host or dev preview
+  const isRenderHost = Boolean(process.env.RENDER || process.env.IS_RENDER);
+  const renderServerUrl = getRenderBackendUrl();
+  if (!isRenderHost && renderServerUrl) {
+    try {
+      console.log(`[CORE_LOOKUP] Attempting Render backend fallback for ${normKey}: ${renderServerUrl}/api/user-lookup`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      const renderResp = await fetch(`${renderServerUrl}/api/user-lookup`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${RENDER_MASTER_UNLIMITED_API_KEY}`
+        },
+        body: JSON.stringify({ service: normKey, query: cleanedQuery })
+      });
+      clearTimeout(timeout);
+      if (renderResp.ok) {
+        const renderData = await renderResp.json();
+        if (renderData && (renderData.status === "success" || renderData.status === true || renderData.results || renderData.data)) {
+          return renderData;
+        }
+      }
+    } catch (rErr: any) {
+      console.warn(`[CORE_LOOKUP_RENDER_WARN] Render server fallback failed for ${normKey}:`, rErr.message || rErr);
+    }
+  }
+
   return null;
 }
 

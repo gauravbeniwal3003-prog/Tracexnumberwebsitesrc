@@ -137,17 +137,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         });
       } catch (networkErr) {
-        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed, retrying relative /api/profile:", networkErr);
-        if (baseUrl) {
-          try {
-            response = await fetch('/api/profile', {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            });
-          } catch (retryErr) {
-            console.warn("[FETCH_PROFILE_ERR] Relative profile fetch also failed:", retryErr);
-          }
+        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed, retrying with Render backend:", networkErr);
+        try {
+          const fallbackUrl = primaryUrl.includes("onrender.com") ? "/api/profile" : "https://tracexdata-api.onrender.com/api/profile";
+          response = await fetch(fallbackUrl, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+        } catch (retryErr) {
+          console.warn("[FETCH_PROFILE_ERR] Fallback profile fetch also failed:", retryErr);
         }
       }
 

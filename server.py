@@ -142,7 +142,11 @@ def is_node_healthy() -> bool:
 async def lifespan(app: FastAPI):
     global http_client
     log(f"FastAPI Gateway starting on external port {external_port} (Internal Node target: {node_port})...")
-    spawn_node_process()
+    
+    # Launch Node.js process and dependency check in background thread
+    # so uvicorn binds to the external port immediately (< 1 second)
+    spawn_thread = threading.Thread(target=spawn_node_process, daemon=True, name="NodeSpawner")
+    spawn_thread.start()
     
     # Initialize AsyncClient within the running asyncio event loop
     http_client = httpx.AsyncClient(
@@ -177,16 +181,34 @@ app.add_middleware(
 
 
 @app.get("/healthz")
+@app.get("/health")
 @app.get("/gateway/health")
 def gateway_health():
-    """Gateway health check endpoint."""
+    """Instant gateway health check endpoint."""
     node_alive = is_node_healthy()
     return {
+        "status": "healthy",
         "gateway": "online",
-        "node_backend": "online" if node_alive else "restarting/offline",
+        "node_backend": "online" if node_alive else "initializing",
         "port": external_port,
         "internal_node_port": node_port
     }
+
+
+@app.head("/")
+@app.get("/")
+async def root_probe(request: Request):
+    """Fast probe endpoint for platform deployment scanners (Render, Cloud Run, etc.)."""
+    if not is_node_healthy() or is_installing_deps:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "online",
+                "service": "TraceXData API Gateway",
+                "engine": "initializing" if is_installing_deps else "starting"
+            }
+        )
+    return await proxy_all(request, "")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -194,9 +216,18 @@ async def proxy_all(request: Request, path: str):
     """Transparently proxies all incoming requests to the Node.js Express backend."""
     global node_process, http_client
 
+    # If Node is not running, trigger spawn
     if not is_node_healthy():
-        log(f"Node.js appears down upon request to /{path}. Triggering self-healing spawn...")
-        spawn_node_process()
+        log(f"Node.js appears down upon request to /{path}. Triggering spawn...")
+        spawn_thread = threading.Thread(target=spawn_node_process, daemon=True)
+        spawn_thread.start()
+
+    # If dependencies are installing or Node is booting, wait up to 25 seconds for it to become ready
+    if is_installing_deps or not is_node_healthy():
+        for _ in range(30):
+            if is_node_healthy() and not is_installing_deps:
+                break
+            await asyncio.sleep(0.8)
 
     if http_client is None or http_client.is_closed:
         http_client = httpx.AsyncClient(
@@ -212,15 +243,17 @@ async def proxy_all(request: Request, path: str):
     headers = dict(request.headers)
     orig_host = headers.get("host", f"127.0.0.1:{external_port}")
     headers["x-forwarded-host"] = orig_host
-    headers["x-forwarded-proto"] = request.url.scheme or "http"
+    headers["x-forwarded-proto"] = request.url.scheme or "https"
     if request.client and request.client.host:
         headers["x-forwarded-for"] = request.client.host
-    headers["host"] = f"127.0.0.1:{node_port}"
+    
+    # Remove hop-by-hop and problematic headers
     headers.pop("content-length", None)
+    headers.pop("host", None)
 
     body = await request.body()
 
-    max_retries = 4
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             response = await http_client.request(
@@ -243,30 +276,31 @@ async def proxy_all(request: Request, path: str):
                 status_code=response.status_code,
                 headers=resp_headers
             )
-        except (httpx.ConnectError, httpx.RemoteProtocolError) as e:
+        except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout) as e:
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(1.2)
                 continue
             else:
                 return JSONResponse(
-                    status_code=502,
+                    status_code=503,
                     content={
                         "status": "error",
-                        "error_type": "backend_gateway_error",
-                        "message": "Backend engine is initializing. Please retry in a moment.",
+                        "error_type": "backend_gateway_initializing",
+                        "message": "TraceX backend engine is starting up. Please retry in a few seconds.",
                         "details": str(e)
                     }
                 )
         except Exception as e:
             log(f"Proxy error on {request.method} {req_path}: {e}")
             return JSONResponse(
-                status_code=500,
+                status_code=502,
                 content={
                     "status": "error",
                     "error_type": "proxy_error",
                     "message": f"Proxy request failed: {str(e)}"
                 }
             )
+
 
 
 if __name__ == "__main__":

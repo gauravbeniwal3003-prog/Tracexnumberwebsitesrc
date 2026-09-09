@@ -6,9 +6,21 @@
 import { supabase } from './supabase.ts';
 
 export const RENDER_MASTER_UNLIMITED_API_KEY = "tracex_unlimited_master_render_never_expire_key_2026";
+export const RENDER_BACKEND_URL = (
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_RENDER_BACKEND_URL) || 
+  "https://tracexdata-api.onrender.com"
+).trim().replace(/\/$/, "");
 
 export const getApiBaseUrl = (): string => {
-  return ''; // Always return relative path for safer network fetching and complete backend URL hiding
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    // If running in local dev preview environment alongside server.ts on port 3000
+    if (hostname.includes('ais-dev') || hostname === 'localhost' || hostname === '127.0.0.1') {
+      return '';
+    }
+  }
+  // In deployed production environments (e.g. ais-pre-*, custom domains, static hosting), always route to our Render server
+  return RENDER_BACKEND_URL;
 };
 
 export const getAbsoluteBaseUrl = (): string => {
@@ -173,82 +185,6 @@ export const scrubBranding = (obj: any): any => {
   return obj;
 };
 
-const DIRECT_PROVIDERS: Record<string, string[]> = {
-  phone: [
-    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
-  ],
-  telegram: [
-    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
-  ],
-  adhr: [
-    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
-  ],
-  aadhaar: [
-    "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
-    "https://exploitsindia.site/osint-api/aadhar.php?exploits={query}"
-  ],
-  bnk: [
-    "https://ifsc.razorpay.com/{query}",
-    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
-  ],
-  ifsc: [
-    "https://ifsc.razorpay.com/{query}",
-    "https://exploitsindia.site/osint-api/bank.php?exploits={query}"
-  ],
-  vehicle: [
-    "https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits={query}",
-    "https://exploitsindia.site/osint-api/vehicle.php?exploits={query}"
-  ],
-  veh_owner_num: [
-    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
-  ],
-  veh_numm: [
-    "https://vehicle2.asurpapa.workers.dev/api?key=1&rc={query}"
-  ],
-  email: [
-    "https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query={query}&type=email",
-    "http://uersxinfo.in/api?key=498wlpajf&type=mail&term={query}"
-  ]
-};
-
-async function queryDirectProvider(service: string, query: string): Promise<any> {
-  const normKey = (service || '').trim().toLowerCase();
-  const endpoints = DIRECT_PROVIDERS[normKey] || DIRECT_PROVIDERS.phone || [];
-  
-  for (const template of endpoints) {
-    const targetUrl = template.replace('{query}', encodeURIComponent(query));
-    try {
-      const resp = await fetch(targetUrl);
-      if (resp.ok) {
-        const text = await resp.text();
-        try {
-          const parsed = JSON.parse(text);
-          if (parsed && typeof parsed === 'object') return parsed;
-        } catch {
-          if (text && text.trim().length > 0) return { raw_text: text };
-        }
-      }
-    } catch {
-      // CORS or network error, fallback to proxy
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        const pResp = await fetch(proxyUrl);
-        if (pResp.ok) {
-          const pText = await pResp.text();
-          try {
-            const parsed = JSON.parse(pText);
-            if (parsed && typeof parsed === 'object') return parsed;
-          } catch {
-            if (pText && pText.trim().length > 0) return { raw_text: pText };
-          }
-        }
-      } catch {}
-    }
-  }
-  return null;
-}
-
 /**
  * Universal Core Lookup Dispatcher
  * Directly queries the backend proxy with user authentication and returns clean JSON results.
@@ -266,19 +202,20 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
 
   const token = await getAuthToken();
   const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}/api/user-lookup`;
+  const primaryUrl = `${baseUrl.replace(/\/$/, "")}/api/user-lookup`;
+  const renderFallbackUrl = `${RENDER_BACKEND_URL}/api/user-lookup`;
 
-  try {
-    const headers: Record<string, string> = {
-      'Accept': 'application/json,text/plain,*/*',
-      'Content-Type': 'application/json'
-    };
+  const headers: Record<string, string> = {
+    'Accept': 'application/json,text/plain,*/*',
+    'Content-Type': 'application/json'
+  };
 
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
-    const response = await fetch(url, {
+  const performFetch = async (targetUrl: string) => {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify({ service, query: cleanQ }),
@@ -290,7 +227,15 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     try {
       data = JSON.parse(rawText);
     } catch {
-      // If plain text was returned
+      // If HTML or error page was returned from static host or proxy failure
+      if (
+        rawText.toLowerCase().includes('<!doctype') || 
+        rawText.toLowerCase().includes('<html') || 
+        rawText.toLowerCase().includes('error: page not found') ||
+        rawText.toLowerCase().includes('404 page not found')
+      ) {
+        throw new Error(`Endpoint returned non-JSON response from ${targetUrl}`);
+      }
       if (rawText.toLowerCase().includes('no data') || rawText.toLowerCase().includes('no record')) {
         return {
           status: false,
@@ -309,8 +254,50 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       };
     }
 
+    return data;
+  };
+
+  try {
+    let data: any = null;
+
+    // Try primary endpoint first
+    try {
+      data = await performFetch(primaryUrl);
+    } catch (primaryErr) {
+      console.warn(`[UniversalLookup] Primary endpoint (${primaryUrl}) failed:`, primaryErr);
+      // If primary endpoint failed or was relative, immediately use our Render server
+      if (primaryUrl !== renderFallbackUrl) {
+        console.log(`[UniversalLookup] Seamlessly falling back to Render server: ${renderFallbackUrl}`);
+        data = await performFetch(renderFallbackUrl);
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    // If primary returned a non-OK or empty error object, retry via Render server
+    if ((!data || data.status === false || data.status === "error") && primaryUrl !== renderFallbackUrl) {
+      try {
+        console.log(`[UniversalLookup] Retrying query via Render backend server...`);
+        const retryData = await performFetch(renderFallbackUrl);
+        if (retryData && (retryData.status === "success" || retryData.status === true)) {
+          data = retryData;
+        }
+      } catch (retryErr) {
+        console.warn(`[UniversalLookup] Render retry failed:`, retryErr);
+      }
+    }
+
     if (data?.status === "success" || data?.status === true) {
       const cleanResults = scrubBranding(data.results || data.data || data);
+
+      if (data?.results_found === 0 || !cleanResults || (Array.isArray(cleanResults) && cleanResults.length === 0)) {
+        return {
+          status: false,
+          results: {},
+          error: data.message || "Sorry, we don't have data related to the query.",
+          remaining_balance: data.remaining_balance
+        };
+      }
 
       // Inspect if cleanResults contains error payload or no data notice
       if (cleanResults && typeof cleanResults === 'object') {
@@ -353,23 +340,7 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     };
 
   } catch (err: any) {
-    console.warn(`[UniversalLookup] Backend proxy unreachable for ${service}, initiating hardcoded fallback:`, err);
-    
-    // Direct client fallback
-    try {
-      const directData = await queryDirectProvider(service, cleanQ);
-      if (directData) {
-        const cleanResults = scrubBranding(directData.results || directData.data || directData);
-        return {
-          status: true,
-          results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
-          raw_results: typeof cleanResults === 'string' ? cleanResults : undefined
-        };
-      }
-    } catch (directErr) {
-      console.error("[UniversalLookup] Direct provider fallback error:", directErr);
-    }
-
+    console.error(`[UniversalLookup] Query failed:`, err);
     return {
       status: false,
       results: {},
