@@ -513,16 +513,37 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
   const origin = String(req.headers.origin || '').toLowerCase().trim();
   const referer = String(req.headers.referer || '').toLowerCase().trim();
   const host = String(req.headers.host || '').toLowerCase().trim();
+  const hostClean = host.split(':')[0];
   const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase().trim();
   const authHeader = String(req.headers.authorization || '').trim();
   const ip = req.ip || req.socket.remoteAddress || '';
 
+  // Same-origin, same-host, or browser internal dashboard requests are ALWAYS permitted
+  const isSameHost = (
+    !origin ||
+    (hostClean && origin.includes(hostClean)) ||
+    (hostClean && referer.includes(hostClean)) ||
+    secFetchSite === 'same-origin' ||
+    secFetchSite === 'same-site'
+  );
+  if (isSameHost) {
+    return next();
+  }
+
+  // Any authenticated user session is ALWAYS permitted
+  if (authHeader && (authHeader.startsWith('Bearer ') || authHeader.length > 10)) {
+    return next();
+  }
+
+  // Local or developer testing bypass
+  if (process.env.NODE_ENV !== 'production' || hostClean === 'localhost' || hostClean === '127.0.0.1' || hostClean === '0.0.0.0') {
+    return next();
+  }
+
   // Permitted domain whitelist
   const allowedHostPatterns = [
     'tracexdata.online',
-    'www.tracexdata.online',
     'tracexdata.com',
-    'www.tracexdata.com',
     'tracexnumber.web.app',
     'tracexnumber.firebaseapp.com',
     'tracexnumber.vercel.app',
@@ -532,14 +553,17 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
     '127.0.0.1',
     '0.0.0.0',
     '::1',
-    '192.168.',
-    '10.',
-    '172.',
     'run.app',
     'googleusercontent.com',
     'pages.dev',
-    'netlify.app'
+    'netlify.app',
+    'vercel.app',
+    'web.app'
   ];
+
+  if (hostClean) {
+    allowedHostPatterns.push(hostClean);
+  }
 
   // If external origin or referer is explicitly provided, verify it against allowed patterns
   if (origin || referer) {
@@ -547,13 +571,8 @@ function dashboardApiSecurityShield(req: express.Request, res: express.Response,
     const isRefererAllowed = !referer || allowedHostPatterns.some(domain => referer.includes(domain));
 
     if (!isOriginAllowed || !isRefererAllowed) {
-      // In non-production or localhost testing, do not block
-      if (process.env.NODE_ENV !== 'production' || host.includes('localhost') || host.includes('127.0.0.1')) {
-        return next();
-      }
-
       const shieldId = `SEC-SHIELD-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      console.warn(`[SECURITY_SHIELD] Blocked unauthorized origin/referer access to ${req.method} ${req.path} from Origin: "${origin}", Referer: "${referer}" [Ref: ${shieldId}]`);
+      console.warn(`[SECURITY_SHIELD] Blocked unauthorized external origin/referer access to ${req.method} ${req.path} from Origin: "${origin}", Referer: "${referer}" [Ref: ${shieldId}]`);
 
       return res.status(403).json({
         status: "error",
@@ -2117,6 +2136,93 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   return merged;
 }
 
+// Universal High-Reliability Auto-Refund & Credit Restoration Engine
+async function autoRefundUserCredits(
+  userId: string | null | undefined,
+  userEmail: string | null | undefined,
+  userPhone: string | null | undefined,
+  fee: number,
+  serviceName: string,
+  query: string,
+  reason: string = "No data found"
+): Promise<{ success: boolean; newBalance: number }> {
+  if (!fee || fee <= 0) return { success: false, newBalance: 0 };
+  const db = supabaseAdmin || supabase;
+  
+  try {
+    const userProfile = await getUnifiedUserProfile(userId || "", userEmail, userPhone);
+    const currentBal = Number(userProfile?.wallet_balance !== undefined && userProfile.wallet_balance !== null
+      ? userProfile.wallet_balance
+      : (userProfile?.credits !== undefined && userProfile.credits !== null ? userProfile.credits : 0));
+    
+    const newBal = Number((currentBal + fee).toFixed(2));
+    const finalUserId = userId || userProfile?.id;
+    const finalEmail = userEmail || userProfile?.email || (userPhone ? `${userPhone}@tracexdata.com` : "user@tracexdata.online");
+    const finalPhone = userPhone || userProfile?.phone || "";
+    const fullName = userProfile?.full_name || "User";
+
+    // Atomically sync credits across in-memory cache, Supabase profiles, and Supabase app_users
+    await updateUserCreditsAcrossAllStores(
+      finalUserId,
+      finalEmail,
+      finalPhone,
+      newBal,
+      fullName,
+      userProfile?.unlimited_expiry,
+      userProfile?.user_discount_percent,
+      userProfile?.is_free_credit_claimed !== undefined ? userProfile.is_free_credit_claimed : true
+    );
+
+    if (db && finalUserId) {
+      const refCode = `REF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      try {
+        await db.from("wallet_transactions").insert({
+          user_id: finalUserId,
+          user_email: finalEmail,
+          amount: fee,
+          type: "Refund",
+          service: `Auto-Refund: ${reason} (${serviceName.toUpperCase()}: ${query})`,
+          balance_after: newBal,
+          status: "SUCCESS",
+          created_at: new Date().toISOString()
+        });
+      } catch (txErr) {
+        console.error("[AUTO_REFUND_TX_ERR]", txErr);
+      }
+
+      try {
+        await db.from("service_records").insert({
+          user_id: finalUserId,
+          client_name: finalEmail,
+          service_name: `${serviceName.toUpperCase()} (REFUNDED)`,
+          reference_code: refCode,
+          status: "REFUNDED",
+          result_payload: {
+            status: "refunded",
+            service: serviceName,
+            query: query,
+            reason: reason,
+            message: `${reason}. ₹${fee.toFixed(2)} search charge refunded to your wallet.`,
+            refunded: true,
+            refund_amount: fee,
+            remaining_balance: newBal
+          },
+          log_number: Math.floor(100 + Math.random() * 900),
+          created_at: new Date().toISOString()
+        });
+      } catch (recErr) {
+        console.error("[AUTO_REFUND_REC_ERR]", recErr);
+      }
+    }
+
+    console.log(`[TRACEXDATA AUTO-REFUND] Successfully refunded ₹${fee.toFixed(2)} to ${finalEmail}. New Balance: ₹${newBal.toFixed(2)}`);
+    return { success: true, newBalance: newBal };
+  } catch (err) {
+    console.error("[TRACEXDATA AUTO-REFUND EXCEPTION]", err);
+    return { success: false, newBalance: 0 };
+  }
+}
+
 // GET /api/profile - Highly secure backend profile retrieval and creation
 app.get("/api/profile", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -2330,7 +2436,7 @@ export async function syncMobileUserToDatabases(userObj: {
     : getUuidForPhone(cleanPhone);
   const userEmail = userObj.email || `${cleanPhone}@tracexdata.com`;
   const nameToUse = userObj.full_name || `User ${cleanPhone.slice(-4)}`;
-  const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 0.00;
+  const creditsToUse = userObj.credits !== undefined ? Number(userObj.credits) : 25.00;
   const nowIso = userObj.created_at || new Date().toISOString();
 
   let existingDbCredits: number | null = null;
@@ -2594,7 +2700,7 @@ app.post("/api/mobile-auth/signup", async (req, res) => {
       password_hash: passwordHash,
       full_name: nameToUse,
       email: `${cleanPhone}@tracexdata.com`,
-      credits: 0.00,
+      credits: 25.00,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -3216,15 +3322,18 @@ app.get("/api/wallet/history", async (req, res) => {
       }
       if (!resolvedOrderId) resolvedOrderId = "N/A";
 
-      const isCredit = (t.type || "Debit").toLowerCase() === "credit";
-      const isCredited = isCredit ? (!t.status || t.status.toUpperCase() === "SUCCESS" || t.status.toUpperCase().startsWith("SUCCESS")) : false;
+      const rawType = (t.type || "Debit").toString();
+      const isCredit = rawType.toLowerCase() === "credit";
+      const isRefund = rawType.toLowerCase() === "refund";
+      const formattedType = isRefund ? "Refund" : (isCredit ? "Credit" : "Debit");
+      const isCredited = isCredit || isRefund ? (!t.status || t.status.toUpperCase() === "SUCCESS" || t.status.toUpperCase().startsWith("SUCCESS")) : false;
       const item: any = {
         id: t.id || `tx_${idx}_${Date.now()}`,
         order_id: resolvedOrderId,
-        service: t.service_name || t.description || (isCredit ? "Wallet Recharge" : "Search Query Lookup"),
-        type: isCredit ? "Credit" : "Debit",
+        service: t.service_name || t.service || t.description || (isRefund ? "Lookup Auto-Refund" : isCredit ? "Wallet Recharge" : "Search Query Lookup"),
+        type: formattedType,
         amount: Number(t.amount || 0),
-        balanceAfter: Number(t.balance_after || 0),
+        balanceAfter: Number(t.balance_after !== undefined && t.balance_after !== null ? t.balance_after : 0),
         status: t.status ? t.status.toUpperCase() : "SUCCESS",
         credited: isCredited,
         date: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString()
@@ -4130,7 +4239,7 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   
-  const service = req.method === "POST" ? req.body?.service : req.query?.service;
+  let service = String(req.method === "POST" ? req.body?.service : req.query?.service || '').trim().toLowerCase();
   const query = req.method === "POST" ? req.body?.query : req.query?.query;
   if (['pancard', 'pan', 'pan_to_name_dob', 'aadhaar_to_pan', 'panfind', 'pan_find'].includes(String(service))) {
     return res.status(200).json({
@@ -4139,6 +4248,16 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
       message: "This service (Aadhaar to PAN / PAN to Name & DOB) has been permanently discontinued and deactivated."
     });
   }
+
+  // Normalize all service aliases
+  if (['mobile', 'number', 'num'].includes(service)) service = 'phone';
+  if (['tg'].includes(service)) service = 'telegram';
+  if (['aadhaar', 'aadhar'].includes(service)) service = 'adhr';
+  if (['bank', 'ifsc'].includes(service)) service = 'bnk';
+  if (['veh', 'rc', 'car'].includes(service)) service = 'vehicle';
+  if (['veh_numm', 'vehicle_owner'].includes(service)) service = 'veh_owner_num';
+  if (['mail', 'gmail'].includes(service)) service = 'email';
+
   const allowedServices = ['phone', 'telegram', 'adhr', 'bnk', 'vehicle', 'veh_owner_num', 'email'];
   if (!service || typeof service !== 'string' || !allowedServices.includes(service) || !query || typeof query !== 'string') {
     return res.status(200).json({ 
@@ -4217,20 +4336,31 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
 
   // Auto-activate welcome bonus if user has 0 balance or is new
   if (!isUnlimited && currentCredits < lookupCost) {
-    if (!profile?.is_free_credit_claimed && currentCredits === 0) {
+    if (currentCredits === 0) {
       const freeBonus = 25.00;
       currentCredits = freeBonus;
-      if (user.phone && mobileUsersStore.has(user.phone)) {
-        const mob = mobileUsersStore.get(user.phone);
-        mob.credits = freeBonus;
-        mobileUsersStore.set(user.phone, mob);
-        saveMobileUsersStore(mobileUsersStore);
-      }
+      await updateUserCreditsAcrossAllStores(
+        user.id,
+        user.email,
+        user.phone,
+        freeBonus,
+        profile?.full_name,
+        profile?.unlimited_expiry,
+        profile?.user_discount_percent,
+        true
+      );
       if (supabaseAdmin && user.id) {
         try {
-          await supabaseAdmin.from("profiles")
-            .update({ credits: freeBonus, wallet_balance: freeBonus, is_free_credit_claimed: true })
-            .eq("id", user.id);
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: user.id,
+            user_email: user.email || "User",
+            service: "Welcome Starter Bonus Credit",
+            type: "Credit",
+            amount: freeBonus,
+            balance_after: freeBonus,
+            status: "SUCCESS",
+            created_at: new Date().toISOString()
+          });
         } catch (e) {}
       }
     }
@@ -4292,11 +4422,12 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
         error_type: "lookup_failed",
         message: systemErrorMessage,
         remaining_balance: currentCredits,
-        cost_deducted: 0
+        cost_deducted: 0,
+        refunded: false
       });
     }
 
-    // 2. OTHERWISE, PROCESSING IS SUCCESSFUL -> Deduct balance correctly in real-time from Supabase
+    // 2. OTHERWISE, CHECK FOR MEANINGFUL DATA
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
 
@@ -4305,7 +4436,7 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
     if (cleanedResults) {
       if (typeof cleanedResults === 'object' && !Array.isArray(cleanedResults)) {
         const keys = Object.keys(cleanedResults);
-        const nonMetaKeys = keys.filter(k => !['error', 'message', 'status', 'success', 'msg', 'found'].includes(k.toLowerCase()));
+        const nonMetaKeys = keys.filter(k => !['error', 'message', 'status', 'success', 'msg', 'found', 'results_found'].includes(k.toLowerCase()));
         if (nonMetaKeys.length > 0 && !cleanedResults.error) {
           isMeaningfulData = true;
         }
@@ -4319,64 +4450,66 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
       }
     }
 
-    // SUCCESSFUL RUN DEDUCTION - Perform real-time deduction from Supabase profile and memory stores
-    let newBalance = currentCredits;
-    if (!isUnlimited) {
-      newBalance = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
-      await updateUserCreditsAcrossAllStores(
-        user.id,
-        user.email,
-        user.phone,
-        newBalance,
-        profile.full_name,
-        profile.unlimited_expiry,
-        profile.user_discount_percent
-      );
+    if (isMeaningfulData) {
+      // SUCCESSFUL RUN WITH VALID DATA -> Deduct balance correctly in real-time
+      let newBalance = currentCredits;
+      if (!isUnlimited) {
+        newBalance = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
+        await updateUserCreditsAcrossAllStores(
+          user.id,
+          user.email,
+          user.phone,
+          newBalance,
+          profile.full_name,
+          profile.unlimited_expiry,
+          profile.user_discount_percent
+        );
+
+        if (supabaseAdmin) {
+          try {
+            await supabaseAdmin.from("wallet_transactions").insert({
+              user_id: user.id,
+              user_email: user.email || "User",
+              service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
+              type: "Debit",
+              amount: lookupCost,
+              balance_after: newBalance,
+              status: "SUCCESS",
+              created_at: new Date().toISOString()
+            });
+          } catch (dbErr) {
+            console.error("[USER_LOOKUP] Failed to record wallet debit:", dbErr);
+          }
+        }
+      }
 
       if (supabaseAdmin) {
         try {
-          await supabaseAdmin.from("wallet_transactions").insert({
+          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+          await supabaseAdmin.from("service_records").insert({
             user_id: user.id,
-            user_email: user.email || "User",
-            service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
-            type: "Debit",
-            amount: lookupCost,
-            balance_after: newBalance,
+            client_name: user.email || (isAdmin ? "Admin" : "User"),
+            service_name: `Web Search: ${service.toUpperCase()}`,
+            reference_code: refCode,
+            status: "SUCCESS",
+            result_payload: cleanedResults,
+            log_number: Math.floor(100 + Math.random() * 900),
             created_at: new Date().toISOString()
           });
-        } catch (dbErr) {
-          console.error("[USER_LOOKUP] Failed to record wallet debit:", dbErr);
-        }
+        } catch (e) {}
       }
-    }
 
-    if (supabaseAdmin) {
-      try {
-        const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        await supabaseAdmin.from("service_records").insert({
-          user_id: user.id,
-          client_name: user.email || (isAdmin ? "Admin" : "User"),
-          service_name: `Web Search: ${service.toUpperCase()}`,
-          reference_code: refCode,
-          status: isMeaningfulData ? "SUCCESS" : "NO_DATA",
-          result_payload: cleanedResults || { message: "No records found" },
-          log_number: Math.floor(100 + Math.random() * 900)
-        });
-      } catch (e) {}
-    }
+      await logSearchHistory(
+        req, 
+        service, 
+        cleanedQuery, 
+        'success', 
+        client, 
+        cleanedResults, 
+        user.id, 
+        user.email
+      );
 
-    await logSearchHistory(
-      req, 
-      service, 
-      cleanedQuery, 
-      isMeaningfulData ? 'success' : 'completed', 
-      client, 
-      cleanedResults || { message: "No data returned" }, 
-      user.id, 
-      user.email
-    );
-
-    if (isMeaningfulData) {
       return res.status(200).json({
         status: "success",
         service,
@@ -4384,18 +4517,47 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
         results: cleanedResults,
         remaining_balance: newBalance,
         cost_deducted: isUnlimited ? 0 : lookupCost,
+        refunded: false,
         raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
       });
     } else {
-      // Successfully processed, but no record found in the database. Refined error message & charge correctly.
+      // ZERO DATA FOUND: Guaranteed zero deduction & auto-refund protection
+      if (supabaseAdmin) {
+        try {
+          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+          await supabaseAdmin.from("service_records").insert({
+            user_id: user.id,
+            client_name: user.email || (isAdmin ? "Admin" : "User"),
+            service_name: `Web Search: ${service.toUpperCase()} (NO DATA)`,
+            reference_code: refCode,
+            status: "NO_DATA",
+            result_payload: { message: `No record found for query '${cleanedQuery}'. Zero charges applied.` },
+            log_number: Math.floor(100 + Math.random() * 900),
+            created_at: new Date().toISOString()
+          });
+        } catch (e) {}
+      }
+
+      await logSearchHistory(
+        req, 
+        service, 
+        cleanedQuery, 
+        'completed', 
+        client, 
+        { message: "No records found" }, 
+        user.id, 
+        user.email
+      );
+
       return res.status(200).json({
         status: "success",
         results_found: 0,
-        results: { error: `Sorry, we don't have data related to the query '${cleanedQuery}'.` },
-        error: `Sorry, we don't have data related to the query '${cleanedQuery}'.`,
-        message: `Sorry, we don't have data related to the query '${cleanedQuery}'.`,
-        remaining_balance: newBalance,
-        cost_deducted: isUnlimited ? 0 : lookupCost
+        results: null,
+        refunded: true,
+        refund_amount: isUnlimited ? 0 : lookupCost,
+        remaining_balance: currentCredits,
+        cost_deducted: 0,
+        message: `No record found for query '${cleanedQuery}'. Your wallet was not charged (₹${lookupCost.toFixed(2)} zero charge applied).`
       });
     }
   } catch (err: any) {
@@ -4416,6 +4578,7 @@ interface ApiBalanceCheckResult {
   authorized: boolean;
   userProfile?: any;
   errorResponse?: any;
+  lookupCost?: number;
   deduct?: () => Promise<{ newCredits: number; lookupCost: number }>;
 }
 
@@ -4491,16 +4654,34 @@ async function checkAccountApiBalance(keyRecord: any, isMaster: boolean, lookupT
         userProfile.unlimited_expiry,
         userProfile.user_discount_percent
       );
+
+      if (supabaseAdmin && userProfile.id) {
+        try {
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: userProfile.id,
+            user_email: userProfile.email || "User",
+            service: `API Query: ${lookupType.toUpperCase()}`,
+            type: "Debit",
+            amount: lookupCost,
+            balance_after: newCredits,
+            status: "SUCCESS",
+            created_at: new Date().toISOString()
+          });
+        } catch (dbErr) {
+          console.error("[DEBIT_LOG_FAIL]", dbErr);
+        }
+      }
       return { newCredits, lookupCost };
     };
 
-    return { authorized: true, userProfile, deduct };
+    return { authorized: true, userProfile, deduct, lookupCost };
   }
 
   // Insufficient Balance Block
   return {
     authorized: false,
     userProfile,
+    lookupCost,
     errorResponse: {
       status: "error",
       error_type: "insufficient_balance",
@@ -4522,11 +4703,14 @@ async function upfrontDeductAndLog(
 ) {
   const userId = balanceCheck.userProfile?.id || keyRecord?.user_id || null;
   const userEmail = balanceCheck.userProfile?.email || keyRecord?.user_email || "User";
+  const userPhone = balanceCheck.userProfile?.phone || null;
 
-  let deductResult: any = { newCredits: undefined, lookupCost: 0 };
+  let deductResult: any = { newCredits: undefined, lookupCost: balanceCheck.lookupCost || 0 };
+  let wasDeducted = false;
   if (balanceCheck.deduct) {
     try {
       deductResult = await balanceCheck.deduct();
+      wasDeducted = true;
     } catch (dErr) {
       console.error(`[UPFRONT_DEDUCT_ERR] ${lookupType}:`, dErr);
     }
@@ -4548,7 +4732,7 @@ async function upfrontDeductAndLog(
     console.error(`[UPFRONT_LOG_ERR] ${lookupType}:`, logErr);
   }
 
-  return { userId, userEmail, ...deductResult };
+  return { userId, userEmail, userPhone, wasDeducted, ...deductResult };
 }
 
 app.all("/api/lookup", async (req, res) => {
@@ -7233,6 +7417,7 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -7292,7 +7477,13 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'telegram', targetTelegramId, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'telegram', targetTelegramId, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'telegram', targetTelegramId, reason);
+      }
+    };
 
     // Checking safety protection bypass
     const isProtected = await checkRecordIsProtected('telegram', targetTelegramId);
@@ -7300,8 +7491,7 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
     if (isProtected) {
       // Record telemetry for protected search
       if (!isMaster && keyRecord?.id) {
-        
-          await supabaseAdmin.from("api_keys").update({ 
+        await supabaseAdmin.from("api_keys").update({ 
           requests_used: (keyRecord.requests_used || 0) + 1,
           last_used_at: new Date().toISOString()
         }).eq("id", keyRecord.id);
@@ -7347,10 +7537,6 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
           if (hasMobile) {
             console.log(`[Telegram Cache Hit] Serving ${targetTelegramId} from database cache`);
             
-            // Deduct credits/rupees and log search history for account owner
-            if (balanceCheck.deduct) {
-              try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Telegram cache:", dErr); }
-            }
             const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
             const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
             await logSearchHistory(req, 'telegram', targetTelegramId, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
@@ -7390,14 +7576,16 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
 
       if (!response.ok) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-        return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+        await refundIfDeducted("Downstream provider error");
+        return res.status(200).json({ status: "success", results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
       }
       text = await response.text();
     } catch (fetchErr: any) {
       clearTimeout(timeoutId);
       console.warn("[Telegram Fetch Error / Timeout]", fetchErr);
       await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-      return res.status(200).json({ status: "success", results: {}, message: "no data found" });
+      await refundIfDeducted("Telegram fetch timeout or network error");
+      return res.status(200).json({ status: "success", results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const cleanedText = text.replace(/(tech[\s\-_]*vishal(?:[\s\-_]*boss)?|anish[\s\-_]*exploits|cyb(?:er|3r)[\s\-_]*s(?:oldier|0ldier)|@?cyb(?:er|3r)s(?:oldier|0ldier)|u(?:ers|ser)xinfo(?:\.in)?)/gi, "");
@@ -7405,7 +7593,8 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
 
     if (lowerText.includes("no result") || lowerText.includes("no records found") || !text.trim()) {
        await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-       return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
+       await refundIfDeducted("No Telegram records found");
+       return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
     }
 
     let results: any = null;
@@ -7415,7 +7604,8 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
       const parsed = JSON.parse(text);
       if (parsed && (parsed.Status === false || parsed.status === false || parsed.status === "false" || parsed.success === false)) {
         await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-        return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
+        await refundIfDeducted("Telegram record not found");
+        return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
       }
 
       const cleaned_json = scrubAllBranding(parsed);
@@ -7423,7 +7613,8 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
         let raw_res = cleaned_json.Data || cleaned_json.data || cleaned_json.results || cleaned_json;
         if (raw_res.msg && (String(raw_res.msg).toLowerCase().includes("not found") || String(raw_res.msg).toLowerCase().includes("no details")) && !raw_res.number && !raw_res.mobile && !raw_res.phone) {
           await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-          return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
+          await refundIfDeducted("Telegram account details not found");
+          return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
         }
         if (raw_res.tg_id || raw_res.telegram_id || raw_res.number || raw_res.mobile || raw_res.user_id || raw_res.phone || raw_res.mobile_number) {
            const mob = String(raw_res.number || raw_res.mobile || raw_res.phone || raw_res.mobile_number || "N/A").trim();
@@ -7472,7 +7663,8 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
 
       if (telegram_id === "N/A" && phone === "N/A") {
          await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
-         return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found" });
+         await refundIfDeducted("Telegram ID and Phone not found in response");
+         return res.status(200).json({ status: "success", service: "telegram", query: targetTelegramId, results: {}, message: "no data found", refunded: wasDeducted && lookupCost > 0 });
       }
 
       results = {
@@ -7492,8 +7684,7 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
     // Save successful result to database cache
     try {
       if (supabaseAdmin && results && results.mobile && results.mobile !== "N/A") {
-        
-          await supabaseAdmin.from('search_results').upsert({
+        await supabaseAdmin.from('search_results').upsert({
           mobile_number: cache_key,
           raw_data: results
         }, { onConflict: 'mobile_number' });
@@ -7508,8 +7699,7 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
-      
-          await supabaseAdmin.from("api_keys").update({ 
+      await supabaseAdmin.from("api_keys").update({ 
         requests_used: (keyRecord.requests_used || 0) + 1,
         last_used_at: new Date().toISOString()
       }).eq("id", keyRecord.id);
@@ -7521,6 +7711,9 @@ app.get("/api/telegram", dashboardApiSecurityShield, async (req, res) => {
   } catch (err: any) {
     console.error("Telegram Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `TG: ${targetTelegramId}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during telegram search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -7547,6 +7740,7 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -7606,7 +7800,13 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'adhr', targetQuery, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'adhr', targetQuery, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'aadhaar', targetQuery, reason);
+      }
+    };
 
     const isProtected = await checkRecordIsProtected('adhr', targetQuery);
     if (isProtected) {
@@ -7640,7 +7840,8 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("Downstream provider error");
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const text = await response.text();
@@ -7670,7 +7871,8 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("No Aadhaar data found");
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -7680,8 +7882,7 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
 
     // Record telemetry for successful search
     if (!isMaster && keyRecord?.id) {
-      
-          await supabaseAdmin.from("api_keys").update({ 
+      await supabaseAdmin.from("api_keys").update({ 
         requests_used: (keyRecord.requests_used || 0) + 1,
         last_used_at: new Date().toISOString()
       }).eq("id", keyRecord.id);
@@ -7693,6 +7894,9 @@ app.get("/api/identity", dashboardApiSecurityShield, async (req, res) => {
   } catch (err: any) {
     console.error("Identity Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `ADHR: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during identity search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -7720,6 +7924,10 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
   let keyRecord: any = null;
   let userId: string | null = null;
   let userEmail: string | null = null;
+  let userPhone: string | null = null;
+  let wasDeducted = false;
+  let deductCost = 0;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     const isMaster = checkIsMasterKey(key);
@@ -7754,11 +7962,20 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
           const deductRes = await upfrontDeductAndLog(req, 'bnk', targetQuery, balanceCheck, keyRecord);
           userId = deductRes?.userId || null;
           userEmail = deductRes?.userEmail || null;
+          userPhone = deductRes?.userPhone || null;
+          wasDeducted = deductRes?.wasDeducted || false;
+          deductCost = deductRes?.lookupCost || 0;
         }
       } catch (authErr) {
         console.warn("[IFSC_AUTH_LOG_WARN]", authErr);
       }
     }
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && deductCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, deductCost, 'ifsc', targetQuery, reason);
+      }
+    };
 
     // Primary Razorpay IFSC Lookup
     const primaryUrl = `https://ifsc.razorpay.com/${targetQuery}`;
@@ -7782,10 +7999,12 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
       // If 404 from Razorpay, code is not in national IFSC database
       if (response && response.status === 404) {
         await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+        await refundIfDeducted(`IFSC code ${targetQuery} not found in database`);
         return res.status(200).json({ 
           status: "error", 
           results_found: 0, 
-          message: `Sorry, we don't have data related to the IFSC query '${targetQuery}'.` 
+          message: `Sorry, we don't have data related to the IFSC query '${targetQuery}'.`,
+          refunded: wasDeducted && deductCost > 0
         });
       }
 
@@ -7811,10 +8030,12 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
 
     if (!response || !response.ok) {
       await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+      await refundIfDeducted("IFSC lookup failed / provider unresponsive");
       return res.status(200).json({ 
         status: "error", 
         results_found: 0, 
-        message: "Sorry, we don't have data related to the query." 
+        message: "Sorry, we don't have data related to the query.",
+        refunded: wasDeducted && deductCost > 0
       });
     }
 
@@ -7845,10 +8066,12 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
 
     if (isError) {
       await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+      await refundIfDeducted("IFSC data not found");
       return res.status(200).json({ 
         status: "error", 
         results_found: 0, 
-        message: "Sorry, we don't have data related to the query." 
+        message: "Sorry, we don't have data related to the query.",
+        refunded: wasDeducted && deductCost > 0
       });
     }
 
@@ -7877,6 +8100,9 @@ app.all(["/api/bank", "/api/ifsc"], dashboardApiSecurityShield, async (req, res)
   } catch (err: any) {
     console.error("Bank Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `BNK: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during IFSC search"); } catch (e) {}
+    }
     return res.status(200).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -7903,6 +8129,7 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -7962,7 +8189,13 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'rasion', targetQuery, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'rasion', targetQuery, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'rasion', targetQuery, reason);
+      }
+    };
 
     const api_url = getProviderUrl('family', targetQuery);
     const response = await fetch(api_url, {
@@ -7974,7 +8207,8 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("Downstream provider error");
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const text = await response.text();
@@ -8004,7 +8238,8 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("No Ration card data found");
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const cleanedData = cleanBrandingObject(parsedData);
@@ -8027,6 +8262,9 @@ app.get(["/api/rasion", "/api/ration"], async (req, res) => {
   } catch (err: any) {
     console.error("Rasion Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `RASION: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during ration search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -8075,6 +8313,7 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -8134,7 +8373,13 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'vehicle', targetQuery, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'vehicle', targetQuery, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'vehicle', targetQuery, reason);
+      }
+    };
 
     const isProtected = await checkRecordIsProtected('vehicle', targetQuery);
     if (isProtected) {
@@ -8173,17 +8418,13 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
     if (isCacheValid) {
       console.log(`[CACHE HIT] Serving Vehicle lookup for ${targetQuery} from database cache.`);
       
-      if (balanceCheck.deduct) {
-        try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Vehicle cache:", dErr); }
-      }
       const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
       const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
       await logSearchHistory(req, 'vehicle', targetQuery, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
 
       // Record telemetry for successful search
       if (!isMaster && keyRecord?.id) {
-        
-          await supabaseAdmin.from("api_keys").update({ 
+        await supabaseAdmin.from("api_keys").update({ 
           requests_used: (keyRecord.requests_used || 0) + 1,
           last_used_at: new Date().toISOString()
         }).eq("id", keyRecord.id);
@@ -8198,7 +8439,8 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
     const response = await fetch(api_url);
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("Downstream vehicle provider error");
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const text = await response.text();
@@ -8236,7 +8478,8 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("No Vehicle RC data found");
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -8277,6 +8520,9 @@ app.get("/api/vehicle", dashboardApiSecurityShield, async (req, res) => {
   } catch (err: any) {
     console.error("Vehicle Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `VEHICLE: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during vehicle search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -8302,6 +8548,7 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -8361,7 +8608,13 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'veh_owner_num', targetQuery, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'veh_owner_num', targetQuery, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'veh_owner_num', targetQuery, reason);
+      }
+    };
 
     const isProtected = await checkRecordIsProtected('veh_owner_num', targetQuery);
     if (isProtected) {
@@ -8401,17 +8654,13 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
     if (isCacheValid) {
       console.log(`[CACHE HIT] Serving Vehicle To Owner Number lookup for ${targetQuery} from database cache.`);
       
-      if (balanceCheck.deduct) {
-        try { await balanceCheck.deduct(); } catch (dErr) { console.error("Error deducting API fee for Veh Owner Num cache:", dErr); }
-      }
       const logUserId = balanceCheck.userProfile?.id || keyRecord?.user_id;
       const logUserEmail = balanceCheck.userProfile?.email || keyRecord?.user_email;
       await logSearchHistory(req, 'veh_owner_num', targetQuery, "success", supabaseAdmin, cachedRow.raw_data, logUserId, logUserEmail);
 
       // Record telemetry for successful search
       if (!isMaster && keyRecord?.id) {
-        
-          await supabaseAdmin.from("api_keys").update({ 
+        await supabaseAdmin.from("api_keys").update({ 
           requests_used: (keyRecord.requests_used || 0) + 1,
           last_used_at: new Date().toISOString()
         }).eq("id", keyRecord.id);
@@ -8431,7 +8680,8 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("Downstream vehicle owner provider error");
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const text = await response.text();
@@ -8467,7 +8717,8 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("No vehicle owner data found");
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -8494,6 +8745,9 @@ app.get("/api/veh-owner-num", dashboardApiSecurityShield, async (req, res) => {
   } catch (err: any) {
     console.error("Vehicle To Owner Number Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `VEH_OWNER: ${maskNumberForLog(targetQuery)}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during vehicle owner search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -8512,6 +8766,7 @@ app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
   }
 
   let keyRecord: any = null;
+  let refundIfDeducted: ((reason: string) => Promise<void>) | null = null;
 
   try {
     if (!supabaseAdmin) {
@@ -8571,7 +8826,13 @@ app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
     }
 
     // Upfront credit deduction & instant database search history logging (< 50ms)
-    const { userId, userEmail } = await upfrontDeductAndLog(req, 'email', targetQuery, balanceCheck, keyRecord);
+    const { userId, userEmail, userPhone, wasDeducted, lookupCost } = await upfrontDeductAndLog(req, 'email', targetQuery, balanceCheck, keyRecord);
+
+    refundIfDeducted = async (reason: string) => {
+      if (wasDeducted && lookupCost && lookupCost > 0 && userId) {
+        await autoRefundUserCredits(userId, userEmail, userPhone, lookupCost, 'email', targetQuery, reason);
+      }
+    };
 
     const isProtected = await checkRecordIsProtected('email', targetQuery);
     if (isProtected) {
@@ -8605,7 +8866,8 @@ app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
     });
     if (!response.ok) {
        await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
-       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("Downstream email provider error");
+       return res.status(502).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     const text = await response.text();
@@ -8641,7 +8903,8 @@ app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
 
     if (isError) {
        await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
-       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query." });
+       await refundIfDeducted("No email data found");
+       return res.status(404).json({ status: "error", message: "Sorry, we don't have data related to the query.", refunded: wasDeducted && lookupCost > 0 });
     }
 
     if (parsedData && parsedData.api_creator) {
@@ -8668,6 +8931,9 @@ app.get("/api/email", dashboardApiSecurityShield, async (req, res) => {
   } catch (err: any) {
     console.error("Email Proxy error:", err);
     await logApiRequest(keyRecord?.id || null, `EMAIL: ${targetQuery}`, "failed", Date.now() - startTime);
+    if (refundIfDeducted) {
+      try { await refundIfDeducted("Internal server exception during email search"); } catch (e) {}
+    }
     return res.status(500).json({ status: "error", message: "Sorry, we don't have data related to the query." });
   }
 });
@@ -9204,72 +9470,6 @@ function checkIsNoRecordFound(data: any): boolean {
       if (Array.isArray(results) && results.length === 0) return true;
       if (typeof results === "object" && Object.keys(results).length === 0) return true;
     }
-  }
-  return false;
-}
-
-// Universal Safe Refund Handler
-async function autoRefundUserCredits(userEmailOrId: string, fee: number, serviceName: string, query: string, db: any, userId?: string): Promise<boolean> {
-  if (!userEmailOrId || fee <= 0 || !db) return false;
-  try {
-    let profileQuery = db.from("profiles").select("id, email, wallet_balance, credits");
-    if (userId) {
-      profileQuery = profileQuery.eq("id", userId);
-    } else if (userEmailOrId.includes("@")) {
-      profileQuery = profileQuery.eq("email", userEmailOrId);
-    } else {
-      profileQuery = profileQuery.eq("id", userEmailOrId);
-    }
-    const { data: profile } = await profileQuery.maybeSingle();
-    if (profile) {
-      const currentBal = Number(profile.wallet_balance || profile.credits || 0);
-      const newBal = currentBal + fee;
-      
-      await db.from("profiles").update({
-        wallet_balance: newBal,
-        credits: newBal,
-        updated_at: new Date().toISOString()
-      }).eq("id", profile.id);
-
-      const refCode = `REF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-
-      try {
-        await db.from("wallet_transactions").insert({
-          user_id: profile.id,
-          user_email: profile.email || "User",
-          amount: fee,
-          type: "Refund",
-          service: `Auto-Refund: No data found for ${serviceName.toUpperCase()} search '${query}'`,
-          balance_after: newBal,
-          created_at: new Date().toISOString()
-        });
-      } catch (e) {}
-
-      try {
-        await db.from("service_records").insert({
-          user_id: profile.id,
-          client_name: profile.email || "User",
-          service_name: `${serviceName.toUpperCase()} (REFUNDED)`,
-          reference_code: refCode,
-          status: "REFUNDED",
-          result_payload: {
-            status: "refunded",
-            service: serviceName,
-            query: query,
-            message: `No data found or API error. ₹${fee.toFixed(2)} search charge refunded to your wallet.`,
-            refunded: true,
-            refund_amount: fee
-          },
-          log_number: Math.floor(100 + Math.random() * 900),
-          created_at: new Date().toISOString()
-        });
-      } catch (e) {}
-
-      console.log(`[TRACEXDATA AUTO-REFUND] Refunded ₹${fee} to ${profile.email} for ${serviceName}`);
-      return true;
-    }
-  } catch (err) {
-    console.error("[TRACEXDATA AUTO-REFUND FAIL]", err);
   }
   return false;
 }

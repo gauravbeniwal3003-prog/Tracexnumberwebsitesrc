@@ -28,7 +28,7 @@ import {
   AlertCircle,
   X
 } from 'lucide-react';
-import { CATEGORIES, Category, SubService } from '../data/services';
+import { CATEGORIES, ALL_CATEGORIES, Category, SubService } from '../data/services';
 
 interface DashboardServicesViewProps {
   initialService?: string;
@@ -182,7 +182,7 @@ export function DashboardServicesView({
   const selectedSubService = useMemo(() => {
     const subId = params.subserviceId;
     if (subId) {
-      for (const cat of CATEGORIES) {
+      for (const cat of ALL_CATEGORIES) {
         const found = cat.subservices.find(s => s.id === subId);
         if (found) return found;
       }
@@ -192,23 +192,23 @@ export function DashboardServicesView({
 
   const selectedCategory = useMemo(() => {
     if (selectedSubService) {
-      return CATEGORIES.find(c => c.id === selectedSubService.categoryId) || null;
+      return ALL_CATEGORIES.find(c => c.id === selectedSubService.categoryId) || null;
     }
     const catId = params.categoryId;
     if (catId) {
-      return CATEGORIES.find(c => c.id === catId) || null;
+      return ALL_CATEGORIES.find(c => c.id === catId) || null;
     }
     if (location.pathname === '/identity' || initialService === 'adhr') {
-      return CATEGORIES.find(c => c.id === 'aadhaar') || null;
+      return ALL_CATEGORIES.find(c => c.id === 'aadhaar') || null;
     }
     if (location.pathname === '/vehicle' || initialService === 'vehicle' || initialService === 'veh_owner_num') {
-      return CATEGORIES.find(c => c.id === 'vehicle') || null;
+      return ALL_CATEGORIES.find(c => c.id === 'vehicle') || null;
     }
     if (location.pathname === '/email' || initialService === 'email') {
-      return CATEGORIES.find(c => c.id === 'email') || null;
+      return ALL_CATEGORIES.find(c => c.id === 'email') || null;
     }
     if (location.pathname === '/telegram' || initialService === 'telegram') {
-      return CATEGORIES.find(c => c.id === 'telegram') || null;
+      return ALL_CATEGORIES.find(c => c.id === 'telegram') || null;
     }
     return null;
   }, [selectedSubService, params.categoryId, location.pathname, initialService]);
@@ -263,6 +263,44 @@ export function DashboardServicesView({
         {/* Centered Terminal Container */}
         <div className="w-full max-w-md relative z-10 flex flex-col items-center">
           
+          {/* Top Quick Navigation & Switcher */}
+          <div className="w-full flex items-center justify-between gap-2 mb-3">
+            <button
+              onClick={handleBackToCategories}
+              className="px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white border border-slate-200/90 text-slate-700 hover:text-blue-600 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95 shrink-0"
+              title="Return to Dashboard"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>All Services</span>
+            </button>
+
+            {/* Quick 2-Option Switcher */}
+            <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => navigate('/service/number-lookup')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  selectedSubService.serviceType === 'phone'
+                    ? 'bg-white text-blue-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Number
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/service/telegram-lookup')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  selectedSubService.serviceType === 'telegram'
+                    ? 'bg-white text-blue-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Telegram
+              </button>
+            </div>
+          </div>
+
           {/* Top Service Icon Box */}
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50/90 border border-blue-100/90 flex items-center justify-center p-2.5 shadow-xs mb-2 text-blue-600">
             <CategoryIcon name={selectedSubService.categoryId} className="w-8 h-8 sm:w-9 sm:h-9" />
@@ -299,6 +337,7 @@ export function DashboardServicesView({
                   maxLength={
                     selectedSubService.serviceType === 'phone' ? 10 :
                     selectedSubService.serviceType === 'adhr' ? 12 :
+                    selectedSubService.serviceType === 'bnk' ? 11 :
                     (selectedSubService.serviceType === 'vehicle' || selectedSubService.serviceType === 'veh_owner_num') ? 11 : 100
                   }
                   onChange={(e) => {
@@ -308,6 +347,8 @@ export function DashboardServicesView({
                       setPhoneNumber(raw.replace(/\D/g, '').slice(0, 10));
                     } else if (st === 'adhr') {
                       setPhoneNumber(raw.replace(/\D/g, '').slice(0, 12));
+                    } else if (st === 'bnk') {
+                      setPhoneNumber(raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
                     } else if (st === 'vehicle' || st === 'veh_owner_num') {
                       setPhoneNumber(raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11));
                     } else if (st === 'email') {
@@ -428,7 +469,7 @@ export function DashboardServicesView({
     );
   }
 
-  // LEVEL 1: BROWSE CATEGORIES MAIN DASHBOARD (Screenshot 2)
+  // LEVEL 1: FRONT DASHBOARD (Only 2 Options: Number Lookup & Telegram Lookup)
   const filteredCategories = CATEGORIES.filter(cat => 
     !searchQuery || 
     cat.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -436,49 +477,65 @@ export function DashboardServicesView({
   );
 
   return (
-    <div className="w-full space-y-6 pb-28">
-      {/* Top Search Input Bar (Screenshot 2) */}
+    <div className="w-full space-y-5 pb-28 max-w-2xl mx-auto">
+      {/* Top Search Input Bar */}
       <div className="relative w-full">
         <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search services... (e.g. Aadhaar, PAN)"
-          className="w-full pl-12 pr-4 py-3.5 bg-white/70 backdrop-blur-md border border-white/60 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+          placeholder="Search services (Number or Telegram)..."
+          className="w-full pl-12 pr-4 py-3.5 bg-white/80 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-sm font-medium text-slate-900 shadow-xs focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
         />
       </div>
 
-      {/* Section Title: Browse Categories (Screenshot 2) */}
-      <div className="px-1">
+      {/* Section Title */}
+      <div className="px-1 text-center sm:text-left">
         <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-          Browse Categories
+          Select Lookup Service
         </h1>
-        <p className="text-xs text-slate-500 font-medium mt-0.5">
-          Select a category to explore all available services.
+        <p className="text-xs text-slate-500 font-semibold mt-0.5">
+          Select an option below to begin instant live intelligence search.
         </p>
       </div>
 
-      {/* Category Cards Grid (Screenshot 2 - 2 Columns on Mobile) */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        {filteredCategories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => handleSelectCategory(cat)}
-            className="p-5 rounded-3xl border border-white/60 bg-white/60 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:bg-slate-50/80 hover:border-blue-200 transition-all flex flex-col items-center justify-between text-center gap-3 relative overflow-hidden group cursor-pointer shadow-xs hover:shadow-md active:scale-98"
-          >
-            <CategoryIcon name={cat.id} className="w-10 h-10" />
+      {/* 2 Options Cards Grid (Number Lookup & Telegram Lookup) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {filteredCategories.map((cat) => {
+          const sub = cat.subservices[0];
+          return (
+            <button
+              key={cat.id}
+              onClick={() => handleSelectCategory(cat)}
+              className="p-5 sm:p-6 rounded-3xl border border-white/80 bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:bg-blue-50/40 hover:border-blue-300 transition-all flex flex-col items-center justify-between text-center gap-4 relative overflow-hidden group cursor-pointer shadow-xs hover:shadow-md active:scale-98"
+            >
+              <div className="relative">
+                <CategoryIcon name={cat.id} className="w-12 h-12" />
+              </div>
 
-            <div className="space-y-1">
-              <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 group-hover:text-blue-700">
-                {cat.title}
-              </h3>
-              <span className="inline-block text-[10px] font-extrabold bg-blue-50 text-blue-600 px-3 py-1 rounded-full">
-                {cat.countText}
-              </span>
-            </div>
-          </button>
-        ))}
+              <div className="space-y-1 w-full">
+                <h3 className="font-black text-base sm:text-lg text-slate-900 group-hover:text-blue-700 transition-colors">
+                  {cat.title}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium line-clamp-2 px-1">
+                  {sub?.subtitle || 'Instant live intelligence search'}
+                </p>
+              </div>
+
+              <div className="w-full pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-black flex items-center gap-1 shadow-2xs">
+                  <Coins className="w-3 h-3 text-indigo-600" />
+                  <span>Fee: ₹{sub?.fee || 5}.00</span>
+                </span>
+                <span className="text-xs font-black text-blue-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                  <span>Start</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

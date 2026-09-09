@@ -409,6 +409,14 @@ export const lookupEmail = async (email: string): Promise<ApiResponse> => {
   return await executeUniversalLookup('email', email);
 };
 
+export const lookupIfsc = async (ifscCode: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('bnk', ifscCode);
+};
+
+export const lookupBank = async (ifscCode: string): Promise<ApiResponse> => {
+  return await executeUniversalLookup('bnk', ifscCode);
+};
+
 export const lookupNumberPcking07 = async (number: string): Promise<ApiResponse> => {
   return await executeUniversalLookup('phone', number);
 };

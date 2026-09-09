@@ -7,7 +7,7 @@ export interface SubService {
   plan: 'Silver' | 'Gold' | 'VIP';
   inputLabel: string;
   inputPlaceholder: string;
-  serviceType: 'phone' | 'telegram' | 'adhr' | 'vehicle' | 'email' | 'veh_owner_num';
+  serviceType: 'phone' | 'telegram' | 'adhr' | 'vehicle' | 'email' | 'veh_owner_num' | 'bnk';
 }
 
 export interface Category {
@@ -24,8 +24,8 @@ export interface Category {
 export const CATEGORIES: Category[] = [
   {
     id: 'phone',
-    title: 'Phone & Telecom',
-    countText: '1 Service',
+    title: 'Number Lookup',
+    countText: 'Active Service',
     countNum: 1,
     iconName: 'Phone',
     badgeBg: 'bg-emerald-50 border-emerald-100',
@@ -46,8 +46,8 @@ export const CATEGORIES: Category[] = [
   },
   {
     id: 'telegram',
-    title: 'Telegram & Social',
-    countText: '1 Service',
+    title: 'Telegram Lookup',
+    countText: 'Active Service',
     countNum: 1,
     iconName: 'Send',
     badgeBg: 'bg-sky-50 border-sky-100',
@@ -56,7 +56,7 @@ export const CATEGORIES: Category[] = [
       {
         id: 'telegram-lookup',
         categoryId: 'telegram',
-        title: 'Telegram To Number Lookup',
+        title: 'Telegram Lookup',
         subtitle: 'Identify Linked Phone Number from Telegram Handle',
         fee: 10,
         plan: 'Silver',
@@ -65,7 +65,11 @@ export const CATEGORIES: Category[] = [
         serviceType: 'telegram'
       }
     ]
-  },
+  }
+];
+
+export const ALL_CATEGORIES: Category[] = [
+  ...CATEGORIES,
   {
     id: 'aadhaar',
     title: 'Aadhaar & Identity',
@@ -139,7 +143,7 @@ export const CATEGORIES: Category[] = [
         plan: 'Silver',
         inputLabel: 'IFSC CODE',
         inputPlaceholder: 'Enter 11-digit IFSC code (e.g. SBIN0001234)',
-        serviceType: 'phone'
+        serviceType: 'bnk'
       }
     ]
   },

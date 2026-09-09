@@ -38,7 +38,7 @@ import ReferralPage from './pages/ReferralPage.tsx';
 import WalletHistory from './pages/WalletHistory.tsx';
 import ServiceRecords from './pages/ServiceRecords.tsx';
 import { DashboardServicesView } from './components/DashboardServicesView.tsx';
-import { CATEGORIES } from './data/services.ts';
+import { CATEGORIES, ALL_CATEGORIES } from './data/services.ts';
 
 import ErrorBoundary from './components/ErrorBoundary.tsx';
 import LandingPage from './pages/LandingPage.tsx';
@@ -223,7 +223,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
   const effectiveService = useMemo(() => {
     if (params.subserviceId) {
-      for (const cat of CATEGORIES) {
+      for (const cat of ALL_CATEGORIES) {
         const found = cat.subservices.find(s => s.id === params.subserviceId);
         if (found) return found.serviceType;
       }
@@ -523,21 +523,26 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       }
 
       // Import corresponding lookups
-      const { lookupNumber, lookupTelegram, lookupAdhr, lookupVehicle, lookupVehOwnerNum, lookupEmail } = await import('./services/api.ts');
+      const { lookupNumber, lookupTelegram, lookupAdhr, lookupVehicle, lookupVehOwnerNum, lookupEmail, lookupIfsc, executeUniversalLookup } = await import('./services/api.ts');
 
       let data: any;
-      if (activeService === 'phone') {
+      const sKey = (activeService || '').trim().toLowerCase();
+      if (sKey === 'phone' || sKey === 'mobile' || sKey === 'number') {
         data = await lookupNumber(targetVal);
-      } else if (activeService === 'telegram') {
+      } else if (sKey === 'telegram' || sKey === 'tg') {
         data = await lookupTelegram(targetVal);
-      } else if (activeService === 'adhr') {
+      } else if (sKey === 'adhr' || sKey === 'aadhaar' || sKey === 'aadhar') {
         data = await lookupAdhr(targetVal);
-      } else if (activeService === 'vehicle') {
+      } else if (sKey === 'vehicle' || sKey === 'veh' || sKey === 'rc') {
         data = await lookupVehicle(targetVal);
-      } else if (activeService === 'veh_owner_num') {
+      } else if (sKey === 'veh_owner_num' || sKey === 'vehicle_owner' || sKey === 'veh_numm') {
         data = await lookupVehOwnerNum(targetVal);
-      } else if (activeService === 'email') {
+      } else if (sKey === 'email' || sKey === 'gmail' || sKey === 'mail') {
         data = await lookupEmail(targetVal);
+      } else if (sKey === 'bnk' || sKey === 'ifsc' || sKey === 'bank') {
+        data = await lookupIfsc(targetVal);
+      } else {
+        data = await executeUniversalLookup(activeService, targetVal);
       }
 
       if (data?.remaining_balance !== undefined) {
@@ -549,24 +554,10 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         setResult(null);
         setError(data?.error || "Sorry, we don't have data related to the query.");
       } else {
-        const resObj = data.results;
-        const resKeys = typeof resObj === 'object' && resObj !== null ? Object.keys(resObj) : [];
-        const hasMeaningfulData = resKeys.some(k => !['error', 'message', 'status', 'success', 'found'].includes(k.toLowerCase()));
-        
-        if (typeof resObj === 'string' && resObj.trim().length > 0 && !resObj.toLowerCase().includes('no result') && !resObj.toLowerCase().includes('not found') && !resObj.toLowerCase().includes('no record')) {
-          setError(null);
-          setResult(data);
-          setCooldown(5);
-          saveLocalSearchHistory(user?.id, activeService, targetVal, data.results || data);
-        } else if (hasMeaningfulData || data.raw_results) {
-          setError(null);
-          setResult(data);
-          setCooldown(5);
-          saveLocalSearchHistory(user?.id, activeService, targetVal, data.results || data);
-        } else {
-          setResult(null);
-          setError(data.error || (typeof resObj === 'object' && resObj?.error) || "Sorry, we don't have data related to the query.");
-        }
+        setError(null);
+        setResult(data);
+        setCooldown(5);
+        saveLocalSearchHistory(user?.id, activeService, targetVal, data.results || data);
       }
     } catch (err: any) {
       console.error('Lookup processing failure:', err);
