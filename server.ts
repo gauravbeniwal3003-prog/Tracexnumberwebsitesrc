@@ -979,11 +979,11 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 5.0,            // Number lookup: ₹5.00 per lookup
-  number: 5.0,
-  mobile: 5.0,
-  telegram: 10.0,        // Telegram lookup: ₹10.00 per lookup
-  tg: 10.0,
+  phone: 2.0,            // Number lookup: ₹2.00 per lookup
+  number: 2.0,
+  mobile: 2.0,
+  telegram: 5.0,        // Telegram lookup: ₹5.00 per lookup
+  tg: 5.0,
   email: 20.0,           // Gmail / Email lookup: ₹20.00 per lookup
   mail: 20.0,
   gmail: 20.0,
@@ -993,9 +993,13 @@ const LOOKUP_RATES: Record<string, number> = {
   identity: 25.0,
   vehicle: 12.0,         // Vehicle details lookup: ₹12.00
   veh: 12.0,
+  rc: 12.0,
   veh_owner_num: 25.0,   // Vehicle to owner number lookup: ₹25.00
   veh_numm: 25.0,
   vehicle_owner: 25.0,
+  bnk: 2.0,              // Bank / IFSC lookup: ₹2.00
+  ifsc: 2.0,
+  bank: 2.0,
   balance: 0.0
 };
 
@@ -1779,36 +1783,40 @@ async function updateUserCreditsAcrossAllStores(
   const nameToUse = fullName?.trim() || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : (cleanEmail ? cleanEmail.split("@")[0] : "User"));
 
   // 1. Sync in-memory mobileUsersStore & data/mobile_users.json
-  if (cleanPhone && cleanPhone.length === 10) {
-    const existing = mobileUsersStore.get(cleanPhone) || {};
-    mobileUsersStore.set(cleanPhone, {
-      ...existing,
-      id: userId || existing.id || getUuidForPhone(cleanPhone),
-      phone: cleanPhone,
-      email: cleanEmail || existing.email,
-      full_name: nameToUse || existing.full_name,
-      credits: targetBal,
-      wallet_balance: targetBal,
-      unlimited_expiry: unlimitedExpiry !== undefined ? unlimitedExpiry : (existing.unlimited_expiry || null),
-      user_discount_percent: userDiscountPercent !== undefined ? Number(userDiscountPercent) : Number(existing.user_discount_percent || 0),
-      updated_at: nowIso
-    });
-    saveMobileUsersStore(mobileUsersStore);
+  const userKey = cleanPhone || (cleanEmail ? `email:${cleanEmail}` : (userId ? `id:${userId}` : ""));
+  let existingUser: any = userKey ? mobileUsersStore.get(userKey) : null;
+  if (!existingUser && cleanEmail && mobileUsersStore.has(`email:${cleanEmail}`)) {
+    existingUser = mobileUsersStore.get(`email:${cleanEmail}`);
   }
+  if (!existingUser && userId && mobileUsersStore.has(`id:${userId}`)) {
+    existingUser = mobileUsersStore.get(`id:${userId}`);
+  }
+
+  const finalUserId = userId || existingUser?.id || (cleanPhone ? getUuidForPhone(cleanPhone) : crypto.randomUUID());
+  const updatedUser = {
+    ...(existingUser || {}),
+    id: finalUserId,
+    phone: cleanPhone || existingUser?.phone || "",
+    email: cleanEmail || existingUser?.email || "",
+    full_name: nameToUse || existingUser?.full_name || "User",
+    credits: targetBal,
+    wallet_balance: targetBal,
+    unlimited_expiry: unlimitedExpiry !== undefined ? unlimitedExpiry : (existingUser?.unlimited_expiry || null),
+    user_discount_percent: userDiscountPercent !== undefined ? Number(userDiscountPercent) : Number(existingUser?.user_discount_percent || 0),
+    is_free_credit_claimed: isFreeCreditClaimed !== undefined ? isFreeCreditClaimed : (existingUser?.is_free_credit_claimed ?? true),
+    updated_at: nowIso
+  };
+
+  if (cleanPhone) mobileUsersStore.set(cleanPhone, updatedUser);
+  if (cleanEmail) mobileUsersStore.set(`email:${cleanEmail}`, updatedUser);
+  if (finalUserId) mobileUsersStore.set(`id:${finalUserId}`, updatedUser);
+
   for (const [pKey, mUser] of mobileUsersStore.entries()) {
-    if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail) || (cleanPhone && pKey === cleanPhone)) {
-      mobileUsersStore.set(pKey, {
-        ...mUser,
-        credits: targetBal,
-        wallet_balance: targetBal,
-        full_name: nameToUse || mUser.full_name,
-        unlimited_expiry: unlimitedExpiry !== undefined ? unlimitedExpiry : mUser.unlimited_expiry,
-        user_discount_percent: userDiscountPercent !== undefined ? Number(userDiscountPercent) : Number(mUser.user_discount_percent || 0),
-        updated_at: nowIso
-      });
-      saveMobileUsersStore(mobileUsersStore);
+    if ((finalUserId && mUser.id === finalUserId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail) || (cleanPhone && (pKey === cleanPhone || mUser.phone === cleanPhone))) {
+      mobileUsersStore.set(pKey, updatedUser);
     }
   }
+  saveMobileUsersStore(mobileUsersStore);
 
   if (db) {
     // 2. Update profiles table
@@ -1963,13 +1971,18 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
   if (cleanPhone && mobileUsersStore.has(cleanPhone)) {
     mobStoreUser = mobileUsersStore.get(cleanPhone);
     if (mobStoreUser) candidateRows.push({ ...mobStoreUser, is_from_db: false });
-  } else {
-    for (const [pKey, mUser] of mobileUsersStore.entries()) {
-      if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail)) {
-        mobStoreUser = mUser;
-        candidateRows.push({ ...mUser, is_from_db: false });
-        break;
-      }
+  }
+  if (cleanEmail && mobileUsersStore.has(`email:${cleanEmail}`)) {
+    const eUser = mobileUsersStore.get(`email:${cleanEmail}`);
+    if (eUser) candidateRows.push({ ...eUser, is_from_db: false });
+  }
+  if (userId && mobileUsersStore.has(`id:${userId}`)) {
+    const idUser = mobileUsersStore.get(`id:${userId}`);
+    if (idUser) candidateRows.push({ ...idUser, is_from_db: false });
+  }
+  for (const [pKey, mUser] of mobileUsersStore.entries()) {
+    if ((userId && mUser.id === userId) || (cleanEmail && mUser.email?.toLowerCase() === cleanEmail) || (cleanPhone && mUser.phone === cleanPhone)) {
+      candidateRows.push({ ...mUser, is_from_db: false });
     }
   }
 
@@ -2019,30 +2032,30 @@ async function getUnifiedUserProfile(userId: string, email?: string, phone?: str
     if (phoneMatch) primaryRow = phoneMatch;
   }
 
-  let maxCandidateCredits = 0;
-  for (const r of deduped) {
-    const c = Math.max(Number(r.credits || 0), Number(r.wallet_balance || 0));
-    if (c > maxCandidateCredits) maxCandidateCredits = c;
+  // Authoritatively derive finalCredits from primaryRow (the most recently updated state)
+  let finalCredits = 0;
+  const primaryBal = primaryRow.wallet_balance !== undefined && primaryRow.wallet_balance !== null
+    ? primaryRow.wallet_balance
+    : primaryRow.credits;
+  if (primaryBal !== undefined && primaryBal !== null) {
+    finalCredits = Math.max(0, Number(Number(primaryBal).toFixed(2)));
   }
-  let finalCredits = Math.max(0, Number(maxCandidateCredits.toFixed(2)));
 
-  // Check wallet_transactions for authoritative balance_after
-  if (db && (userId || cleanEmail)) {
+  // Check wallet_transactions: If a transaction was logged, its balance_after is the authoritative ledger state
+  if (db && (userId || cleanEmail || cleanPhone)) {
     try {
       const qConditions: string[] = [];
       if (userId && userId.includes('-')) qConditions.push(`user_id.eq.${userId}`);
       if (cleanEmail) qConditions.push(`user_email.eq.${cleanEmail}`);
       if (qConditions.length > 0) {
         const { data: txList } = await db.from("wallet_transactions")
-          .select("balance_after")
+          .select("balance_after, created_at")
           .or(qConditions.join(","))
           .order("created_at", { ascending: false })
           .limit(1);
         if (txList && txList.length > 0 && txList[0].balance_after !== null && txList[0].balance_after !== undefined) {
           const txBal = Number(txList[0].balance_after);
-          if (txBal > finalCredits) {
-            finalCredits = txBal;
-          }
+          finalCredits = Math.max(0, Number(txBal.toFixed(2)));
         }
       }
     } catch (e) {}
@@ -2285,11 +2298,20 @@ app.get("/api/profile", async (req, res) => {
     }
 
     if (isAdmin) {
+      const initialAdminBal = 100.00;
+      await updateUserCreditsAcrossAllStores(
+        user.id,
+        user.email,
+        user.phone,
+        initialAdminBal,
+        user.user_metadata?.full_name || "Administrator"
+      );
+      const createdAdmin = await getUnifiedUserProfile(user.id, user.email, user.phone);
       return res.json({
         id: user.id,
         email: user.email,
-        credits: 100.00,
-        wallet_balance: 100.00,
+        credits: createdAdmin?.credits !== undefined ? createdAdmin.credits : initialAdminBal,
+        wallet_balance: createdAdmin?.wallet_balance !== undefined ? createdAdmin.wallet_balance : initialAdminBal,
         full_name: user.user_metadata?.full_name || "Administrator",
         avatar_url: null,
         is_free_credit_claimed: true,
@@ -2425,13 +2447,21 @@ function loadMobileUsersStore(): Map<string, any> {
       const parsedArray = JSON.parse(rawData);
       if (Array.isArray(parsedArray)) {
         for (const userObj of parsedArray) {
-          if (userObj && userObj.phone) {
-            const clean = userObj.phone.replace(/\D/g, "").slice(-10);
-            const userUuid = (userObj.id && userObj.id.includes("-") && userObj.id.length === 36)
-              ? userObj.id
-              : getUuidForPhone(clean);
-            storeMap.set(clean, { ...userObj, id: userUuid, phone: clean });
-          }
+          if (!userObj) continue;
+          const cleanPhone = userObj.phone ? userObj.phone.replace(/\D/g, "").slice(-10) : "";
+          const cleanEmail = userObj.email ? userObj.email.trim().toLowerCase() : "";
+          const userUuid = (userObj.id && userObj.id.includes("-") && userObj.id.length === 36)
+            ? userObj.id
+            : (cleanPhone ? getUuidForPhone(cleanPhone) : (userObj.id || crypto.randomUUID()));
+          const standardized = {
+            ...userObj,
+            id: userUuid,
+            phone: cleanPhone || userObj.phone || "",
+            email: cleanEmail || userObj.email || ""
+          };
+          if (cleanPhone) storeMap.set(cleanPhone, standardized);
+          if (cleanEmail) storeMap.set(`email:${cleanEmail}`, standardized);
+          if (userUuid) storeMap.set(`id:${userUuid}`, standardized);
         }
       }
     }
@@ -2447,7 +2477,16 @@ function saveMobileUsersStore(storeMap: Map<string, any>) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    const arrayData = Array.from(storeMap.values());
+    const seen = new Set<string>();
+    const arrayData: any[] = [];
+    for (const val of storeMap.values()) {
+      if (!val) continue;
+      const key = val.id || val.email || val.phone;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        arrayData.push(val);
+      }
+    }
     fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(arrayData, null, 2), "utf-8");
   } catch (err) {
     console.warn("Could not save mobile_users.json:", err);
@@ -3430,7 +3469,9 @@ app.post("/api/wallet/deduct-search", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   const { service, query, cost } = req.body || {};
-  const deductCost = typeof cost === "number" && cost > 0 ? cost : 2.0;
+  const sKey = getCanonicalServiceKey(String(service || "").trim().toLowerCase());
+  const defaultCost = LOOKUP_RATES[sKey] || LOOKUP_RATES[String(service || "").trim().toLowerCase()] || 2.0;
+  const deductCost = typeof cost === "number" && cost > 0 ? cost : defaultCost;
 
   try {
     const client = await getRequestClient(token);

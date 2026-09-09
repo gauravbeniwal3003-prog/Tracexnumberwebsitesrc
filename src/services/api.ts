@@ -38,6 +38,30 @@ export const getAbsoluteBaseUrl = (): string => {
   return 'https://tracexdata.com';
 };
 
+export const SERVICE_COSTS: Record<string, number> = {
+  phone: 2.0,
+  number: 2.0,
+  mobile: 2.0,
+  telegram: 5.0,
+  tg: 5.0,
+  email: 20.0,
+  mail: 20.0,
+  gmail: 20.0,
+  adhr: 25.0,
+  aadhar: 25.0,
+  aadhaar: 25.0,
+  identity: 25.0,
+  vehicle: 12.0,
+  veh: 12.0,
+  rc: 12.0,
+  veh_owner_num: 25.0,
+  veh_numm: 25.0,
+  vehicle_owner: 25.0,
+  bnk: 2.0,
+  ifsc: 2.0,
+  bank: 2.0
+};
+
 export const getAuthToken = async (): Promise<string> => {
   try {
     const session = await supabase.auth.getSession();
@@ -400,22 +424,24 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       }
 
       // If remaining_balance was not provided (e.g. rescued directly via direct provider fallback),
-      // asynchronously inform the backend to log transaction and deduct wallet credits in database
+      // inform the backend to log transaction and deduct wallet credits in database
       let resolvedRemainingBalance = data.remaining_balance;
       if (resolvedRemainingBalance === undefined && token) {
+        const normService = String(service || '').trim().toLowerCase();
+        const serviceCost = SERVICE_COSTS[normService] ?? 2.0;
         try {
-          fetch('/api/wallet/deduct-search', {
+          const deductRes = await fetch(`${baseUrl.replace(/\/$/, "")}/api/wallet/deduct-search`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ service, query: cleanQ, cost: 2.0 })
-          }).then(res => res.json()).then(deductRes => {
-            if (deductRes && deductRes.remaining_balance !== undefined) {
-              // Dispatched deduction
-            }
-          }).catch(() => {});
+            body: JSON.stringify({ service: normService, query: cleanQ, cost: serviceCost })
+          }).then(res => res.json()).catch(() => null);
+
+          if (deductRes && deductRes.remaining_balance !== undefined) {
+            resolvedRemainingBalance = deductRes.remaining_balance;
+          }
         } catch (e) {}
       }
 
@@ -441,10 +467,31 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       const rescueData = await queryDirectProviderFallback(service, cleanQ);
       if (rescueData) {
         const cleanResults = scrubBranding(rescueData.results || rescueData);
+        let rescueRemainingBal: number | undefined = undefined;
+        if (token) {
+          const normService = String(service || '').trim().toLowerCase();
+          const serviceCost = SERVICE_COSTS[normService] ?? 2.0;
+          try {
+            const deductRes = await fetch(`${baseUrl.replace(/\/$/, "")}/api/wallet/deduct-search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ service: normService, query: cleanQ, cost: serviceCost })
+            }).then(res => res.json()).catch(() => null);
+
+            if (deductRes && deductRes.remaining_balance !== undefined) {
+              rescueRemainingBal = deductRes.remaining_balance;
+            }
+          } catch (e) {}
+        }
+
         return {
           status: true,
           results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
-          raw_results: rescueData.raw_results ? scrubBranding(rescueData.raw_results) : undefined
+          raw_results: rescueData.raw_results ? scrubBranding(rescueData.raw_results) : undefined,
+          remaining_balance: rescueRemainingBal
         };
       }
     } catch {}

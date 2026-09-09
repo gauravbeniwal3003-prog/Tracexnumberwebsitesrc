@@ -554,7 +554,7 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         refreshProfile().catch(() => {});
       } else if (data?.status === true) {
         const currentBal = Number(profile?.credits || 0);
-        const cost = 2.0;
+        const cost = typeof creditCost === 'number' && creditCost > 0 ? creditCost : 2.0;
         const newBal = Math.max(0, Number((currentBal - cost).toFixed(2)));
         updateProfileCredits(newBal);
         refreshProfile().catch(() => {});

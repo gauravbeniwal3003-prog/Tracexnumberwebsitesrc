@@ -8,21 +8,22 @@
     "credits": 1470,
     "wallet_balance": 1470,
     "created_at": "2026-08-14T05:19:37.696+00:00",
-    "updated_at": "2026-09-09T15:49:21.191Z",
+    "updated_at": "2026-09-09T16:19:51.232Z",
     "unlimited_expiry": null,
     "user_discount_percent": 0
   },
   {
-    "id": "14afba2e-a38c-4948-b1d0-736720187583",
+    "id": "a13cf083-0530-415f-bb36-dbaffa846e99",
     "phone": "9999999999",
-    "email": "pcbackup00011@gmail.com",
-    "full_name": "Backup 1",
-    "credits": 139261,
-    "wallet_balance": 139261,
-    "updated_at": "2026-09-09T15:51:46.106Z",
+    "email": "duelcom20@gmail.com",
+    "full_name": "Duelcom",
+    "credits": 142986,
+    "wallet_balance": 142986,
+    "updated_at": "2026-09-09T16:20:08.509Z",
     "created_at": "2026-08-29T00:18:56.319Z",
     "unlimited_expiry": null,
-    "user_discount_percent": 0
+    "user_discount_percent": 0,
+    "is_free_credit_claimed": true
   },
   {
     "id": "bf727570-6000-47b3-a482-ddc1e124cee2",
@@ -32,7 +33,7 @@
     "credits": 50,
     "wallet_balance": 50,
     "created_at": "2026-09-04T04:54:28.615+00:00",
-    "updated_at": "2026-09-09T15:49:24.724Z",
+    "updated_at": "2026-09-09T16:20:01.765Z",
     "unlimited_expiry": null,
     "user_discount_percent": 0
   }
