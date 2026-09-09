@@ -498,11 +498,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
     setAadhaarPanResult(null);
 
     try {
-      // CHECK PROTECTION (with 2.5s timeout protection to prevent search stalling)
+      // CHECK PROTECTION (with 3.5s timeout protection to prevent search stalling)
       let isProtected = false;
       try {
         const protController = new AbortController();
-        const protTimer = setTimeout(() => protController.abort(), 2500);
+        const protTimer = setTimeout(() => protController.abort(), 3500);
         const checkProtectedResponse = await fetch(`${getApiBaseUrl()}/api/check-protected`, {
           method: 'POST',
           headers: {
@@ -513,11 +513,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
         });
         clearTimeout(protTimer);
         if (checkProtectedResponse.ok) {
-          const { isProtected: protectedResult } = await checkProtectedResponse.json();
-          if (protectedResult) isProtected = true;
+          const data = await checkProtectedResponse.json().catch(() => null);
+          if (data && data.isProtected) isProtected = true;
         }
-      } catch (e) {
-        console.warn("Protection check skipped or timed out:", e);
+      } catch {
+        // Protection check skipped silently if network/timeout occurs
       }
 
       if (isProtected) {

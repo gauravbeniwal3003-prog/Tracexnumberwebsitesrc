@@ -712,7 +712,7 @@ async function executeCoreLookup(serviceKey: string, query: string): Promise<any
     try {
       console.log(`[CORE_LOOKUP] Querying primary provider: ${providerUrl}`);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
+      const timeout = setTimeout(() => controller.abort(), 4500); // Fast 4.5s timeout
 
       const resp = await fetch(providerUrl, {
         signal: controller.signal,
@@ -753,7 +753,7 @@ async function executeCoreLookup(serviceKey: string, query: string): Promise<any
 
       console.log(`[CORE_LOOKUP] Trying fallback provider: ${targetUrl}`);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      const timeout = setTimeout(() => controller.abort(), 3500); // Fast 3.5s timeout
 
       const resp = await fetch(targetUrl, {
         signal: controller.signal,
@@ -4000,84 +4000,93 @@ app.post("/api/visitor/log", (req, res) => {
   }
 });
 
-// Universal Privacy Shield & Record Protection Checker
+// Universal Privacy Shield & Record Protection Checker with in-memory TTL caching and fast timeout
+const PROTECTED_CACHE = new Map<string, { isProtected: boolean; expiresAt: number }>();
+
 async function checkRecordIsProtected(serviceType: string, query: string): Promise<boolean> {
   if (!supabaseAdmin) return false;
-  try {
-    const rawQuery = String(query || '').trim();
-    if (!rawQuery) return false;
+  const rawQuery = String(query || '').trim();
+  if (!rawQuery) return false;
 
-    // Normalize service type string
-    let st = serviceType.toLowerCase();
-    if (['mobile', 'number', 'phone'].includes(st)) st = 'phone';
-    if (['telegram', 'tg'].includes(st)) st = 'telegram';
-    if (['adhr', 'aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
-    if (['vehicle', 'veh'].includes(st)) st = 'vehicle';
-    if (['veh_owner_num', 'vehicle_owner'].includes(st)) st = 'veh_owner_num';
-    if (['email', 'gmail', 'mail'].includes(st)) st = 'email';
+  let st = serviceType.toLowerCase();
+  if (['mobile', 'number', 'phone'].includes(st)) st = 'phone';
+  if (['telegram', 'tg'].includes(st)) st = 'telegram';
+  if (['adhr', 'aadhaar', 'aadhar', 'identity'].includes(st)) st = 'adhr';
+  if (['vehicle', 'veh'].includes(st)) st = 'vehicle';
+  if (['veh_owner_num', 'vehicle_owner'].includes(st)) st = 'veh_owner_num';
+  if (['email', 'gmail', 'mail'].includes(st)) st = 'email';
 
-    // 1. Check in unified table protected_records
-    const { data: rec } = await supabaseAdmin
-      .from('protected_records')
-      .select('record_value')
-      .eq('service_type', st)
-      .ilike('record_value', rawQuery)
-      .maybeSingle();
+  const cacheKey = `${st}:${rawQuery.toLowerCase()}`;
+  const cached = PROTECTED_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.isProtected;
+  }
 
-    if (rec) return true;
+  const checkDb = async (): Promise<boolean> => {
+    try {
+      // 1. Check in unified table protected_records
+      const { data: rec } = await supabaseAdmin
+        .from('protected_records')
+        .select('record_value')
+        .eq('service_type', st)
+        .ilike('record_value', rawQuery)
+        .maybeSingle();
 
-    // 2. Specific service matching and format normalizations
-    if (st === 'phone') {
-      const cleanPhone = rawQuery.replace(/\D/g, '');
-      if (cleanPhone) {
-        const { data: legacyNum } = await supabaseAdmin
-          .from('protected_numbers')
-          .select('phone_number')
-          .eq('phone_number', cleanPhone)
-          .maybeSingle();
-        if (legacyNum) return true;
+      if (rec) return true;
 
-        const { data: recPhone } = await supabaseAdmin
-          .from('protected_records')
-          .select('record_value')
-          .eq('service_type', 'phone')
-          .eq('record_value', cleanPhone)
-          .maybeSingle();
-        if (recPhone) return true;
+      // 2. Specific service matching and format normalizations
+      if (st === 'phone') {
+        const cleanPhone = rawQuery.replace(/\D/g, '');
+        if (cleanPhone) {
+          const [legacyRes, recRes] = await Promise.all([
+            supabaseAdmin.from('protected_numbers').select('phone_number').eq('phone_number', cleanPhone).maybeSingle(),
+            supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'phone').eq('record_value', cleanPhone).maybeSingle()
+          ]);
+          if (legacyRes.data || recRes.data) return true;
+        }
+      } else if (st === 'telegram') {
+        const cleanTg = rawQuery.replace(/^@/, '').trim();
+        const withAt = `@${cleanTg}`;
+        const [leg1, leg2, rec1, rec2] = await Promise.all([
+          supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', cleanTg).maybeSingle(),
+          supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', withAt).maybeSingle(),
+          supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', cleanTg).maybeSingle(),
+          supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', withAt).maybeSingle()
+        ]);
+        if (leg1.data || leg2.data || rec1.data || rec2.data) return true;
+      } else if (st === 'adhr') {
+        const cleanAdhr = rawQuery.replace(/\D/g, '');
+        if (cleanAdhr) {
+          const { data: recAdhr } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'adhr').eq('record_value', cleanAdhr).maybeSingle();
+          if (recAdhr) return true;
+        }
+      } else if (st === 'vehicle' || st === 'veh_owner_num') {
+        const cleanVeh = rawQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (cleanVeh) {
+          const { data: recVeh } = await supabaseAdmin.from('protected_records').select('record_value').in('service_type', ['vehicle', 'veh_owner_num']).ilike('record_value', cleanVeh).maybeSingle();
+          if (recVeh) return true;
+        }
+      } else if (st === 'email') {
+        const cleanEmail = rawQuery.toLowerCase();
+        if (cleanEmail) {
+          const { data: recEmail } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'email').ilike('record_value', cleanEmail).maybeSingle();
+          if (recEmail) return true;
+        }
       }
-    } else if (st === 'telegram') {
-      const cleanTg = rawQuery.replace(/^@/, '').trim();
-      const withAt = `@${cleanTg}`;
-      const { data: legacyTg1 } = await supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', cleanTg).maybeSingle();
-      const { data: legacyTg2 } = await supabaseAdmin.from('protected_telegrams').select('telegram_id').eq('telegram_id', withAt).maybeSingle();
-      if (legacyTg1 || legacyTg2) return true;
-
-      const { data: recTg1 } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', cleanTg).maybeSingle();
-      const { data: recTg2 } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'telegram').ilike('record_value', withAt).maybeSingle();
-      if (recTg1 || recTg2) return true;
-    } else if (st === 'adhr') {
-      const cleanAdhr = rawQuery.replace(/\D/g, '');
-      if (cleanAdhr) {
-        const { data: recAdhr } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'adhr').eq('record_value', cleanAdhr).maybeSingle();
-        if (recAdhr) return true;
-      }
-    } else if (st === 'vehicle' || st === 'veh_owner_num') {
-      const cleanVeh = rawQuery.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      if (cleanVeh) {
-        const { data: recVeh } = await supabaseAdmin.from('protected_records').select('record_value').in('service_type', ['vehicle', 'veh_owner_num']).ilike('record_value', cleanVeh).maybeSingle();
-        if (recVeh) return true;
-      }
-    } else if (st === 'email') {
-      const cleanEmail = rawQuery.toLowerCase();
-      if (cleanEmail) {
-        const { data: recEmail } = await supabaseAdmin.from('protected_records').select('record_value').eq('service_type', 'email').ilike('record_value', cleanEmail).maybeSingle();
-        if (recEmail) return true;
-      }
+      return false;
+    } catch (err) {
+      console.warn("[checkRecordIsProtected Exception]", err);
+      return false;
     }
+  };
 
-    return false;
-  } catch (err) {
-    console.warn("[checkRecordIsProtected Exception]", err);
+  try {
+    // Enforce 1.5s max timeout on protection DB query to never stall the lookup
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1500));
+    const result = await Promise.race([checkDb(), timeoutPromise]);
+    PROTECTED_CACHE.set(cacheKey, { isProtected: result, expiresAt: Date.now() + 10 * 60 * 1000 }); // 10 min cache
+    return result;
+  } catch {
     return false;
   }
 }

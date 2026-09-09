@@ -225,11 +225,11 @@ export const queryDirectProviderFallback = async (service: string, query: string
   const sKey = (service || '').trim().toLowerCase();
   const cleanQ = query.trim();
 
-  // 1. Phone / Number / Mobile
-  if (sKey === 'phone' || sKey === 'mobile' || sKey === 'number') {
+  // 1. Phone / Number / Mobile / Telegram
+  if (sKey === 'phone' || sKey === 'mobile' || sKey === 'number' || sKey === 'telegram' || sKey === 'tg') {
     const directUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number=${encodeURIComponent(cleanQ)}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
+    const timer = setTimeout(() => controller.abort(), 6000);
     try {
       const resp = await fetch(directUrl, { signal: controller.signal });
       clearTimeout(timer);
@@ -247,17 +247,105 @@ export const queryDirectProviderFallback = async (service: string, query: string
     }
   }
 
-  // 2. IFSC / Bank
+  // 2. Aadhaar
+  if (sKey === 'adhr' || sKey === 'aadhaar' || sKey === 'aadhar') {
+    const directUrl = `https://exploitsindia.site/osintcallerbot/aadhar.php?exploits=${encodeURIComponent(cleanQ)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch {
+        return { status: "success", results: { raw_text: text } };
+      }
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  // 3. Vehicle RC
+  if (sKey === 'vehicle' || sKey === 'veh' || sKey === 'rc') {
+    const directUrl = `https://exploitsindia.site/osintcallerbot/vehicle-rc.php?exploits=${encodeURIComponent(cleanQ)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch {
+        return { status: "success", results: { raw_text: text } };
+      }
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  // 4. Vehicle to Owner Number
+  if (sKey === 'veh_owner_num' || sKey === 'vehicle_owner' || sKey === 'veh_numm') {
+    const directUrl = `https://vehicle2.asurpapa.workers.dev/api?key=1&rc=${encodeURIComponent(cleanQ)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch {
+        return { status: "success", results: { raw_text: text } };
+      }
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  // 5. IFSC / Bank
   if (sKey === 'ifsc' || sKey === 'bnk' || sKey === 'bank') {
     const directUrl = `https://ifsc.razorpay.com/${encodeURIComponent(cleanQ)}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 4000);
     try {
       const resp = await fetch(directUrl, { signal: controller.signal });
       clearTimeout(timer);
       if (!resp.ok) return null;
       const json = await resp.json();
       return { status: "success", results: json };
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  // 6. Email
+  if (sKey === 'email' || sKey === 'mail' || sKey === 'gmail') {
+    const directUrl = `https://anonymously-osint-api.vercel.app/api/osint?key=a37d6e6ab64d9f67a2cb4860d5b4036c&query=${encodeURIComponent(cleanQ)}&type=email`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch {
+        return { status: "success", results: { raw_text: text } };
+      }
     } catch {
       clearTimeout(timer);
       return null;
@@ -284,7 +372,6 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
   const token = await getAuthToken();
   const baseUrl = getApiBaseUrl();
   const primaryUrl = `${baseUrl.replace(/\/$/, "")}/api/user-lookup`;
-  const renderFallbackUrl = `${RENDER_BACKEND_URL}/api/user-lookup`;
 
   const headers: Record<string, string> = {
     'Accept': 'application/json,text/plain,*/*',
@@ -295,9 +382,9 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const performFetch = async (targetUrl: string) => {
+  const performFetch = async (targetUrl: string, timeoutMs: number = 6500) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 9500); // 9.5-second strict timeout
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(targetUrl, {
@@ -353,27 +440,18 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
   try {
     let data: any = null;
 
-    // 1. Try primary endpoint first (with 9.5s timeout)
+    // 1. Try primary endpoint first (with fast 6.5s timeout)
     try {
-      data = await performFetch(primaryUrl);
+      data = await performFetch(primaryUrl, 6500);
     } catch (primaryErr) {
       console.warn(`[UniversalLookup] Primary endpoint (${primaryUrl}) failed/timed out:`, primaryErr);
-      // If primary endpoint failed and fallback URL is different, try fallback
-      if (primaryUrl !== renderFallbackUrl) {
-        try {
-          console.log(`[UniversalLookup] Seamlessly falling back to Render server: ${renderFallbackUrl}`);
-          data = await performFetch(renderFallbackUrl);
-        } catch (fallbackErr) {
-          console.warn(`[UniversalLookup] Render fallback server also failed/timed out:`, fallbackErr);
-        }
-      }
     }
 
     // 2. If backend was slow, unresponsive, failed, returned non-JSON, or rate-limited:
     // ENGAGE DIRECT HIGH-SPEED PROVIDER RESCUE IMMEDIATELY!
     if (!data || data.status === false || data.status === "error") {
       try {
-        console.log(`[UniversalLookup] Backend slow or challenged. Engaging fast direct provider rescue...`);
+        console.log(`[UniversalLookup] Engaging fast direct provider rescue for ${service}...`);
         const directData = await queryDirectProviderFallback(service, cleanQ);
         if (directData && (directData.status === "success" || directData.status === true || directData.results)) {
           data = directData;
