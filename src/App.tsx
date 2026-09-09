@@ -470,11 +470,11 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
 
     const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
 
-    let creditCost = 2;
+    let creditCost = 5;
     if (activeService === 'phone' || activeService === 'number' || activeService === 'mobile') {
-      creditCost = 2;
-    } else if (activeService === 'telegram' || activeService === 'tg') {
       creditCost = 5;
+    } else if (activeService === 'telegram' || activeService === 'tg') {
+      creditCost = 10;
     } else if (activeService === 'adhr' || activeService === 'aadhaar' || activeService === 'aadhar') {
       creditCost = 25;
     } else if (activeService === 'vehicle' || activeService === 'veh') {

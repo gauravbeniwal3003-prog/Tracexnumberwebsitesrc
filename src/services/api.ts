@@ -39,11 +39,11 @@ export const getAbsoluteBaseUrl = (): string => {
 };
 
 export const SERVICE_COSTS: Record<string, number> = {
-  phone: 2.0,
-  number: 2.0,
-  mobile: 2.0,
-  telegram: 5.0,
-  tg: 5.0,
+  phone: 5.0,
+  number: 5.0,
+  mobile: 5.0,
+  telegram: 10.0,
+  tg: 10.0,
   email: 20.0,
   mail: 20.0,
   gmail: 20.0,

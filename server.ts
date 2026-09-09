@@ -979,11 +979,11 @@ async function processReferralDepositBonus(referredUserId: string, depositAmount
 
 // Dynamic Lookup Rate Fallbacks (Matches Exact Pricing Across Entire Website)
 const LOOKUP_RATES: Record<string, number> = {
-  phone: 2.0,            // Number lookup: ₹2.00 per lookup
-  number: 2.0,
-  mobile: 2.0,
-  telegram: 5.0,        // Telegram lookup: ₹5.00 per lookup
-  tg: 5.0,
+  phone: 5.0,            // Number lookup: ₹5.00 per lookup
+  number: 5.0,
+  mobile: 5.0,
+  telegram: 10.0,        // Telegram lookup: ₹10.00 per lookup
+  tg: 10.0,
   email: 20.0,           // Gmail / Email lookup: ₹20.00 per lookup
   mail: 20.0,
   gmail: 20.0,
