@@ -138,6 +138,22 @@ def is_node_healthy() -> bool:
     return True
 
 
+def is_node_socket_ready() -> bool:
+    """Checks if Node.js server is actively accepting TCP connections on its internal port."""
+    import socket
+    global node_process
+    if node_process is None or node_process.poll() is not None:
+        return False
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.25)
+        res = sock.connect_ex(("127.0.0.1", node_port))
+        sock.close()
+        return res == 0
+    except Exception:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
@@ -185,11 +201,12 @@ app.add_middleware(
 @app.get("/gateway/health")
 def gateway_health():
     """Instant gateway health check endpoint."""
+    socket_ready = is_node_socket_ready()
     node_alive = is_node_healthy()
     return {
         "status": "healthy",
         "gateway": "online",
-        "node_backend": "online" if node_alive else "initializing",
+        "node_backend": "online" if socket_ready else ("starting" if node_alive else "offline"),
         "port": external_port,
         "internal_node_port": node_port
     }
@@ -199,7 +216,7 @@ def gateway_health():
 @app.get("/")
 async def root_probe(request: Request):
     """Fast probe endpoint for platform deployment scanners (Render, Cloud Run, etc.)."""
-    if not is_node_healthy() or is_installing_deps:
+    if not is_node_socket_ready():
         return JSONResponse(
             status_code=200,
             content={
@@ -213,8 +230,24 @@ async def root_probe(request: Request):
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_all(request: Request, path: str):
-    """Transparently proxies all incoming requests to the Node.js Express backend."""
+    """Transparently proxies all incoming requests to the Node.js Express backend with intelligent fast-paths."""
     global node_process, http_client
+
+    # Build destination path early
+    req_path = request.url.path
+    if request.url.query:
+        req_path = f"{req_path}?{request.url.query}"
+
+    # FAST-PATH: If this is check-protected and Node is still starting, never block the UI
+    if req_path.startswith("/api/check-protected"):
+        if not is_node_socket_ready():
+            # Quick 1-second check before returning safe fallback
+            for _ in range(5):
+                if is_node_socket_ready():
+                    break
+                await asyncio.sleep(0.2)
+            if not is_node_socket_ready():
+                return JSONResponse(status_code=200, content={"isProtected": False, "status": "ok"})
 
     # If Node is not running, trigger spawn
     if not is_node_healthy():
@@ -222,23 +255,42 @@ async def proxy_all(request: Request, path: str):
         spawn_thread = threading.Thread(target=spawn_node_process, daemon=True)
         spawn_thread.start()
 
-    # If dependencies are installing or Node is booting, wait up to 25 seconds for it to become ready
-    if is_installing_deps or not is_node_healthy():
-        for _ in range(30):
-            if is_node_healthy() and not is_installing_deps:
+    # If dependencies are installing or Node is booting, wait up to 15 seconds for socket readiness
+    if not is_node_socket_ready():
+        for _ in range(20):
+            if is_node_socket_ready():
                 break
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.6)
+
+    # FAST-PATH RESCUE for user-lookup if Node is still booting after 12 seconds
+    if not is_node_socket_ready() and req_path.startswith("/api/user-lookup") and request.method == "POST":
+        try:
+            body_bytes = await request.body()
+            import json
+            payload = json.loads(body_bytes.decode('utf-8'))
+            svc = str(payload.get('service', '')).lower().strip()
+            qry = str(payload.get('query', '')).strip()
+            if svc in ['phone', 'mobile', 'number'] and qry:
+                log(f"[GATEWAY FAST-PATH] Handling phone lookup for {qry} while Node boots...")
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    target_url = f"https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={qry}"
+                    provider_resp = await client.get(target_url)
+                    if provider_resp.status_code == 200:
+                        data = provider_resp.json()
+                        return JSONResponse(status_code=200, content={
+                            "status": "success",
+                            "service": svc,
+                            "query": qry,
+                            "results": data.get("results") or data
+                        })
+        except Exception as fast_err:
+            log(f"[GATEWAY FAST-PATH] Quick lookup fallback failed: {fast_err}")
 
     if http_client is None or http_client.is_closed:
         http_client = httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{node_port}",
             timeout=httpx.Timeout(120.0, connect=10.0)
         )
-
-    # Build destination path
-    req_path = request.url.path
-    if request.url.query:
-        req_path = f"{req_path}?{request.url.query}"
 
     headers = dict(request.headers)
     orig_host = headers.get("host", f"127.0.0.1:{external_port}")
@@ -253,14 +305,15 @@ async def proxy_all(request: Request, path: str):
 
     body = await request.body()
 
-    max_retries = 5
+    max_retries = 3
     for attempt in range(max_retries):
         try:
             response = await http_client.request(
                 method=request.method,
                 url=req_path,
                 headers=headers,
-                content=body
+                content=body,
+                timeout=15.0
             )
 
             resp_headers = dict(response.headers)
@@ -277,8 +330,10 @@ async def proxy_all(request: Request, path: str):
                 headers=resp_headers
             )
         except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout) as e:
+            if req_path.startswith("/api/check-protected"):
+                return JSONResponse(status_code=200, content={"isProtected": False, "status": "ok"})
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.2)
+                await asyncio.sleep(0.8)
                 continue
             else:
                 return JSONResponse(

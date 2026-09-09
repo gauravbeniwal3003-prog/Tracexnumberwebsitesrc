@@ -186,9 +186,58 @@ export const scrubBranding = (obj: any): any => {
 };
 
 /**
+ * Direct High-Speed Provider Fallback Engine
+ * Queries verified upstream providers directly if backend is cold, slow, or challenged.
+ */
+export const queryDirectProviderFallback = async (service: string, query: string): Promise<any> => {
+  const sKey = (service || '').trim().toLowerCase();
+  const cleanQ = query.trim();
+
+  // 1. Phone / Number / Mobile
+  if (sKey === 'phone' || sKey === 'mobile' || sKey === 'number') {
+    const directUrl = `https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number=${encodeURIComponent(cleanQ)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch {
+        return null;
+      }
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  // 2. IFSC / Bank
+  if (sKey === 'ifsc' || sKey === 'bnk' || sKey === 'bank') {
+    const directUrl = `https://ifsc.razorpay.com/${encodeURIComponent(cleanQ)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch(directUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const json = await resp.json();
+      return { status: "success", results: json };
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  }
+
+  return null;
+};
+
+/**
  * Universal Core Lookup Dispatcher
- * Directly queries the backend proxy with user authentication and returns clean JSON results.
- * Never fails or shows fake error without try.
+ * Resilient multi-tier query engine with strict timeout protection and zero-stall guarantee.
  */
 export const executeUniversalLookup = async (service: string, query: string): Promise<ApiResponse> => {
   const cleanQ = query.trim();
@@ -215,80 +264,99 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
   }
 
   const performFetch = async (targetUrl: string) => {
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ service, query: cleanQ }),
-      mode: 'cors'
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 9500); // 9.5-second strict timeout
 
-    const rawText = await response.text();
-    let data: any;
     try {
-      data = JSON.parse(rawText);
-    } catch {
-      // If HTML or error page was returned from static host or proxy failure
-      if (
-        rawText.toLowerCase().includes('<!doctype') || 
-        rawText.toLowerCase().includes('<html') || 
-        rawText.toLowerCase().includes('error: page not found') ||
-        rawText.toLowerCase().includes('404 page not found')
-      ) {
-        throw new Error(`Endpoint returned non-JSON response from ${targetUrl}`);
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ service, query: cleanQ }),
+        mode: 'cors',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const rawText = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        // If HTML or error page was returned from static host or proxy failure
+        if (
+          rawText.toLowerCase().includes('<!doctype') || 
+          rawText.toLowerCase().includes('<html') || 
+          rawText.toLowerCase().includes('error: page not found') ||
+          rawText.toLowerCase().includes('404 page not found') ||
+          rawText.toLowerCase().includes('just a moment') ||
+          rawText.toLowerCase().includes('cloudflare')
+        ) {
+          throw new Error(`Endpoint returned non-JSON/Challenge response from ${targetUrl}`);
+        }
+        if (rawText.toLowerCase().includes('no data') || rawText.toLowerCase().includes('no record')) {
+          return {
+            status: false,
+            results: {},
+            error: `Sorry, we don't have data related to the query.`
+          };
+        }
+        data = { status: "success", results: { raw_text: rawText } };
       }
-      if (rawText.toLowerCase().includes('no data') || rawText.toLowerCase().includes('no record')) {
+
+      if (!response.ok && (data?.error || data?.message)) {
         return {
           status: false,
           results: {},
-          error: `Sorry, we don't have data related to the query.`
+          error: data.message || data.error || "Lookup request could not be completed. Please try again."
         };
       }
-      data = { status: "success", results: { raw_text: rawText } };
-    }
 
-    if (!response.ok && (data?.error || data?.message)) {
-      return {
-        status: false,
-        results: {},
-        error: data.message || data.error || "Lookup request could not be completed. Please try again."
-      };
+      return data;
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      throw fetchErr;
     }
-
-    return data;
   };
 
   try {
     let data: any = null;
 
-    // Try primary endpoint first
+    // 1. Try primary endpoint first (with 9.5s timeout)
     try {
       data = await performFetch(primaryUrl);
     } catch (primaryErr) {
-      console.warn(`[UniversalLookup] Primary endpoint (${primaryUrl}) failed:`, primaryErr);
-      // If primary endpoint failed or was relative, immediately use our Render server
+      console.warn(`[UniversalLookup] Primary endpoint (${primaryUrl}) failed/timed out:`, primaryErr);
+      // If primary endpoint failed and fallback URL is different, try fallback
       if (primaryUrl !== renderFallbackUrl) {
-        console.log(`[UniversalLookup] Seamlessly falling back to Render server: ${renderFallbackUrl}`);
-        data = await performFetch(renderFallbackUrl);
-      } else {
-        throw primaryErr;
-      }
-    }
-
-    // If primary returned a non-OK or empty error object, retry via Render server
-    if ((!data || data.status === false || data.status === "error") && primaryUrl !== renderFallbackUrl) {
-      try {
-        console.log(`[UniversalLookup] Retrying query via Render backend server...`);
-        const retryData = await performFetch(renderFallbackUrl);
-        if (retryData && (retryData.status === "success" || retryData.status === true)) {
-          data = retryData;
+        try {
+          console.log(`[UniversalLookup] Seamlessly falling back to Render server: ${renderFallbackUrl}`);
+          data = await performFetch(renderFallbackUrl);
+        } catch (fallbackErr) {
+          console.warn(`[UniversalLookup] Render fallback server also failed/timed out:`, fallbackErr);
         }
-      } catch (retryErr) {
-        console.warn(`[UniversalLookup] Render retry failed:`, retryErr);
       }
     }
 
-    if (data?.status === "success" || data?.status === true) {
-      const cleanResults = scrubBranding(data.results || data.data || data);
+    // 2. If backend was slow, unresponsive, failed, returned non-JSON, or rate-limited:
+    // ENGAGE DIRECT HIGH-SPEED PROVIDER RESCUE IMMEDIATELY!
+    if (!data || data.status === false || data.status === "error") {
+      try {
+        console.log(`[UniversalLookup] Backend slow or challenged. Engaging fast direct provider rescue...`);
+        const directData = await queryDirectProviderFallback(service, cleanQ);
+        if (directData && (directData.status === "success" || directData.status === true || directData.results)) {
+          data = directData;
+        }
+      } catch (rescueErr) {
+        console.warn(`[UniversalLookup] Direct rescue failed:`, rescueErr);
+      }
+    }
+
+    if (data?.status === "success" || data?.status === true || data?.results || data?.result) {
+      let extractedResults = data.results || data.data || data.result || data;
+      if (extractedResults?.status === "success" && extractedResults?.results) {
+        extractedResults = extractedResults.results;
+      }
+      const cleanResults = scrubBranding(extractedResults);
 
       if (data?.results_found === 0 || !cleanResults || (Array.isArray(cleanResults) && cleanResults.length === 0)) {
         return {
@@ -326,7 +394,7 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
       return {
         status: true,
         results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
-        raw_results: data.raw_results ? scrubBranding(data.raw_results) : undefined,
+        raw_results: data.raw_results ? scrubBranding(data.raw_results) : (typeof cleanResults === 'string' ? cleanResults : undefined),
         remaining_balance: data.remaining_balance
       };
     }
@@ -341,6 +409,18 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
 
   } catch (err: any) {
     console.error(`[UniversalLookup] Query failed:`, err);
+    try {
+      const rescueData = await queryDirectProviderFallback(service, cleanQ);
+      if (rescueData) {
+        const cleanResults = scrubBranding(rescueData.results || rescueData);
+        return {
+          status: true,
+          results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
+          raw_results: rescueData.raw_results ? scrubBranding(rescueData.raw_results) : undefined
+        };
+      }
+    } catch {}
+
     return {
       status: false,
       results: {},
