@@ -14,13 +14,21 @@ export const RENDER_BACKEND_URL = (
 export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // If running in local dev preview environment alongside server.ts on port 3000
-    if (hostname.includes('ais-dev') || hostname === 'localhost' || hostname === '127.0.0.1') {
+    // When running in AI Studio preview, pre-production, Cloud Run, localhost, or standard web origins
+    if (
+      hostname.includes('ais-dev') ||
+      hostname.includes('ais-pre') ||
+      hostname.includes('run.app') ||
+      hostname.includes('aistudio') ||
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      !hostname
+    ) {
       return '';
     }
   }
-  // In deployed production environments (e.g. ais-pre-*, custom domains, static hosting), always route to our Render server
-  return RENDER_BACKEND_URL;
+  // Default to relative root (the full-stack app server on port 3000)
+  return '';
 };
 
 export const getAbsoluteBaseUrl = (): string => {
@@ -391,11 +399,31 @@ export const executeUniversalLookup = async (service: string, query: string): Pr
         }
       }
 
+      // If remaining_balance was not provided (e.g. rescued directly via direct provider fallback),
+      // asynchronously inform the backend to log transaction and deduct wallet credits in database
+      let resolvedRemainingBalance = data.remaining_balance;
+      if (resolvedRemainingBalance === undefined && token) {
+        try {
+          fetch('/api/wallet/deduct-search', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ service, query: cleanQ, cost: 2.0 })
+          }).then(res => res.json()).then(deductRes => {
+            if (deductRes && deductRes.remaining_balance !== undefined) {
+              // Dispatched deduction
+            }
+          }).catch(() => {});
+        } catch (e) {}
+      }
+
       return {
         status: true,
         results: typeof cleanResults === 'object' && cleanResults !== null ? cleanResults : { result: cleanResults },
         raw_results: data.raw_results ? scrubBranding(data.raw_results) : (typeof cleanResults === 'string' ? cleanResults : undefined),
-        remaining_balance: data.remaining_balance
+        remaining_balance: resolvedRemainingBalance
       };
     }
 

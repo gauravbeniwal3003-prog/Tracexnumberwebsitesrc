@@ -127,27 +127,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) return;
 
       let response: Response | null = null;
-      const baseUrl = getApiBaseUrl();
-      const primaryUrl = `${baseUrl}/api/profile`;
+      const primaryUrl = `/api/profile`;
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
         response = await fetch(primaryUrl, {
           headers: {
             'Authorization': `Bearer ${token}`
-          }
+          },
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
       } catch (networkErr) {
-        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed, retrying with Render backend:", networkErr);
-        try {
-          const fallbackUrl = primaryUrl.includes("onrender.com") ? "/api/profile" : "https://tracexdata-api.onrender.com/api/profile";
-          response = await fetch(fallbackUrl, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-        } catch (retryErr) {
-          console.warn("[FETCH_PROFILE_ERR] Fallback profile fetch also failed:", retryErr);
-        }
+        console.warn("[FETCH_PROFILE_WARN] Primary local profile fetch failed/timed out:", networkErr);
       }
 
       if (response && response.ok) {
@@ -161,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(savedMobileSession);
             if (parsed.user && profileData.credits !== undefined) {
               parsed.user.credits = profileData.credits;
+              parsed.user.wallet_balance = profileData.credits;
               if (profileData.unlimited_expiry !== undefined) parsed.user.unlimited_expiry = profileData.unlimited_expiry;
               localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
               const cleanPhone = (parsed.user.phone || profileData.phone || '').replace(/\D/g, '').slice(-10);
@@ -170,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   const parsedReg = JSON.parse(regStr);
                   if (parsedReg.user) {
                     parsedReg.user.credits = profileData.credits;
+                    parsedReg.user.wallet_balance = profileData.credits;
                     if (profileData.unlimited_expiry !== undefined) parsedReg.user.unlimited_expiry = profileData.unlimited_expiry;
                     localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify(parsedReg));
                   }
@@ -178,24 +173,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (e) {}
         }
-      } else if (response) {
-        const errorText = await response.text();
-        console.warn('Failed to fetch secure profile from server:', errorText);
-        
-        // Direct Supabase fallback if server returned an error
+      } else {
+        // Direct Supabase fallback if server returned an error or timed out
         try {
           const { data: dbProfiles } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', userId);
-          if (dbProfiles && dbProfiles.length > 0) {
-            const dbProf = dbProfiles[0];
+            .eq('id', userId)
+            .limit(1);
+          
+          let dbProf = dbProfiles && dbProfiles.length > 0 ? dbProfiles[0] : null;
+          
+          if (!dbProf && user?.email) {
+            const { data: dbProfByEmail } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('email', user.email.trim().toLowerCase())
+              .limit(1);
+            if (dbProfByEmail && dbProfByEmail.length > 0) {
+              dbProf = dbProfByEmail[0];
+            }
+          }
+
+          if (dbProf) {
+            const resolvedCredits = dbProf.credits !== undefined ? Number(dbProf.credits) : Number(dbProf.wallet_balance || 0);
             setProfile(prev => ({
               ...(prev || {}),
               id: dbProf.id,
               email: dbProf.email,
               full_name: dbProf.full_name || 'User',
-              credits: dbProf.credits !== undefined ? Number(dbProf.credits) : 0.00,
+              credits: resolvedCredits,
+              wallet_balance: resolvedCredits,
               unlimited_expiry: dbProf.unlimited_expiry || null,
               avatar_url: dbProf.avatar_url || '',
               is_free_credit_claimed: dbProf.is_free_credit_claimed ?? true,
@@ -206,31 +214,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn('Direct Supabase profile lookup error:', dbErr);
         }
 
-        const savedMobileSession = localStorage.getItem('tracex_mobile_session');
-        if (response.status === 401 && !savedMobileSession) {
-          console.warn('Unauthorized session detected, clearing invalid auth state.');
-          await supabase.auth.signOut().catch(() => {});
-          setUser(null);
-          setProfile(null);
-        }
-      } else {
-        // Network calls failed completely - construct fallback profile from existing user or localStorage session
+        // Also check local mobile session to ensure instant credit display
         const savedMobileSession = localStorage.getItem('tracex_mobile_session');
         if (savedMobileSession) {
           try {
             const parsed = JSON.parse(savedMobileSession);
             if (parsed?.user) {
-              setProfile(prev => prev || {
-                id: parsed.user.id,
-                email: parsed.user.email || 'user@example.com',
+              const uBal = parsed.user.credits !== undefined ? Number(parsed.user.credits) : Number(parsed.user.wallet_balance || 0);
+              setProfile(prev => prev ? ({ ...prev, credits: uBal, wallet_balance: uBal }) : ({
+                id: parsed.user.id || userId,
+                email: parsed.user.email || '',
                 full_name: parsed.user.full_name || 'User',
-                credits: parsed.user.credits !== undefined ? parsed.user.credits : 0.00,
+                credits: uBal,
+                wallet_balance: uBal,
                 avatar_url: '',
                 is_free_credit_claimed: true,
                 last_weekly_credit_at: new Date().toISOString()
-              });
+              } as UserProfile));
             }
           } catch (e) {}
+        }
+
+        if (response && response.status === 401 && !savedMobileSession) {
+          console.warn('Unauthorized session detected, clearing invalid auth state.');
+          await supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setProfile(null);
         }
       }
     } catch (err) {
@@ -798,15 +807,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfileCredits = (credits: number) => {
     const numCredits = Math.max(0, Number(Number(credits).toFixed(2)));
-    setProfile(prev => prev ? { ...prev, credits: numCredits, wallet_balance: numCredits } : prev);
+    setProfile(prev => {
+      if (prev) {
+        return { ...prev, credits: numCredits, wallet_balance: numCredits };
+      }
+      return {
+        id: user?.id || 'current_user',
+        email: user?.email || '',
+        full_name: user?.user_metadata?.full_name || 'User',
+        credits: numCredits,
+        wallet_balance: numCredits,
+        avatar_url: '',
+        is_free_credit_claimed: true,
+        last_weekly_credit_at: new Date().toISOString()
+      } as UserProfile;
+    });
+
     const savedMobileSession = localStorage.getItem('tracex_mobile_session');
     if (savedMobileSession) {
       try {
         const parsed = JSON.parse(savedMobileSession);
-        if (parsed.user) {
+        if (parsed?.user) {
           parsed.user.credits = numCredits;
           parsed.user.wallet_balance = numCredits;
           localStorage.setItem('tracex_mobile_session', JSON.stringify(parsed));
+          const cleanPhone = (parsed.user.phone || '').replace(/\D/g, '').slice(-10);
+          if (cleanPhone) {
+            const regStr = localStorage.getItem(`tracex_reg_user_${cleanPhone}`);
+            if (regStr) {
+              const parsedReg = JSON.parse(regStr);
+              if (parsedReg?.user) {
+                parsedReg.user.credits = numCredits;
+                parsedReg.user.wallet_balance = numCredits;
+                localStorage.setItem(`tracex_reg_user_${cleanPhone}`, JSON.stringify(parsedReg));
+              }
+            }
+          }
         }
       } catch (e) {}
     }

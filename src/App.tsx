@@ -552,6 +552,12 @@ function Home({ service = 'phone' }: { service?: 'phone' | 'telegram' | 'adhr' |
       if (data?.remaining_balance !== undefined) {
         updateProfileCredits(data.remaining_balance);
         refreshProfile().catch(() => {});
+      } else if (data?.status === true) {
+        const currentBal = Number(profile?.credits || 0);
+        const cost = 2.0;
+        const newBal = Math.max(0, Number((currentBal - cost).toFixed(2)));
+        updateProfileCredits(newBal);
+        refreshProfile().catch(() => {});
       }
 
       if (!data || data.status === false) {

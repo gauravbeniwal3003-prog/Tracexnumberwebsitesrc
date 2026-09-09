@@ -658,6 +658,12 @@ const DIRECT_PROVIDERS_SERVER: Record<string, string[]> = {
   phone: [
     "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
   ],
+  mobile: [
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
+  ],
+  number: [
+    "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
+  ],
   telegram: [
     "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}"
   ],
@@ -3416,6 +3422,66 @@ app.get("/api/wallet/history", async (req, res) => {
   } catch (err: any) {
     console.error("Error fetching unified wallet history:", err);
     return res.json([]);
+  }
+});
+
+// POST /api/wallet/deduct-search - Real-time wallet balance deduction for search queries
+app.post("/api/wallet/deduct-search", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
+  const { service, query, cost } = req.body || {};
+  const deductCost = typeof cost === "number" && cost > 0 ? cost : 2.0;
+
+  try {
+    const client = await getRequestClient(token);
+    const user = await getUserFromToken(token, client);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
+    }
+
+    const profile = await getUnifiedUserProfile(user.id, user.email, user.phone);
+    const isUnlimited = Boolean(profile?.unlimited_expiry && new Date(profile.unlimited_expiry) > new Date());
+    let currentCredits = Math.max(Number(profile?.wallet_balance !== undefined ? profile.wallet_balance : (profile?.credits || 0)), 0);
+    let newBalance = currentCredits;
+
+    if (!isUnlimited) {
+      newBalance = Math.max(0, Number((currentCredits - deductCost).toFixed(2)));
+      await updateUserCreditsAcrossAllStores(
+        user.id,
+        user.email,
+        user.phone,
+        newBalance,
+        profile?.full_name,
+        profile?.unlimited_expiry,
+        profile?.user_discount_percent
+      );
+
+      if (supabaseAdmin) {
+        try {
+          await supabaseAdmin.from("wallet_transactions").insert({
+            user_id: user.id,
+            user_email: user.email || "User",
+            service: `Search Query: ${(service || "SEARCH").toUpperCase()} (${query || ""})`,
+            type: "Debit",
+            amount: deductCost,
+            balance_after: newBalance,
+            status: "SUCCESS",
+            created_at: new Date().toISOString()
+          });
+        } catch (dbErr) {
+          console.error("[DEDUCT_SEARCH] Error logging transaction:", dbErr);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      status: "success",
+      remaining_balance: newBalance,
+      cost_deducted: isUnlimited ? 0 : deductCost
+    });
+  } catch (err: any) {
+    console.error("[DEDUCT_SEARCH_ERROR]:", err);
+    return res.status(500).json({ error: err.message || "Failed to process deduction" });
   }
 });
 
@@ -8991,6 +9057,8 @@ const CONFIG_FILE_PATH = path.join(resolvedDirname, "data", "provider_config.jso
 
 const DEFAULT_PROVIDER_CONFIGS: Record<string, string> = {
   phone: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
+  mobile: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
+  number: "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
   aadhaar: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   adhr: "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   ifsc: "https://ifsc.razorpay.com/{query}",
