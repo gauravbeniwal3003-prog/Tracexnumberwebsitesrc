@@ -132,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
         response = await fetch(primaryUrl, {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -141,25 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         clearTimeout(timeoutId);
       } catch (networkErr) {
-        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed/timed out:", networkErr);
-      }
-
-      if (!response || !response.ok) {
-        if (!primaryUrl.includes('onrender.com')) {
-          try {
-            const renderController = new AbortController();
-            const renderTimer = setTimeout(() => renderController.abort(), 4000);
-            response = await fetch('https://tracexdata-api.onrender.com/api/profile', {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              },
-              signal: renderController.signal
-            });
-            clearTimeout(renderTimer);
-          } catch (renderErr) {
-            console.warn("[FETCH_PROFILE_WARN] Render profile fallback failed:", renderErr);
-          }
-        }
+        // Silent catch for rapid local preview
       }
 
       if (response && response.ok) {
@@ -294,30 +276,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(autoLogoutInterval);
   }, []);
 
-  // Real-Time Database Wallet Synchronization on Every Click & Page Focus
+  // High-Speed Wallet Synchronization on Page Focus & Tab Visibility
   useEffect(() => {
     let lastSyncTime = 0;
-    const handleUserInteraction = () => {
+    const handleSync = () => {
       const now = Date.now();
-      // Throttle to 2.5 seconds to maintain lightning performance while ensuring instant wallet database sync
-      if (now - lastSyncTime > 2500) {
+      // Throttle to 8 seconds for ultra-fast, smooth browsing without server overload
+      if (now - lastSyncTime > 8000) {
         lastSyncTime = now;
         refreshProfile().catch(() => {});
       }
     };
 
-    window.addEventListener('click', handleUserInteraction, { passive: true });
-    window.addEventListener('focus', handleUserInteraction, { passive: true });
+    window.addEventListener('focus', handleSync, { passive: true });
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        refreshProfile().catch(() => {});
+        handleSync();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('click', handleUserInteraction);
-      window.removeEventListener('focus', handleUserInteraction);
+      window.removeEventListener('focus', handleSync);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user]);

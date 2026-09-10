@@ -570,7 +570,7 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
   let orderData: any = null;
   let lastError = '';
 
-  // Step 1: Try current origin endpoint first
+  // Step 1: Request order creation from server endpoint
   try {
     const localRes = await fetch('/api/cashfree/create-order', {
       method: 'POST',
@@ -587,32 +587,14 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
 
     if (!localRes.ok || !orderData?.payment_session_id) {
       if (orderData?.error) lastError = orderData.error;
-      orderData = null; // trigger fallback
     }
   } catch (err: any) {
     lastError = err.message;
   }
 
-  // Step 2: Fallback seamlessly to the live Render backend if local server had an issue
+  // Step 2: If server did not return a session, fail fast with a clear message
   if (!orderData || !orderData.payment_session_id) {
-    try {
-      const fallbackRes = await fetch('https://tracexdata-api.onrender.com/api/cashfree/create-order', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-      const rawText = await fallbackRes.text();
-      try {
-        orderData = JSON.parse(rawText);
-      } catch (e) {
-        throw new Error(lastError || `Payment gateway gateway temporarily unavailable (${fallbackRes.status})`);
-      }
-      if (!fallbackRes.ok || !orderData?.payment_session_id) {
-        throw new Error(orderData?.error || orderData?.detail || lastError || `Payment gateway response error (${fallbackRes.status})`);
-      }
-    } catch (fallbackErr: any) {
-      throw new Error(fallbackErr.message || lastError || 'Payment gateway connection error. Please try again.');
-    }
+    throw new Error(lastError || 'Payment gateway connection temporarily busy. Please retry in a few seconds or use direct UPI.');
   }
 
   if (!orderData?.payment_session_id) {
