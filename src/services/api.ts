@@ -506,6 +506,33 @@ export interface CashfreeOrderParams {
   returnUrl: string;
 }
 
+export const ensureRazorpaySdkLoaded = async (): Promise<any> => {
+  if (typeof window === 'undefined') return null;
+  if ((window as any).Razorpay) return (window as any).Razorpay;
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[src*="checkout.razorpay.com"]');
+    if (existingScript) {
+      if ((window as any).Razorpay) {
+        return resolve((window as any).Razorpay);
+      }
+      existingScript.addEventListener('load', () => resolve((window as any).Razorpay));
+      existingScript.addEventListener('error', () => reject(new Error('Failed to load Razorpay Payment SDK.')));
+      setTimeout(() => {
+        if ((window as any).Razorpay) resolve((window as any).Razorpay);
+      }, 700);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve((window as any).Razorpay);
+    script.onerror = () => reject(new Error('Failed to load Razorpay Payment SDK. Please check your internet connection.'));
+    document.head.appendChild(script);
+  });
+};
+
 export const ensureCashfreeSdkLoaded = async (): Promise<any> => {
   if (typeof window === 'undefined') return null;
   if ((window as any).Cashfree) return (window as any).Cashfree;
@@ -533,7 +560,11 @@ export const ensureCashfreeSdkLoaded = async (): Promise<any> => {
   });
 };
 
-export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Promise<{ order_id: string; payment_session_id: string; [key: string]: any }> => {
+export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Promise<{ order_id: string; payment_session_id?: string; [key: string]: any }> => {
+  return initiatePaymentCheckout(params);
+};
+
+export const initiatePaymentCheckout = async (params: CashfreeOrderParams): Promise<{ order_id: string; [key: string]: any }> => {
   const rawPhone = params.customerPhone || '';
   const cleanPhoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
   const cleanPhone = cleanPhoneDigits.length === 10 ? cleanPhoneDigits : '9999999999';
@@ -572,7 +603,7 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
 
   // Step 1: Request order creation from server endpoint
   try {
-    const localRes = await fetch('/api/cashfree/create-order', {
+    const localRes = await fetch('/api/payment/create-order', {
       method: 'POST',
       headers,
       body: JSON.stringify(payload)
@@ -585,23 +616,33 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
       lastError = `Server response: ${rawText.slice(0, 150)}`;
     }
 
-    if (!localRes.ok || !orderData?.payment_session_id) {
+    if (!localRes.ok || (!orderData?.order_id && !orderData?.payment_session_id)) {
       if (orderData?.error) lastError = orderData.error;
     }
   } catch (err: any) {
     lastError = err.message;
   }
 
-  // Step 2: If server did not return a session, fail fast with a clear message
-  if (!orderData || !orderData.payment_session_id) {
+  // Fallback to /api/cashfree/create-order if /api/payment/create-order fails
+  if (!orderData || (!orderData.order_id && !orderData.payment_session_id)) {
+    try {
+      const cfRes = await fetch('/api/cashfree/create-order', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const cfJson = await cfRes.json();
+      if (cfRes.ok && (cfJson.order_id || cfJson.payment_session_id)) {
+        orderData = cfJson;
+      }
+    } catch (e) {}
+  }
+
+  if (!orderData || (!orderData.order_id && !orderData.payment_session_id)) {
     throw new Error(lastError || 'Payment gateway connection temporarily busy. Please retry in a few seconds or use direct UPI.');
   }
 
-  if (!orderData?.payment_session_id) {
-    throw new Error(orderData?.error || 'Payment gateway session could not be established. Please try again.');
-  }
-
-  // Save pending order locally for recovery/auto-reconciliation
+  // Save pending order locally for instant recovery/auto-reconciliation
   if (orderData.order_id) {
     try {
       localStorage.setItem('tracex_last_pending_order', JSON.stringify({
@@ -613,10 +654,100 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
     } catch (e) {}
   }
 
-  // Ensure Cashfree SDK is loaded
+  // If Razorpay gateway is returned (or default fallback)
+  if (orderData.gateway === 'razorpay' || (!orderData.payment_session_id?.startsWith('session_') && orderData.key_id)) {
+    const RazorpaySdk = await ensureRazorpaySdkLoaded();
+    if (!RazorpaySdk) {
+      throw new Error('Razorpay Payment Gateway SDK failed to initialize. Please refresh the page.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const options = {
+        key: orderData.key_id || 'rzp_live_RzLdEkePrpnfd4',
+        amount: orderData.amount_paise || Math.round(numAmount * 100),
+        currency: 'INR',
+        name: 'TRACEXDATA',
+        description: `Wallet Recharge ₹${numAmount}`,
+        order_id: orderData.order_id,
+        prefill: {
+          name: cleanName,
+          email: cleanEmail,
+          contact: cleanPhone
+        },
+        theme: {
+          color: '#0284c7'
+        },
+        modal: {
+          ondismiss: function() {
+            console.log('[PAYMENT_MODAL] Closed by customer');
+            resolve({
+              order_id: orderData.order_id,
+              status: 'CANCELLED_BY_USER'
+            });
+          }
+        },
+        handler: async function (response: any) {
+          try {
+            console.log('[RAZORPAY_PAYMENT_RESPONSE]', response);
+            const verifyRes = await fetch('/api/razorpay/verify', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                plan_id: params.planId,
+                amount: numAmount,
+                user_id: params.userId,
+                user_email: cleanEmail,
+                customer_phone: cleanPhone
+              })
+            });
+
+            const verifyData = await verifyRes.json();
+            
+            // Broadcast wallet & profile updates
+            window.dispatchEvent(new CustomEvent('wallet-updated'));
+            window.dispatchEvent(new CustomEvent('auth-sync'));
+
+            if (params.returnUrl && params.returnUrl.includes('/pricing')) {
+              window.location.href = `/pricing?order_id=${response.razorpay_order_id}&status=success`;
+            }
+
+            resolve({
+              ...orderData,
+              ...verifyData,
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              status: 'SUCCESS'
+            });
+          } catch (verifyErr: any) {
+            console.error('Razorpay verification error:', verifyErr);
+            window.location.href = `/pricing?order_id=${response.razorpay_order_id}`;
+            resolve({
+              order_id: response.razorpay_order_id,
+              status: 'PAID'
+            });
+          }
+        }
+      };
+
+      const rzpInstance = new (window as any).Razorpay(options);
+      rzpInstance.on('payment.failed', function (resp: any) {
+        console.error('Payment failed:', resp.error);
+        reject(new Error(resp.error?.description || 'Payment was not completed.'));
+      });
+      rzpInstance.open();
+    });
+  }
+
+  // Otherwise, use Cashfree SDK
   const CashfreeSdk = await ensureCashfreeSdkLoaded();
   if (!CashfreeSdk) {
-    throw new Error('Cashfree Payment Gateway SDK failed to initialize. Please check your internet connection and refresh.');
+    throw new Error('Payment Gateway SDK failed to initialize. Please check your internet connection and refresh.');
   }
 
   const cashfreeMode = orderData.cf_mode || 'production';
@@ -635,21 +766,29 @@ export const initiateCashfreeCheckout = async (params: CashfreeOrderParams): Pro
 export const checkCashfreeOrderStatus = async (orderId: string): Promise<any> => {
   if (!orderId) throw new Error("Order ID is required");
   
-  // Try current host endpoint first
+  const token = await getAuthToken().catch(() => '');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Try current host endpoint first (checks Razorpay, Cashfree & DB claims)
   try {
-    const res = await fetch(`/api/cashfree/status/${encodeURIComponent(orderId)}`);
+    const res = await fetch(`/api/payment/status/${encodeURIComponent(orderId)}`, { headers });
     if (res.ok) {
       const data = await res.json();
       if (data && (data.order_status || data.status)) return data;
     }
   } catch (e) {}
 
-  // Fallback directly to Render backend
-  const fallbackRes = await fetch(`https://tracexdata-api.onrender.com/api/cashfree/status/${encodeURIComponent(orderId)}`);
-  if (!fallbackRes.ok) {
-    const err = await fallbackRes.json().catch(() => ({}));
-    throw new Error(err.error || `Status check failed: ${fallbackRes.status}`);
-  }
-  return await fallbackRes.json();
+  try {
+    const res = await fetch(`/api/cashfree/status/${encodeURIComponent(orderId)}`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.order_status || data.status)) return data;
+    }
+  } catch (e) {}
+
+  return { order_id: orderId, order_status: 'PENDING' };
 };
 

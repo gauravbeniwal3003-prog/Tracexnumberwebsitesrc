@@ -336,9 +336,11 @@ const getUserFromToken = async (token: string, client?: any) => {
   return await getFallbackUser();
 };
 
-// Cashfree Configuration
+// Cashfree & Razorpay Configuration
 const CASHFREE_APP_ID = (process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID || "").trim();
 const CASHFREE_SECRET_KEY = (process.env.CASHFREE_SECRET_KEY || process.env.VITE_CASHFREE_SECRET_KEY || "").trim();
+const RAZORPAY_KEY_ID = (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || "rzp_live_RzLdEkePrpnfd4").trim();
+const RAZORPAY_KEY_SECRET = (process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET || "4wiJs8mHjvhbes6JRZFd35hT").trim();
 
 const getCashfreeBaseUrl = (): string => {
   if (process.env.CASHFREE_BASE_URL) {
@@ -6991,8 +6993,237 @@ setInterval(runBackgroundPaymentReconciliation, 60 * 1000);
 // Also run a sweep shortly after startup
 setTimeout(runBackgroundPaymentReconciliation, 10 * 1000);
 
-// Cashfree Routes
+// Payment Gateway Routes & Unified Processing
 
+async function createRazorpayOrderBackend(
+  amountRupees: number,
+  planId: string,
+  userId: string | null,
+  userEmail: string | null,
+  userPhone: string | null,
+  customerName?: string | null
+) {
+  const amountPaise = Math.round(amountRupees * 100);
+  const receipt = `rcpt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
+
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${auth}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      amount: amountPaise,
+      currency: "INR",
+      receipt: receipt,
+      notes: {
+        user_id: userId || "",
+        user_email: userEmail || "",
+        plan_id: planId || ""
+      }
+    })
+  });
+
+  const rawText = await response.text();
+  let rzpData: any = null;
+  try {
+    rzpData = JSON.parse(rawText);
+  } catch (e) {
+    throw new Error(`Razorpay parse error: ${rawText.slice(0, 150)}`);
+  }
+
+  if (!response.ok || !rzpData?.id) {
+    throw new Error(rzpData?.error?.description || rzpData?.message || "Failed to create Razorpay payment order");
+  }
+
+  const orderId = rzpData.id;
+  const db = supabaseAdmin || supabase;
+  if (db) {
+    try {
+      const isValidUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      const dbUserId = (userId && isValidUuid(userId)) ? userId : null;
+      await db.from("payment_claims").insert({
+        payment_id: orderId,
+        user_id: dbUserId,
+        user_email: userEmail || "",
+        customer_phone: userPhone || "",
+        plan_id: planId,
+        amount: amountRupees,
+        status: "pending",
+        created_at: new Date().toISOString()
+      });
+    } catch (dbErr) {}
+  }
+
+  recentPendingOrders.set(orderId, {
+    orderId: orderId,
+    userId: userId || null,
+    email: userEmail || null,
+    phone: userPhone || null,
+    amount: amountRupees,
+    planId: planId,
+    createdAt: Date.now()
+  });
+
+  return {
+    order_id: orderId,
+    id: orderId,
+    payment_session_id: `rzp_session_${orderId}`,
+    amount: amountRupees,
+    amount_paise: amountPaise,
+    currency: "INR",
+    key_id: RAZORPAY_KEY_ID,
+    gateway: "razorpay",
+    cf_mode: "production",
+    customer_details: {
+      customer_id: userId || `user_${userPhone || Date.now()}`,
+      customer_email: userEmail || "",
+      customer_phone: userPhone || "",
+      customer_name: customerName || (userEmail ? userEmail.split('@')[0] : 'Customer')
+    }
+  };
+}
+
+// Get Razorpay Public Key
+app.get("/api/razorpay/key", (req, res) => {
+  res.json({ key_id: RAZORPAY_KEY_ID });
+});
+
+// Dedicated Razorpay & Unified Order Creation Endpoint
+app.post(["/api/razorpay/create-order", "/api/payment/create-order"], async (req, res) => {
+  try {
+    const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
+    let authenticatedUserId: string | null = null;
+    let authenticatedUserEmail: string | null = null;
+    let authenticatedUserPhone: string | null = null;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      if (token) {
+        try {
+          const client = await getRequestClient(token).catch(() => null);
+          const user = await getUserFromToken(token, client || supabaseAdmin || supabase).catch(() => null);
+          if (user) {
+            authenticatedUserId = user.id;
+            authenticatedUserEmail = user.email || null;
+            authenticatedUserPhone = user.phone || null;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!authenticatedUserId && req.body?.user_id) {
+      authenticatedUserId = String(req.body.user_id);
+      authenticatedUserEmail = req.body.user_email || null;
+    }
+
+    if (!isPgPay && !authenticatedUserId) {
+      return res.status(401).json({ error: "Unauthorized. Authentication required to create a payment order." });
+    }
+
+    const { user_id, user_email, plan_id, amount, customer_phone, customer_name } = req.body;
+    const numAmount = Number(amount);
+    if (!numAmount || isNaN(numAmount) || numAmount < 50 || numAmount > 100000) {
+      return res.status(400).json({ error: "Invalid payment amount. Minimum recharge amount is ₹50." });
+    }
+
+    const targetUserId = authenticatedUserId || user_id || null;
+    const targetEmail = user_email || authenticatedUserEmail || (customer_phone ? `${customer_phone}@tracexdata.online` : "user@tracexdata.online");
+    const targetPhone = customer_phone || authenticatedUserPhone || "9999999999";
+    const targetPlan = plan_id || `wallet_${numAmount}`;
+
+    const orderResult = await createRazorpayOrderBackend(
+      numAmount,
+      targetPlan,
+      targetUserId,
+      targetEmail,
+      targetPhone,
+      customer_name
+    );
+
+    return res.json(orderResult);
+  } catch (rzpErr: any) {
+    console.error("[RAZORPAY_CREATE_ORDER_ERROR]", rzpErr);
+    return res.status(500).json({ error: rzpErr.message || "Failed to create payment order." });
+  }
+});
+
+// Dedicated Razorpay Verification & Instant Fulfillment Endpoint
+app.post(["/api/razorpay/verify", "/api/payment/verify"], async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_id, amount, user_id, user_email, customer_phone } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Missing required Razorpay verification parameters." });
+    }
+
+    let authenticatedUserId: string | null = null;
+    let authenticatedUserEmail: string | null = null;
+    let authenticatedUserPhone: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "").trim();
+      if (token) {
+        try {
+          const user = await getUserFromToken(token);
+          if (user) {
+            authenticatedUserId = user.id;
+            authenticatedUserEmail = user.email || null;
+            authenticatedUserPhone = user.phone || null;
+          }
+        } catch (e) {}
+      }
+    }
+
+    const finalUserId = authenticatedUserId || user_id || null;
+    const finalUserEmail = authenticatedUserEmail || user_email || null;
+    const finalUserPhone = authenticatedUserPhone || customer_phone || null;
+
+    // Cryptographic verification of HMAC SHA256 signature
+    const hmac = crypto.createHmac("sha256", RAZORPAY_KEY_SECRET);
+    hmac.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+    const generatedSignature = hmac.digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      console.error("[RAZORPAY_VERIFY_FAILED] Signature mismatch for order", razorpay_order_id);
+      return res.status(400).json({ error: "Payment verification failed: Signature mismatch." });
+    }
+
+    console.log(`[RAZORPAY_VERIFIED_PAID] Signature verified for ${razorpay_order_id} (Payment: ${razorpay_payment_id})! Fulfilling...`);
+    
+    const pendingOrder = recentPendingOrders.get(razorpay_order_id);
+    const finalAmount = Number(amount || pendingOrder?.amount || 0);
+    const finalPlanId = plan_id || pendingOrder?.planId || `wallet_${finalAmount}`;
+
+    await fulfillOrder(
+      razorpay_order_id,
+      finalUserId,
+      finalUserEmail,
+      finalUserPhone,
+      finalAmount,
+      finalPlanId
+    );
+
+    const updatedProfile = await getUnifiedUserProfile(finalUserId, finalUserEmail, finalUserPhone);
+
+    return res.json({
+      success: true,
+      status: "SUCCESS",
+      message: "Payment verified and credited successfully!",
+      order_id: razorpay_order_id,
+      payment_id: razorpay_payment_id,
+      newBalance: updatedProfile?.credits || updatedProfile?.wallet_balance || 0,
+      profile: updatedProfile
+    });
+  } catch (verifyErr: any) {
+    console.error("[RAZORPAY_VERIFY_ERROR]", verifyErr);
+    res.status(500).json({ error: verifyErr.message || "Failed to verify payment." });
+  }
+});
+
+// Primary Cashfree Order Creation Endpoint (with smart Razorpay bridge)
 app.post("/api/cashfree/create-order", async (req, res) => {
   const isPgPay = req.body?.plan_id === "pgpay_manual" || req.body?.plan_id === "panfind";
   
@@ -7054,85 +7285,23 @@ app.post("/api/cashfree/create-order", async (req, res) => {
       return res.status(400).json({ error: "Missing required payment parameters (user_id, plan_id, amount)" });
     }
 
-    // When direct Cashfree credentials are not available locally, proxy to backend
+    // If local Cashfree credentials missing, seamlessly create Razorpay payment order
     if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying create-order request to live Render backend...");
-      const renderBackendUrl = getRenderBackendUrl();
-      if (!renderBackendUrl) {
-        return res.status(400).json({ error: "Payment gateway service is currently initializing. Please try again or use direct UPI payment." });
-      }
+      console.log("[PAYMENT_ENGINE] Direct Cashfree keys absent. Fulfilling via active Razorpay live gateway...");
+      const targetUserId = user_id || authenticatedUserId || null;
+      const targetEmail = user_email || authenticatedUserEmail || (customer_phone ? `${customer_phone}@tracexdata.online` : "user@tracexdata.online");
+      const targetPhone = customer_phone || authenticatedUserPhone || "9999999999";
+      
+      const rzpOrder = await createRazorpayOrderBackend(
+        numAmount,
+        plan_id,
+        targetUserId,
+        targetEmail,
+        targetPhone,
+        customer_name
+      );
 
-      const proxyHeaders: Record<string, string> = {
-        "Content-Type": "application/json"
-      };
-      if (authHeader) {
-        proxyHeaders["Authorization"] = authHeader;
-      }
-
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6500);
-
-        const response = await fetch(`${renderBackendUrl}/api/cashfree/create-order`, {
-          method: "POST",
-          headers: proxyHeaders,
-          body: JSON.stringify(req.body),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-
-        if (response.status === 503 || response.status === 504 || response.status === 502) {
-          return res.status(400).json({
-            error: "Payment gateway is currently waking up or under high demand. Please retry in 5-10 seconds or select manual UPI."
-          });
-        }
-
-        const rawText = await response.text();
-        let data: any = null;
-        try {
-          data = JSON.parse(rawText);
-        } catch (parseErr) {
-          console.error("[CASHFREE_PROXY_PARSE_ERROR] Non-JSON from backend:", rawText.slice(0, 300));
-          return res.status(400).json({ error: "Payment gateway response error. Please try again shortly or use UPI direct." });
-        }
-
-        if (response.ok && data && (data.order_id || data.orderId)) {
-          const oId = data.order_id || data.orderId;
-          const targetUserId = user_id || authenticatedUserId;
-          const targetEmail = user_email || authenticatedUserEmail;
-          const targetPhone = customer_phone || authenticatedUserPhone || (user_email && user_email.includes("@") ? user_email.split("@")[0].replace(/\D/g, "") : "");
-          
-          recentPendingOrders.set(oId, {
-            orderId: oId,
-            userId: targetUserId,
-            email: targetEmail,
-            phone: targetPhone,
-            planId: plan_id,
-            amount: numAmount,
-            createdAt: Date.now()
-          });
-
-          if (db) {
-            try {
-              await db.from("payment_claims").insert({
-                payment_id: oId,
-                user_id: targetUserId,
-                user_email: targetEmail,
-                customer_phone: targetPhone,
-                plan_id: plan_id,
-                amount: numAmount,
-                status: "pending",
-                created_at: new Date().toISOString()
-              });
-            } catch (e) {}
-          }
-        }
-
-        return res.status(response.status).json(data);
-      } catch (proxyNetworkErr: any) {
-        console.error("[CASHFREE_PROXY_NETWORK_ERROR]", proxyNetworkErr);
-        return res.status(400).json({ error: "Payment gateway is temporarily busy. Please retry in a few seconds or use direct UPI payment." });
-      }
+      return res.json(rzpOrder);
     }
 
     // Direct Cashfree Order Creation Flow
@@ -7247,54 +7416,17 @@ app.post("/api/cashfree/create-order", async (req, res) => {
 });
 
 
-app.get("/api/cashfree/status/:order_id", async (req, res) => {
+app.get(["/api/cashfree/status/:order_id", "/api/payment/status/:order_id", "/api/razorpay/status/:order_id"], async (req, res) => {
   const { order_id } = req.params;
   
   if (!order_id || typeof order_id !== 'string' || order_id.trim().length === 0 || order_id.length > 100) {
     return res.status(400).json({ error: "Invalid Order ID." });
   }
 
+  const orderId = order_id.trim();
+
   try {
     let data: any = null;
-
-    if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-      console.log("[TRACEXDATA] Local Cashfree credentials missing. Proxying status verification request to live Render backend...");
-      const renderBackendUrl = getRenderBackendUrl();
-      if (renderBackendUrl) {
-        const proxyHeaders: Record<string, string> = {};
-        if (req.headers.authorization) {
-          proxyHeaders["Authorization"] = req.headers.authorization;
-        }
-        const response = await fetch(`${renderBackendUrl}/api/cashfree/status/${order_id}`, {
-          headers: proxyHeaders
-        });
-        const rawText = await response.text();
-        try {
-          data = JSON.parse(rawText);
-        } catch (e) {
-          data = null;
-        }
-      }
-    } else {
-      const cfBaseUrl = getCashfreeBaseUrl();
-      const response = await fetch(`${cfBaseUrl}/orders/${order_id}`, {
-        headers: {
-          'x-client-id': CASHFREE_APP_ID,
-          'x-client-secret': CASHFREE_SECRET_KEY,
-          'x-api-version': '2023-08-01'
-        }
-      });
-      const rawText = await response.text();
-      try {
-        data = JSON.parse(rawText);
-      } catch (e) {
-        data = null;
-      }
-    }
-
-    if (!data) {
-      return res.status(502).json({ error: "Unable to retrieve payment status from gateway" });
-    }
 
     let authUser: any = null;
     const authHeader = req.headers.authorization;
@@ -7305,36 +7437,112 @@ app.get("/api/cashfree/status/:order_id", async (req, res) => {
       }
     }
 
-    if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
-      console.log(`[STATUS CHECK] Order ${order_id} verified PAID! Triggering instant guarantee fulfillment...`);
-      const targetUserId = data.customer_details?.customer_id || authUser?.id;
-      const targetEmail = data.customer_details?.customer_email || authUser?.email;
-      const targetPhone = data.customer_details?.customer_phone || authUser?.phone;
-      await fulfillOrder(
-        order_id, 
-        targetUserId, 
-        targetEmail, 
-        targetPhone,
-        data.order_amount,
-        data.plan_id
-      );
-    }
-
+    const pendingOrder = recentPendingOrders.get(orderId);
     const db = supabaseAdmin || supabase;
+    let dbClaim: any = null;
     if (db) {
       try {
         const { data: claim } = await db
           .from("payment_claims")
-          .select("plan_id, status, amount")
-          .eq("payment_id", order_id)
+          .select("*")
+          .eq("payment_id", orderId)
           .maybeSingle();
-        if (claim && claim.plan_id) {
-          data.plan_id = claim.plan_id;
-          data.claim_status = claim.status;
+        dbClaim = claim;
+      } catch (e) {}
+    }
+
+    // 1. Try checking Razorpay if it looks like a Razorpay order ID or we have Razorpay keys
+    if (orderId.startsWith("order_") && RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
+      try {
+        const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
+        const rzpRes = await fetch(`https://api.razorpay.com/v1/orders/${orderId}`, {
+          headers: { "Authorization": `Basic ${auth}` }
+        });
+        if (rzpRes.ok) {
+          const rzpJson = await rzpRes.json();
+          if (rzpJson && rzpJson.id) {
+            const isPaid = rzpJson.status === "paid" || rzpJson.amount_paid >= rzpJson.amount;
+            data = {
+              order_id: rzpJson.id,
+              order_status: isPaid ? "PAID" : (rzpJson.status === "created" ? "ACTIVE" : rzpJson.status.toUpperCase()),
+              order_amount: (rzpJson.amount || 0) / 100,
+              order_currency: rzpJson.currency || "INR",
+              gateway: "razorpay",
+              customer_details: {
+                customer_id: rzpJson.notes?.user_id || pendingOrder?.userId || authUser?.id || dbClaim?.user_id || "",
+                customer_email: rzpJson.notes?.user_email || pendingOrder?.email || authUser?.email || dbClaim?.user_email || "",
+                customer_phone: pendingOrder?.phone || authUser?.phone || dbClaim?.customer_phone || ""
+              },
+              plan_id: rzpJson.notes?.plan_id || pendingOrder?.planId || dbClaim?.plan_id || `wallet_${(rzpJson.amount || 0) / 100}`
+            };
+          }
         }
-      } catch (claimsErr) {
-        console.error("Failed to query claim for status response enrichment:", claimsErr);
+      } catch (rzpErr) {
+        console.warn("[STATUS_CHECK_RZP_WARN]", rzpErr);
       }
+    }
+
+    // 2. If not found or Cashfree credentials exist, check Cashfree
+    if (!data && CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
+      const cfBaseUrl = getCashfreeBaseUrl();
+      const response = await fetch(`${cfBaseUrl}/orders/${orderId}`, {
+        headers: {
+          'x-client-id': CASHFREE_APP_ID,
+          'x-client-secret': CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01'
+        }
+      });
+      if (response.ok) {
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          data = null;
+        }
+      }
+    }
+
+    // 3. Fallback to DB Claim if already verified
+    if (!data && dbClaim) {
+      data = {
+        order_id: dbClaim.payment_id,
+        order_status: dbClaim.status === "approved" || dbClaim.status === "fulfilled" ? "PAID" : dbClaim.status.toUpperCase(),
+        order_amount: dbClaim.amount,
+        plan_id: dbClaim.plan_id,
+        customer_details: {
+          customer_id: dbClaim.user_id,
+          customer_email: dbClaim.user_email,
+          customer_phone: dbClaim.customer_phone
+        }
+      };
+    }
+
+    if (!data) {
+      return res.status(200).json({
+        order_id: orderId,
+        order_status: "PENDING",
+        message: "Order is processing. Please complete verification."
+      });
+    }
+
+    if (data.order_status === "PAID" || data.order_status === "SUCCESS") {
+      console.log(`[STATUS CHECK] Order ${orderId} verified PAID! Triggering instant guarantee fulfillment...`);
+      const targetUserId = data.customer_details?.customer_id || pendingOrder?.userId || authUser?.id || dbClaim?.user_id;
+      const targetEmail = data.customer_details?.customer_email || pendingOrder?.email || authUser?.email || dbClaim?.user_email;
+      const targetPhone = data.customer_details?.customer_phone || pendingOrder?.phone || authUser?.phone || dbClaim?.customer_phone;
+      await fulfillOrder(
+        orderId, 
+        targetUserId, 
+        targetEmail, 
+        targetPhone,
+        data.order_amount || pendingOrder?.amount || dbClaim?.amount || 0,
+        data.plan_id || pendingOrder?.planId || dbClaim?.plan_id || "wallet_custom"
+      );
+    }
+
+    if (dbClaim && dbClaim.plan_id) {
+      data.plan_id = dbClaim.plan_id;
+      data.claim_status = dbClaim.status;
     }
 
     res.json(data);
@@ -11659,4 +11867,5 @@ setupVite().then(() => {
   });
 });
 
+export { app };
 export default app;
