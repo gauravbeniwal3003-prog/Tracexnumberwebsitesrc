@@ -8,7 +8,7 @@
     "credits": 1470,
     "wallet_balance": 1470,
     "created_at": "2026-08-14T05:19:37.696+00:00",
-    "updated_at": "2026-09-09T16:19:51.232Z",
+    "updated_at": "2026-09-10T02:49:18.568Z",
     "unlimited_expiry": null,
     "user_discount_percent": 0
   },
@@ -17,9 +17,9 @@
     "phone": "9999999999",
     "email": "duelcom20@gmail.com",
     "full_name": "Duelcom",
-    "credits": 142986,
-    "wallet_balance": 142986,
-    "updated_at": "2026-09-09T16:20:08.509Z",
+    "credits": 152231,
+    "wallet_balance": 152231,
+    "updated_at": "2026-09-10T02:49:36.464Z",
     "created_at": "2026-08-29T00:18:56.319Z",
     "unlimited_expiry": null,
     "user_discount_percent": 0,
@@ -33,7 +33,7 @@
     "credits": 50,
     "wallet_balance": 50,
     "created_at": "2026-09-04T04:54:28.615+00:00",
-    "updated_at": "2026-09-09T16:20:01.765Z",
+    "updated_at": "2026-09-10T02:49:29.169Z",
     "unlimited_expiry": null,
     "user_discount_percent": 0
   }

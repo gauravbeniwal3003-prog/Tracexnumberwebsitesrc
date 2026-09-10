@@ -127,7 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) return;
 
       let response: Response | null = null;
-      const primaryUrl = `/api/profile`;
+      const baseUrl = getApiBaseUrl();
+      const primaryUrl = `${baseUrl}/api/profile`;
 
       try {
         const controller = new AbortController();
@@ -140,7 +141,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         clearTimeout(timeoutId);
       } catch (networkErr) {
-        console.warn("[FETCH_PROFILE_WARN] Primary local profile fetch failed/timed out:", networkErr);
+        console.warn("[FETCH_PROFILE_WARN] Primary profile fetch failed/timed out:", networkErr);
+      }
+
+      if (!response || !response.ok) {
+        if (!primaryUrl.includes('onrender.com')) {
+          try {
+            const renderController = new AbortController();
+            const renderTimer = setTimeout(() => renderController.abort(), 4000);
+            response = await fetch('https://tracexdata-api.onrender.com/api/profile', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              signal: renderController.signal
+            });
+            clearTimeout(renderTimer);
+          } catch (renderErr) {
+            console.warn("[FETCH_PROFILE_WARN] Render profile fallback failed:", renderErr);
+          }
+        }
       }
 
       if (response && response.ok) {
@@ -274,6 +293,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const autoLogoutInterval = setInterval(checkAutoLogout, 5000); // Check every 5 seconds
     return () => clearInterval(autoLogoutInterval);
   }, []);
+
+  // Real-Time Database Wallet Synchronization on Every Click & Page Focus
+  useEffect(() => {
+    let lastSyncTime = 0;
+    const handleUserInteraction = () => {
+      const now = Date.now();
+      // Throttle to 2.5 seconds to maintain lightning performance while ensuring instant wallet database sync
+      if (now - lastSyncTime > 2500) {
+        lastSyncTime = now;
+        refreshProfile().catch(() => {});
+      }
+    };
+
+    window.addEventListener('click', handleUserInteraction, { passive: true });
+    window.addEventListener('focus', handleUserInteraction, { passive: true });
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshProfile().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('focus', handleUserInteraction);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (IS_TESTING_MODE) {

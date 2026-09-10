@@ -1,5 +1,7 @@
 {
   "phone": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
+  "mobile": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
+  "number": "https://techvishalboss.com/api/v1/lookup.php?key=TVB_SGL_EBB13EBC&service=number&number={query}",
   "aadhaar": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   "adhr": "https://exploitsindia.site/osintcallerbot/aadhar.php?exploits={query}",
   "ifsc": "https://ifsc.razorpay.com/{query}",

@@ -369,10 +369,27 @@ app.use(helmet({
 // CORS Configuration
 app.use(cors({
   origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'x-api-key', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform'],
   credentials: true
 }));
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 
 // Auth Bypasser & Auto-Rewriter Middleware (Removes auth token errors, automatically logs in as fallback)
 app.use((req, res, next) => {
@@ -1819,7 +1836,6 @@ async function updateUserCreditsAcrossAllStores(
   saveMobileUsersStore(mobileUsersStore);
 
   if (db) {
-    // 2. Update profiles table
     const profUpdatePayload: any = {
       credits: targetBal,
       wallet_balance: targetBal,
@@ -1830,26 +1846,6 @@ async function updateUserCreditsAcrossAllStores(
     if (userDiscountPercent !== undefined) profUpdatePayload.user_discount_percent = Number(userDiscountPercent);
     if (isFreeCreditClaimed !== undefined) profUpdatePayload.is_free_credit_claimed = isFreeCreditClaimed;
 
-    if (userId) {
-      try {
-        await db.from("profiles").update(profUpdatePayload).eq("id", userId);
-      } catch (e) {}
-    }
-    if (cleanEmail) {
-      try {
-        await db.from("profiles").update(profUpdatePayload).eq("email", cleanEmail);
-      } catch (e) {}
-    }
-    if (cleanPhone) {
-      try {
-        await db.from("profiles").update(profUpdatePayload).eq("phone", cleanPhone);
-      } catch (e) {}
-      try {
-        await db.from("profiles").update(profUpdatePayload).eq("email", `${cleanPhone}@tracexdata.com`);
-      } catch (e) {}
-    }
-
-    // 3. Update app_users table
     const appUpdatePayload: any = {
       credits: targetBal,
       wallet_balance: targetBal,
@@ -1861,53 +1857,57 @@ async function updateUserCreditsAcrossAllStores(
     if (unlimitedExpiry !== undefined) appUpdatePayload.unlimited_expiry = unlimitedExpiry;
     if (userDiscountPercent !== undefined) appUpdatePayload.user_discount_percent = Number(userDiscountPercent);
 
+    const dbPromises: Promise<any>[] = [];
+
     if (userId) {
-      try {
-        await db.from("app_users").update(appUpdatePayload).eq("id", userId);
-      } catch (e) {}
-    }
-    if (cleanPhone) {
-      try {
-        await db.from("app_users").update(appUpdatePayload).eq("phone", cleanPhone);
-      } catch (e) {}
+      dbPromises.push(db.from("profiles").update(profUpdatePayload).eq("id", userId));
+      dbPromises.push(db.from("app_users").update(appUpdatePayload).eq("id", userId));
     }
     if (cleanEmail) {
-      try {
-        await db.from("app_users").update(appUpdatePayload).eq("email", cleanEmail);
-      } catch (e) {}
+      dbPromises.push(db.from("profiles").update(profUpdatePayload).eq("email", cleanEmail));
+      dbPromises.push(db.from("app_users").update(appUpdatePayload).eq("email", cleanEmail));
+    }
+    if (cleanPhone) {
+      dbPromises.push(db.from("profiles").update(profUpdatePayload).eq("phone", cleanPhone));
+      dbPromises.push(db.from("profiles").update(profUpdatePayload).eq("email", `${cleanPhone}@tracexdata.com`));
+      dbPromises.push(db.from("app_users").update(appUpdatePayload).eq("phone", cleanPhone));
     }
 
-    // If userId is provided, ensure rows exist with a safe non-null phone
     if (userId) {
-      try {
-        const safePhone = cleanPhone || (cleanEmail && cleanEmail.includes("@") ? cleanEmail.split("@")[0].replace(/\D/g, "") : "") || "9999999999";
-        await db.from("app_users").upsert({
-          id: userId,
-          email: cleanEmail || `${safePhone}@tracexdata.com`,
-          phone: safePhone,
-          full_name: nameToUse,
-          credits: targetBal,
-          wallet_balance: targetBal,
-          unlimited_expiry: unlimitedExpiry || null,
-          user_discount_percent: Number(userDiscountPercent || 0),
-          updated_at: nowIso
-        }, { onConflict: "id" });
-      } catch (e) {}
+      const safePhone = cleanPhone || (cleanEmail && cleanEmail.includes("@") ? cleanEmail.split("@")[0].replace(/\D/g, "") : "") || "9999999999";
+      dbPromises.push(db.from("app_users").upsert({
+        id: userId,
+        email: cleanEmail || `${safePhone}@tracexdata.com`,
+        phone: safePhone,
+        full_name: nameToUse,
+        credits: targetBal,
+        wallet_balance: targetBal,
+        unlimited_expiry: unlimitedExpiry || null,
+        user_discount_percent: Number(userDiscountPercent || 0),
+        updated_at: nowIso
+      }, { onConflict: "id" }));
 
-      try {
-        await db.from("profiles").upsert({
-          id: userId,
-          email: cleanEmail || (cleanPhone ? `${cleanPhone}@tracexdata.com` : "user@tracexdata.online"),
-          full_name: nameToUse,
-          credits: targetBal,
-          wallet_balance: targetBal,
-          is_free_credit_claimed: isFreeCreditClaimed ?? true,
-          unlimited_expiry: unlimitedExpiry || null,
-          user_discount_percent: Number(userDiscountPercent || 0),
-          updated_at: nowIso
-        }, { onConflict: "id" });
-      } catch (e) {}
+      dbPromises.push(db.from("profiles").upsert({
+        id: userId,
+        email: cleanEmail || (cleanPhone ? `${cleanPhone}@tracexdata.com` : "user@tracexdata.online"),
+        full_name: nameToUse,
+        credits: targetBal,
+        wallet_balance: targetBal,
+        is_free_credit_claimed: isFreeCreditClaimed ?? true,
+        unlimited_expiry: unlimitedExpiry || null,
+        user_discount_percent: Number(userDiscountPercent || 0),
+        updated_at: nowIso
+      }, { onConflict: "id" }));
+
+      dbPromises.push(db.from("api_keys").update({ credits: targetBal, updated_at: nowIso }).eq("user_id", userId));
     }
+
+    if (cleanEmail) {
+      dbPromises.push(db.from("api_keys").update({ credits: targetBal, updated_at: nowIso }).eq("user_email", cleanEmail));
+    }
+
+    // Concurrently await all without sequential roundtrip lag
+    await Promise.allSettled(dbPromises);
   }
 
   return { success: true, finalCredits: targetBal };
@@ -4519,9 +4519,39 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
     });
   }
 
-  console.log(`[USER_LOOKUP] Performing direct core lookup for user [${user.email || user.id}] service: ${service}, query: ${cleanedQuery}`);
+  // PHASE 1: IMMEDIATE UPFRONT WALLET DEDUCTION (Server-Authoritative, Zero Client Tampering)
+  const initialBalance = currentCredits;
+  let heldBalance = initialBalance;
+  if (!isUnlimited) {
+    heldBalance = Math.max(0, Number((initialBalance - lookupCost).toFixed(2)));
+    await updateUserCreditsAcrossAllStores(
+      user.id,
+      user.email,
+      user.phone,
+      heldBalance,
+      profile?.full_name,
+      profile?.unlimited_expiry,
+      profile?.user_discount_percent
+    );
+
+    if (supabaseAdmin) {
+      supabaseAdmin.from("wallet_transactions").insert({
+        user_id: user.id,
+        user_email: user.email || "User",
+        service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
+        type: "Debit",
+        amount: lookupCost,
+        balance_after: heldBalance,
+        status: "SUCCESS",
+        created_at: new Date().toISOString()
+      }).then(() => {}).catch((dbErr: any) => console.error("[USER_LOOKUP] Upfront debit log error:", dbErr));
+    }
+  }
+
+  console.log(`[USER_LOOKUP] Upfront debit complete. Querying core lookup for user [${user.email || user.id}] service: ${service}, query: ${cleanedQuery}`);
 
   try {
+    // PHASE 2: EXECUTE UPSTREAM SEARCH
     let data: any = null;
     try {
       data = await executeCoreLookup(service, cleanedQuery);
@@ -4529,16 +4559,15 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
       console.error("[USER_LOOKUP] executeCoreLookup exception:", coreErr);
     }
 
-    // Identify if the result is a true system / provider backend failure vs a processed lookup (even with no records)
+    // Identify if the result is a true system / provider backend failure vs a processed lookup
     let isSystemError = false;
     let systemErrorMessage = "An internal network or provider error occurred. Please try again in a moment.";
 
     if (!data) {
       isSystemError = true;
-      systemErrorMessage = "Unable to connect to search provider. Your wallet was not charged. [ERR_CONN_PROVIDER_FAILED]";
+      systemErrorMessage = "Unable to connect to search provider. Your wallet was automatically refunded. [ERR_CONN_PROVIDER_FAILED]";
     } else if (data.status === "error" || data.error_type === "insufficient_balance" || data.error_type === "database_offline") {
       const errorMsg = String(data.message || data.error || "").toLowerCase();
-      // If the error message is simply stating "no records", it is NOT a system failure, it is a valid search run!
       const isActuallyNoData = errorMsg.includes("no data") || 
                                errorMsg.includes("not found") || 
                                errorMsg.includes("no record") || 
@@ -4550,33 +4579,57 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
 
       if (!isActuallyNoData) {
         isSystemError = true;
-        // Clean and refine error messages
         if (data.error_type === "insufficient_balance") {
-          systemErrorMessage = "API Service temporarily unavailable due to system limit. Your wallet was not charged.";
+          systemErrorMessage = "API Service temporarily unavailable due to system limit. Your wallet was automatically refunded.";
         } else {
-          systemErrorMessage = data.message || data.error || "A system error occurred while processing the request. Your wallet was not charged.";
+          systemErrorMessage = data.message || data.error || "A system error occurred while processing the request. Your wallet was automatically refunded.";
         }
       }
     }
 
-    // 1. REFUND/NO CHARGE ONLY IF SYSTEM FAILS
+    // PHASE 3A: AUTO-REFUND ON SYSTEM/NETWORK/PROVIDER FAILURE
     if (isSystemError) {
+      if (!isUnlimited) {
+        await updateUserCreditsAcrossAllStores(
+          user.id,
+          user.email,
+          user.phone,
+          initialBalance,
+          profile?.full_name,
+          profile?.unlimited_expiry,
+          profile?.user_discount_percent
+        );
+
+        if (supabaseAdmin) {
+          supabaseAdmin.from("wallet_transactions").insert({
+            user_id: user.id,
+            user_email: user.email || "User",
+            service: `Auto-Refund: Provider/System Error (${service.toUpperCase()})`,
+            type: "Credit",
+            amount: lookupCost,
+            balance_after: initialBalance,
+            status: "REFUNDED",
+            created_at: new Date().toISOString()
+          }).then(() => {}).catch(() => {});
+        }
+      }
+
       await logSearchHistory(req, service, cleanedQuery, 'failed', client, { error: systemErrorMessage }, user.id, user.email);
       return res.status(200).json({
         status: "error",
         error_type: "lookup_failed",
         message: systemErrorMessage,
-        remaining_balance: currentCredits,
+        remaining_balance: initialBalance,
         cost_deducted: 0,
-        refunded: false
+        refunded: true,
+        refund_amount: isUnlimited ? 0 : lookupCost
       });
     }
 
-    // 2. OTHERWISE, CHECK FOR MEANINGFUL DATA
+    // PHASE 3B: INSPECT FOR VALID MEANINGFUL DATA
     let extractedResults = data.results || data.data || (data.records && data.records.length > 0 ? (data.records.length === 1 ? data.records[0] : data.records) : data);
     const cleanedResults = scrubAllBranding(extractedResults);
 
-    // Deep scanning check to see if we have actual meaningful records to return
     let isMeaningfulData = false;
     if (cleanedResults) {
       if (typeof cleanedResults === 'object' && !Array.isArray(cleanedResults)) {
@@ -4596,55 +4649,22 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
     }
 
     if (isMeaningfulData) {
-      // SUCCESSFUL RUN WITH VALID DATA -> Deduct balance correctly in real-time
-      let newBalance = currentCredits;
-      if (!isUnlimited) {
-        newBalance = Math.max(0, Number((currentCredits - lookupCost).toFixed(2)));
-        await updateUserCreditsAcrossAllStores(
-          user.id,
-          user.email,
-          user.phone,
-          newBalance,
-          profile.full_name,
-          profile.unlimited_expiry,
-          profile.user_discount_percent
-        );
-
-        if (supabaseAdmin) {
-          try {
-            await supabaseAdmin.from("wallet_transactions").insert({
-              user_id: user.id,
-              user_email: user.email || "User",
-              service: `Search Query: ${service.toUpperCase()} (${cleanedQuery})`,
-              type: "Debit",
-              amount: lookupCost,
-              balance_after: newBalance,
-              status: "SUCCESS",
-              created_at: new Date().toISOString()
-            });
-          } catch (dbErr) {
-            console.error("[USER_LOOKUP] Failed to record wallet debit:", dbErr);
-          }
-        }
-      }
-
+      // SUCCESSFUL LOOKUP: Confirm debit and log records
       if (supabaseAdmin) {
-        try {
-          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-          await supabaseAdmin.from("service_records").insert({
-            user_id: user.id,
-            client_name: user.email || (isAdmin ? "Admin" : "User"),
-            service_name: `Web Search: ${service.toUpperCase()}`,
-            reference_code: refCode,
-            status: "SUCCESS",
-            result_payload: cleanedResults,
-            log_number: Math.floor(100 + Math.random() * 900),
-            created_at: new Date().toISOString()
-          });
-        } catch (e) {}
+        const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        supabaseAdmin.from("service_records").insert({
+          user_id: user.id,
+          client_name: user.email || (isAdmin ? "Admin" : "User"),
+          service_name: `Web Search: ${service.toUpperCase()}`,
+          reference_code: refCode,
+          status: "SUCCESS",
+          result_payload: cleanedResults,
+          log_number: Math.floor(100 + Math.random() * 900),
+          created_at: new Date().toISOString()
+        }).then(() => {}).catch(() => {});
       }
 
-      await logSearchHistory(
+      logSearchHistory(
         req, 
         service, 
         cleanedQuery, 
@@ -4653,37 +4673,60 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
         cleanedResults, 
         user.id, 
         user.email
-      );
+      ).catch(() => {});
 
       return res.status(200).json({
         status: "success",
         service,
         query: cleanedQuery,
         results: cleanedResults,
-        remaining_balance: newBalance,
+        remaining_balance: heldBalance,
         cost_deducted: isUnlimited ? 0 : lookupCost,
         refunded: false,
         raw_results: data.raw_results || (typeof cleanedResults === 'string' ? cleanedResults : undefined)
       });
     } else {
-      // ZERO DATA FOUND: Guaranteed zero deduction & auto-refund protection
-      if (supabaseAdmin) {
-        try {
-          const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-          await supabaseAdmin.from("service_records").insert({
+      // PHASE 3C: ZERO DATA FOUND -> AUTOMATIC INSTANT WALLET REFUND
+      if (!isUnlimited) {
+        await updateUserCreditsAcrossAllStores(
+          user.id,
+          user.email,
+          user.phone,
+          initialBalance,
+          profile?.full_name,
+          profile?.unlimited_expiry,
+          profile?.user_discount_percent
+        );
+
+        if (supabaseAdmin) {
+          supabaseAdmin.from("wallet_transactions").insert({
             user_id: user.id,
-            client_name: user.email || (isAdmin ? "Admin" : "User"),
-            service_name: `Web Search: ${service.toUpperCase()} (NO DATA)`,
-            reference_code: refCode,
-            status: "NO_DATA",
-            result_payload: { message: `No record found for query '${cleanedQuery}'. Zero charges applied.` },
-            log_number: Math.floor(100 + Math.random() * 900),
+            user_email: user.email || "User",
+            service: `Auto-Refund: No Record Found (${cleanedQuery})`,
+            type: "Credit",
+            amount: lookupCost,
+            balance_after: initialBalance,
+            status: "REFUNDED",
             created_at: new Date().toISOString()
-          });
-        } catch (e) {}
+          }).then(() => {}).catch(() => {});
+        }
       }
 
-      await logSearchHistory(
+      if (supabaseAdmin) {
+        const refCode = `TRX-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        supabaseAdmin.from("service_records").insert({
+          user_id: user.id,
+          client_name: user.email || (isAdmin ? "Admin" : "User"),
+          service_name: `Web Search: ${service.toUpperCase()} (NO DATA)`,
+          reference_code: refCode,
+          status: "NO_DATA",
+          result_payload: { message: `No record found for query '${cleanedQuery}'. Wallet was charged and automatically refunded.` },
+          log_number: Math.floor(100 + Math.random() * 900),
+          created_at: new Date().toISOString()
+        }).then(() => {}).catch(() => {});
+      }
+
+      logSearchHistory(
         req, 
         service, 
         cleanedQuery, 
@@ -4692,7 +4735,7 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
         { message: "No records found" }, 
         user.id, 
         user.email
-      );
+      ).catch(() => {});
 
       return res.status(200).json({
         status: "success",
@@ -4700,21 +4743,49 @@ app.all("/api/user-lookup", dashboardApiSecurityShield, async (req, res) => {
         results: null,
         refunded: true,
         refund_amount: isUnlimited ? 0 : lookupCost,
-        remaining_balance: currentCredits,
+        remaining_balance: initialBalance,
         cost_deducted: 0,
-        message: `No record found for query '${cleanedQuery}'. Your wallet was not charged (₹${lookupCost.toFixed(2)} zero charge applied).`
+        message: `No record found for query '${cleanedQuery}'. Deducted ₹${lookupCost.toFixed(2)} was automatically refunded to your wallet.`
       });
     }
   } catch (err: any) {
     console.error("[USER_LOOKUP] Lookup execution error:", err);
+    // AUTO-REFUND ON CRASH
+    if (!isUnlimited) {
+      await updateUserCreditsAcrossAllStores(
+        user.id,
+        user.email,
+        user.phone,
+        initialBalance,
+        profile?.full_name,
+        profile?.unlimited_expiry,
+        profile?.user_discount_percent
+      ).catch(() => {});
+
+      if (supabaseAdmin) {
+        supabaseAdmin.from("wallet_transactions").insert({
+          user_id: user.id,
+          user_email: user.email || "User",
+          service: `Auto-Refund: Lookup Processing Crash`,
+          type: "Credit",
+          amount: lookupCost,
+          balance_after: initialBalance,
+          status: "REFUNDED",
+          created_at: new Date().toISOString()
+        }).catch(() => {});
+      }
+    }
+
     await logSearchHistory(req, service, cleanedQuery, 'failed', client, { error: err.message }, user.id, user.email);
 
     return res.status(200).json({
       status: "error",
       error_type: "lookup_error",
-      message: `System encountered an issue retrieving data for '${cleanedQuery}'. Your balance was not charged. [ERR_BACKEND_CRASH]`,
-      remaining_balance: currentCredits,
-      cost_deducted: 0
+      message: `System encountered an issue retrieving data for '${cleanedQuery}'. Your wallet was automatically refunded ₹${lookupCost.toFixed(2)}.`,
+      remaining_balance: initialBalance,
+      cost_deducted: 0,
+      refunded: true,
+      refund_amount: isUnlimited ? 0 : lookupCost
     });
   }
 });
